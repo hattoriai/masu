@@ -116,7 +116,9 @@ defmodule Masu.Action do
 
   defp encode_js(nil), do: nil
 
-  defp encode_js(%JS{} = js), do: js |> JS.to_encodable() |> JSON.encode!()
+  # Its ops, as Phoenix.HTML.Safe gives them (JS.to_encodable/1 is of newer
+  # LiveViews).
+  defp encode_js(%JS{ops: ops}), do: JSON.encode!(ops)
 
   @doc false
   # Whether the item is for the column.
