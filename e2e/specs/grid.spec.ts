@@ -994,7 +994,8 @@ test.describe("new and deleted rows, and editors", () => {
     await expect(cell(page, 0, 2)).toHaveText("3.5");
   });
 
-  test("a paste past the last row adds the rest as new rows, and shows the one refused", async ({ page, context }) => {
+  test("a paste past the last row adds the rest as new rows, and shows the one refused", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "only Chromium lets a test write the clipboard");
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await grid(page, "tasks").evaluate((el) => (el.scrollTop = el.scrollHeight));
     await cell(page, 29, 0).click();
