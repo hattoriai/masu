@@ -156,6 +156,7 @@ defmodule MasuDev.Layouts do
           {"Groups", "/groups"},
           {"Tasks", "/tasks"},
           {"Pages", "/pages"},
+          {"Look", "/look"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -861,6 +862,79 @@ defmodule MasuDev.PagesLive do
   end
 end
 
+defmodule MasuDev.LookLive do
+  @moduledoc """
+  Masu in another app's look: Lotus Web's results table, made of tokens
+  (and `row_height`), with no CSS of its own. The e2e spec compares it
+  with Lotus Web's own table, pixel for pixel.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @rows [
+    %{id: "1", name: "Ada Lovelace", plan: "team", revenue: "1,204.50"},
+    %{id: "2", name: "Alan Turing", plan: "free", revenue: "0.00"},
+    %{id: "3", name: "Grace Hopper", plan: "enterprise", revenue: "98,100.00"},
+    %{id: "4", name: "Edsger Dijkstra", plan: "starter", revenue: "12.00"},
+    %{id: "5", name: "Barbara Liskov", plan: "business", revenue: "7,400.25"},
+    %{id: "6", name: "Donald Knuth", plan: "team", revenue: "310.75"}
+  ]
+
+  @impl true
+  def mount(_params, _session, socket), do: {:ok, assign(socket, rows: @rows)}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <style>
+      /* Lotus Web's results table, as Masu tokens. In Lotus Web itself, the
+         values would be its own variables: rgb(var(--lotus-gray-50)). */
+      .lotus-look {
+        --masu-font: "Inter var", sans-serif;
+        --masu-font-size: 0.875rem;
+        --masu-line-height: 1.25rem;
+        --masu-text: rgb(39 39 42);
+        --masu-background: rgb(255 255 255);
+        --masu-header-background: rgb(255 255 255);
+        --masu-header-text: rgb(39 39 42);
+        --masu-header-height: 48px;
+        --masu-header-border: none;
+        --masu-header-shadow: 0 1px 0 0 rgb(209 213 219);
+        --masu-header-hover: rgb(239 246 255);
+        --masu-grid-border: none;
+        --masu-grid-radius: 0;
+        --masu-row-border: none;
+        --masu-row-alt-background: rgb(249 250 251);
+        --masu-row-hover: transparent;
+        --masu-cell-hover: rgb(239 246 255);
+        --masu-cell-padding: 0 0.75rem;
+      }
+
+      .dark .lotus-look {
+        --masu-text: rgb(244 244 245);
+        --masu-background: rgb(23 23 23);
+        --masu-header-background: rgb(23 23 23);
+        --masu-header-text: rgb(244 244 245);
+        --masu-header-shadow: 0 1px 0 0 rgb(75 85 99);
+        --masu-header-hover: rgb(30 58 138 / 0.2);
+        --masu-row-alt-background: rgb(55 65 81);
+        --masu-cell-hover: rgb(30 58 138 / 0.2);
+      }
+    </style>
+    <h1 id="look-label">Lotus Web's table, in Masu</h1>
+    <div style="width: 660px">
+      <.data_grid id="look" rows={@rows} class="lotus-look" row_height={52} height="360px" label_id="look-label">
+        <:col field={:id} label="id" width={100} />
+        <:col field={:name} label="name" width={240} />
+        <:col field={:plan} label="plan" width={160} />
+        <:col field={:revenue} label="revenue" width={160} />
+      </.data_grid>
+    </div>
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -887,6 +961,7 @@ defmodule MasuDev.Router do
     live("/groups", MasuDev.GroupsLive)
     live("/tasks", MasuDev.TasksLive)
     live("/pages", MasuDev.PagesLive)
+    live("/look", MasuDev.LookLive)
     masu_exports()
   end
 end

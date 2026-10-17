@@ -1347,7 +1347,7 @@ defmodule Masu.Grid do
     ~H"""
     <div
       id={@id}
-      class={["masu", @class]}
+      class={["masu", @density != :normal && "masu-density-#{@density}", @class]}
       phx-hook="Masu"
       phx-target={@myself}
       data-masu={config(assigns)}
@@ -1426,7 +1426,7 @@ defmodule Masu.Grid do
           <div class="masu-body" role="rowgroup" style={"height: #{body_rows(assigns) * @row_height}px"}>
             <div
               :for={{row, index} <- Enum.with_index(first_shown(@initial))}
-              class="masu-row"
+              class={["masu-row", rem(@initial_from + index, 2) == 1 && "masu-row-even"]}
               role="row"
               aria-rowindex={index + 2}
               style={"transform: translateY(#{index * @row_height}px)"}

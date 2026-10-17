@@ -515,6 +515,8 @@ export class Grid {
     rowEl.setAttribute("aria-busy", row === null ? "true" : "false");
 
     rowEl.classList.toggle("masu-group-row", row !== null && isGroup(row));
+    // Every second row, by its place (CSS's :nth-child(even)): elements are reused.
+    rowEl.classList.toggle("masu-row-even", index % 2 === 1);
     rowEl.classList.remove("masu-add-row");
     const draft = row !== null && isDraft(row);
     rowEl.classList.toggle("masu-draft", draft);
@@ -2865,6 +2867,7 @@ export class Grid {
     rowEl.dataset.index = String(index);
     rowEl.classList.remove("masu-loading", "masu-group-row", "masu-draft", "masu-changed");
     rowEl.classList.add("masu-add-row");
+    rowEl.classList.toggle("masu-row-even", index % 2 === 1);
     rowEl.setAttribute("aria-busy", "false");
     for (const name of ["aria-level", "aria-posinset", "aria-setsize", "aria-expanded"]) rowEl.removeAttribute(name);
     Array.from(rowEl.children).forEach((child, col) => {

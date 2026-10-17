@@ -40,6 +40,7 @@ defmodule MasuTest.Router do
     live("/counts", MasuTest.CountsLive)
     live("/blocks", MasuTest.BlocksLive)
     live("/ids", MasuTest.IdsLive)
+    live("/theme", MasuTest.ThemeLive)
   end
 
   # In a scope: the grid's link goes through it.
