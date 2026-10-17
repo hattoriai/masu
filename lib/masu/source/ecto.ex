@@ -131,6 +131,41 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     def fetch(_state, _ids, _row_id), do: []
 
+    @doc false
+    # Runs `fun` with the row of `id` (through the grid's query, or nil) in
+    # a transaction that locks the row where the database can
+    # (`SELECT ... FOR UPDATE` in PostgreSQL and MySQL; SQLite writes one
+    # transaction at a time), and gives what `fun` gives.
+    @spec locked(map(), term(), (term() -> result)) :: result when result: term()
+    def locked(%{repo: repo} = state, id, fun) do
+      {:ok, result} =
+        repo.transaction(fn ->
+          lock_row(state, id)
+          fun.(state |> fetch([id], nil) |> List.first())
+        end)
+
+      result
+    end
+
+    @locking [Ecto.Adapters.Postgres, Ecto.Adapters.MyXQL]
+
+    # The lock is taken on the schema's own row, not through the grid's
+    # query: a lock on a query with outer joins is refused by PostgreSQL.
+    defp lock_row(
+           %{base: %Ecto.Query{from: %{source: {_table, schema}}}, primary_key: [key]} = state,
+           id
+         )
+         when is_atom(schema) and schema != nil do
+      if state.repo.__adapter__() in @locking do
+        from(r in schema, where: field(r, ^key) == ^id, lock: "FOR UPDATE", select: 1)
+        |> state.repo.all(state.repo_opts)
+      end
+
+      :ok
+    end
+
+    defp lock_row(_state, _id), do: :ok
+
     defp where_value_search(query, _f, nil), do: query
     defp where_value_search(query, _f, ""), do: query
 

@@ -100,6 +100,10 @@ defmodule Masu.Test do
   the browser sends it (a string, or `nil` to empty the cell). The grid
   saves the edits of each row together.
 
+  An edit may be `{row_id, key, value, before}`, with the value the person
+  saw: the grid refuses it when the cell's value changed meanwhile, as it
+  does for the browser.
+
   Returns `:ok` when every edit was saved, or `{:error, errors}` with
   `{row_id, key, message}` for each cell that was not.
   """
@@ -107,13 +111,20 @@ defmodule Masu.Test do
           :ok | {:error, [{term(), String.t(), String.t()}]}
   def edit(view, id, edits) do
     edits =
-      Enum.map(edits, fn {row, key, value} ->
-        %{"id" => row, "key" => to_string(key), "value" => value}
+      Enum.map(edits, fn
+        {row, key, value} ->
+          %{"id" => row, "key" => to_string(key), "value" => value}
+
+        {row, key, value, before} ->
+          %{"id" => row, "key" => to_string(key), "value" => value, "before" => before}
       end)
 
     case event(view, id, "masu:edit", %{"edits" => edits}) do
-      %{"errors" => []} -> :ok
-      %{"errors" => errors} -> {:error, Enum.map(errors, &List.to_tuple/1)}
+      %{"errors" => []} ->
+        :ok
+
+      %{"errors" => errors} ->
+        {:error, Enum.map(errors, fn [id, key, message | _] -> {id, key, message} end)}
     end
   end
 

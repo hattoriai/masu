@@ -41,7 +41,9 @@ sorts, filters and counts (in the database, for an Ecto source), and
 * `edit(view, id, edits)`: edits cells as a person does, with a list of
   `{row_id, key, value}` (the value as the browser sends it: a string, or
   `nil` to empty the cell). Gives `:ok`, or `{:error, errors}` with
-  `{row_id, key, message}` for each cell that was not saved.
+  `{row_id, key, message}` for each cell that was not saved. An edit
+  `{row_id, key, value, before}` carries the value the person saw, and is
+  refused when the cell changed meanwhile.
 
 ## Querying
 

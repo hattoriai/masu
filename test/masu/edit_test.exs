@@ -162,4 +162,62 @@ defmodule Masu.EditTest do
     assert {:error, _} = edit(view, "people", [{2, "name", ""}])
     assert render(view) =~ ~s(<p id="saved">Alan, Edsger</p>)
   end
+
+  describe "an edit of a cell that changed meanwhile" do
+    test "is refused with the value now, and the row's other cells are saved", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/edit/people")
+
+      assert :ok = edit(view, "people", [{2, "age", "42", 41}])
+
+      render_hook(element(view, "#people"), "masu:edit", %{
+        "edits" => [
+          %{"id" => 2, "key" => "age", "value" => "43", "before" => 41},
+          %{"id" => 2, "key" => "name", "value" => "Alan", "before" => "alan Turing"}
+        ]
+      })
+
+      assert_reply(view, %{"errors" => [[2, "age", "Changed by someone else meanwhile.", 42]]})
+      assert %{"name" => "Alan", "age" => 42} = Enum.at(rows(view, "people"), 1)
+    end
+
+    test "compares by the column's type", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/edit/orders")
+
+      # 10.00 in the database; the browser had 10.0, and a string.
+      assert :ok = edit(view, "orders", [{1, "total", "10.00", "10.0"}])
+
+      assert {:error, [{1, "total", "Changed by someone else meanwhile."}]} =
+               edit(view, "orders", [{1, "total", "12", "11"}])
+    end
+
+    test "two people editing the same cell: the second is refused; different cells are both saved",
+         %{conn: conn} do
+      {:ok, ada, _html} = live(conn, "/edit/orders")
+      {:ok, alan, _html} = live(build_conn(), "/edit/orders")
+
+      assert :ok = edit(ada, "orders", [{3, "customer", "Ada's", "Cyd"}])
+
+      assert {:error, [{3, "customer", "Changed by someone else meanwhile."}]} =
+               edit(alan, "orders", [{3, "customer", "Alan's", "Cyd"}])
+
+      assert :ok = edit(alan, "orders", [{3, "status", "late", "paid"}])
+
+      order = Repo.get!(Order, 3)
+      assert {order.customer, order.status} == {"Ada's", "late"}
+    after
+      Repo.update!(
+        Order.changeset(Repo.get!(Order, 3), %{"customer" => "Cyd", "status" => "paid"})
+      )
+    end
+
+    test "a before that is not a cell's value is refused", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/edit/people")
+
+      render_hook(element(view, "#people"), "masu:edit", %{
+        "edits" => [%{"id" => 1, "key" => "name", "value" => "X", "before" => %{"a" => 1}}]
+      })
+
+      assert_reply(view, %{"errors" => [[1, "name", "This cell cannot be edited."]]})
+    end
+  end
 end

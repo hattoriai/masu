@@ -926,7 +926,9 @@ export class Grid {
     const changed = editor.input.value !== inputText(column.type, editor.original);
     const value = sendValue(column.type, editor.input.value, this.config.locale ?? undefined);
     this.closeEditor();
-    if (changed) this.applyEdits([{ row: editor.row, col: editor.col, value }]);
+    // The value the person saw is the one the editor opened with: a save
+    // by someone else while they typed is a conflict, not their base.
+    if (changed) this.applyEdits([{ row: editor.row, col: editor.col, value, before: editor.original }]);
     if (step) {
       this.active = {
         row: Math.min(Math.max(editor.row + step.row, 0), this.total - 1),
@@ -952,17 +954,20 @@ export class Grid {
    * and asks the server to save them; a cell the server refuses shows its
    * old value again, with the error.
    */
-  private applyEdits(cells: { row: number; col: number; value: string | boolean | null }[], record = true): void {
+  private applyEdits(
+    cells: { row: number; col: number; value: string | boolean | null; before?: CellValue }[],
+    record = true,
+  ): void {
     const edits: Edit[] = [];
     let skipped = 0;
-    for (const { row, col, value } of cells) {
+    for (const { row, col, value, before: seen } of cells) {
       const column = this.columns[col];
       const data = this.cache.get(row) ?? this.stale?.get(row);
       if (!column?.editable || !data || this.locked(data, col)) {
         skipped += 1;
         continue;
       }
-      const before = rawValue(data[col + 1]);
+      const before = seen !== undefined ? seen : rawValue(data[col + 1]);
       edits.push({ id: data[0], key: column.key, col, row, before, value });
       this.setValue(row, col, column.html ? [escapeHTML(String(value ?? "")), shownValue(column.type, value)] : shownValue(column.type, value));
     }
@@ -979,22 +984,27 @@ export class Grid {
     }
     this.refreshRows();
 
-    const payload = edits.map((edit) => ({ id: edit.id, key: edit.key, value: edit.value }));
+    // Each edit says what the person saw: the server refuses it when the
+    // cell changed meanwhile (see Masu.Edit).
+    const payload = edits.map((edit) => ({ id: edit.id, key: edit.key, value: edit.value, before: edit.before }));
     this.transport.push("masu:edit", { edits: payload }, (reply) => {
-      const errors = (reply.errors as [unknown, string, string][]) ?? [];
+      const errors = (reply.errors as [unknown, string, string, CellValue?][]) ?? [];
       for (const edit of edits) this.saving.delete(cellKey(edit.id, edit.key));
-      const refused = new Set<string>();
-      for (const [id, key, message] of errors) {
+      const refused = new Map<string, { value: CellValue; now: boolean }>();
+      for (const [id, key, message, ...now] of errors) {
         const cell = cellKey(id, key);
-        refused.add(cell);
+        // A cell changed meanwhile comes with its value now.
+        refused.set(cell, { value: (now[0] ?? null) as CellValue, now: now.length > 0 });
         this.errors.set(cell, message);
       }
-      // A refused cell shows its old value until the rows come again.
+      // A refused cell shows its old value (or its value now) until the
+      // rows come again.
       for (const edit of edits) {
-        if (refused.has(cellKey(edit.id, edit.key)) && edit.row !== undefined) {
+        const refusal = refused.get(cellKey(edit.id, edit.key));
+        if (refusal && edit.row !== undefined && this.valueAt(edit.row, edit.col) !== undefined) {
           const column = this.columns[edit.col];
-          const shown = this.valueAt(edit.row, edit.col);
-          if (shown !== undefined) this.setValue(edit.row, edit.col, column.html ? [escapeHTML(String(edit.before ?? "")), edit.before] : edit.before);
+          const value = refusal.now ? refusal.value : edit.before;
+          this.setValue(edit.row, edit.col, column.html ? [escapeHTML(String(value ?? "")), value] : value);
         }
       }
 

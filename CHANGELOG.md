@@ -36,6 +36,13 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refuses an edit of a read-only cell (with the row it finds again) and
   saves the row's other edits; the browser gets each row's read-only
   cells, which open no editor and have `aria-readonly`.
+- Edits of a cell that changed meanwhile are refused: each edit carries
+  the value the person saw (when the editor opened), compared on the
+  server by the column's type, a compare-and-swap of each cell; the cell
+  then shows its value now. An Ecto source compares and saves each row in
+  a transaction that locks it (`SELECT ... FOR UPDATE` on PostgreSQL and
+  MySQL), and takes `optimistic_lock/3`'s `Ecto.StaleEntryError` as the
+  same refusal. `Masu.Test.edit/3` takes `{id, key, value, before}`.
 - `on_save`: a function called with the saved rows, in the LiveView's
   process, for an audit, a flash or the LiveView's own assigns.
 - Live rows: `live={{pubsub, topic}}`, the `Masu.Live` hook, and

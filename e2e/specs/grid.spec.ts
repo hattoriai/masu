@@ -317,3 +317,36 @@ test.describe("editing", () => {
     await expect(cell(page, 0, 0)).toHaveText("1");
   });
 });
+
+test.describe("two people", () => {
+  test("an edit shows in the other browser, and an edit of a cell changed meanwhile is refused", async ({ browser }) => {
+    const ada = await (await browser.newContext({ locale: "en-GB" })).newPage();
+    const alan = await (await browser.newContext({ locale: "en-GB" })).newPage();
+    await openPage(ada, "/together");
+    await openPage(alan, "/together");
+    const cell = (page: import("@playwright/test").Page, row: number, col: number) => page.locator(`#together-r${row}-c${col}`);
+
+    // Alan starts to type in Ken's name; Ada saves it first.
+    await cell(alan, 0, 1).click();
+    await alan.keyboard.type("Alan's Ken");
+    await cell(ada, 0, 1).click();
+    await ada.keyboard.type("Ada's Ken");
+    await ada.keyboard.press("Enter");
+    await expect(cell(ada, 0, 1)).toHaveText("Ada's Ken");
+
+    await alan.keyboard.press("Enter");
+    await expect(cell(alan, 0, 1)).toHaveAttribute("title", "Changed by someone else meanwhile.");
+    await expect(cell(alan, 0, 1)).toHaveText("Ada's Ken");
+
+    // A cell of the same row that no one else changed is saved, and shows
+    // in Ada's browser.
+    await cell(alan, 0, 2).click();
+    await alan.keyboard.type("Faro");
+    await alan.keyboard.press("Enter");
+    await expect(cell(ada, 0, 2)).toHaveText("Faro");
+    await expect(cell(ada, 0, 1)).toHaveText("Ada's Ken");
+
+    await ada.context().close();
+    await alan.context().close();
+  });
+});

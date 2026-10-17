@@ -95,6 +95,27 @@ end
 New `rows` from the LiveView replace the grid's copy, and keep the
 person's order, filters and search.
 
+## Two people, one cell
+
+Each edit carries the value the person saw: the value of the cell when
+its editor opened (or, for a paste or a fill, when they pasted). The
+server compares it with the cell's value now, by the column's type
+(`120.50` is `120.5`), and refuses the edit if someone changed the cell
+meanwhile: "Changed by someone else meanwhile." The cell then shows its
+value now, and the person decides again. It is the optimistic
+concurrency of a database, a compare-and-swap of each cell: two people
+who edit different cells of one row both save.
+
+For an Ecto source, the row is read, compared and saved in one
+transaction that locks it (`SELECT ... FOR UPDATE` on PostgreSQL and
+MySQL; SQLite writes one transaction at a time), so two saves cannot both
+pass the comparison. A schema with `Ecto.Changeset.optimistic_lock/3`
+refuses a row whose version changed, with the same message.
+
+An `update` function gets the row as it was compared; to save it with
+the same guarantee, save it in a transaction of your own, or with
+`optimistic_lock/3`.
+
 ## Errors
 
 A changeset with errors saves nothing of the row. Each error goes on the

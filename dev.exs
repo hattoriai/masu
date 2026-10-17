@@ -149,6 +149,7 @@ defmodule MasuDev.Layouts do
           {"Customers", "/"},
           {"Small", "/small"},
           {"Live", "/live"},
+          {"Together", "/together"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -379,6 +380,51 @@ defmodule MasuDev.QuotesLive do
   end
 end
 
+defmodule MasuDev.TogetherLive do
+  @moduledoc """
+  Twenty customers that everyone who opens the page shares: the grids
+  follow one topic, so an edit in one browser shows in the others, and two
+  edits of one cell are a conflict.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  on_mount(Masu.Live)
+
+  @impl true
+  def mount(params, _session, socket) do
+    {:ok,
+     assign(socket,
+       rows: Enum.take(MasuDev.Customers.all(), 20),
+       locale: params["locale"] || "en-GB"
+     )}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="together-label">Together</h1>
+    <.data_grid
+      id="together"
+      rows={@rows}
+      changeset={&MasuDev.Customers.changeset/2}
+      live={{MasuDev.PubSub, "together"}}
+      label_id="together-label"
+      height="30rem"
+      locale={@locale}
+    >
+      <:col field={:id} type={:integer} width={80} label="ID" editable={false} />
+      <:col field={:name} width={190} />
+      <:col field={:city} />
+      <:col field={:plan} type={:enum} width={130} />
+      <:col field={:seats} type={:integer} />
+      <:col field={:revenue} type={:decimal} />
+    </.data_grid>
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -397,6 +443,7 @@ defmodule MasuDev.Router do
     live("/", MasuDev.CustomersLive)
     live("/small", MasuDev.SmallLive)
     live("/live", MasuDev.QuotesLive)
+    live("/together", MasuDev.TogetherLive)
   end
 end
 
