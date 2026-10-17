@@ -109,7 +109,24 @@ defmodule MasuDev.Layouts do
   use Phoenix.Component
 
   def root(assigns) do
-    assigns = assign(assigns, :sumi, assigns.conn.params["theme"] == "sumi")
+    conn = assigns.conn
+
+    current =
+      if conn.query_string == "",
+        do: conn.request_path,
+        else: "#{conn.request_path}?#{conn.query_string}"
+
+    assigns =
+      assign(assigns,
+        sumi: conn.params["theme"] == "sumi",
+        current: current,
+        links: [
+          {"Customers", "/"},
+          {"Small", "/small"},
+          {"Sumi theme", "/?theme=sumi"},
+          {"Sumi dark", "/?theme=sumi&dark=1"}
+        ]
+      )
 
     ~H"""
     <!DOCTYPE html>
@@ -125,10 +142,16 @@ defmodule MasuDev.Layouts do
           body { font-family: system-ui, sans-serif; margin: 0; background: #fafaf9; color: #1c1917; }
           body.sumi { background: var(--masu-background); color: var(--masu-text); font-family: var(--masu-font); }
           main { max-width: 72rem; margin: 0 auto; padding: 2rem 1rem; }
-          nav a { margin-right: 1rem; }
-          .badge { display: inline-block; padding: 0 0.5rem; border-radius: 999px; font-size: 0.75rem; line-height: 1.5rem; background: #eef2ff; color: #3730a3; }
-          .badge.enterprise { background: #fef3c7; color: #92400e; }
-          .badge.free { background: #f4f4f5; color: #52525b; }
+          /* The page's own parts take the grid's tokens, so that they follow
+             the theme (and the Sumi theme, dark and light) as the grid does. */
+          nav { display: flex; gap: 1.25rem; font-size: 0.875rem; }
+          nav a { color: var(--masu-muted); text-decoration: none; padding: 0.25rem 0; border-bottom: 2px solid transparent; }
+          nav a:hover { color: var(--masu-text); }
+          nav a[aria-current="page"] { color: var(--masu-text); border-bottom-color: var(--masu-accent); }
+          nav a:focus-visible { outline: none; box-shadow: var(--masu-focus-ring); border-radius: 2px; }
+          .badge { display: inline-block; padding: 0 0.5rem; border-radius: 999px; font-size: 0.75rem; line-height: 1.5rem; background: color-mix(in oklab, var(--masu-text) 8%, transparent); color: var(--masu-text); }
+          .badge.enterprise { background: color-mix(in oklab, var(--masu-accent) 16%, transparent); color: color-mix(in oklab, var(--masu-accent) 75%, var(--masu-text)); }
+          .badge.free { background: transparent; box-shadow: inset 0 0 0 1px var(--masu-border); color: var(--masu-muted); }
         </style>
         <script type="importmap">
           {
@@ -155,7 +178,13 @@ defmodule MasuDev.Layouts do
       <body class={@sumi && "sumi"}>
         <main>
           <nav>
-            <a href="/">Customers</a><a href="/small">Small</a><a href="/?theme=sumi">Sumi theme</a><a href="/?theme=sumi&dark=1">Sumi dark</a>
+            <a
+              :for={{label, href} <- @links}
+              href={href}
+              aria-current={href == @current && "page"}
+            >
+              {label}
+            </a>
           </nav>
           {@inner_content}
         </main>
