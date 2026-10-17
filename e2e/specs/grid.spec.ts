@@ -141,3 +141,70 @@ test.describe("live rows", () => {
     expect([...top].sort((a, b) => b - a)).toEqual(top);
   });
 });
+
+test.describe("the filter menu", () => {
+  test.beforeEach(async ({ page }) => {
+    await openPage(page, "/");
+  });
+
+  test("an enum lists its values with their counts, and filters by the ones ticked", async ({ page }) => {
+    await header(page, "customers", "plan").hover();
+    await header(page, "customers", "plan").locator(".masu-filter-button").click();
+    const menu = page.locator("#customers .masu-menu");
+    await expect(menu).toHaveAttribute("role", "dialog");
+    await expect(menu.locator(".masu-menu-value")).toHaveCount(5);
+    await expect(menu.locator(".masu-menu-value", { hasText: "team" }).locator(".masu-menu-count")).toHaveText("20,000");
+
+    await menu.locator(".masu-menu-value", { hasText: "team" }).click();
+    await menu.locator(".masu-menu-value", { hasText: "free" }).click();
+    await menu.locator(".masu-menu-apply").click();
+    await settled(page, "customers");
+
+    await expect(menu).toHaveCount(0);
+    await expect(grid(page, "customers")).toHaveAttribute("aria-rowcount", "40001");
+    await expect(page.locator("#customers .masu-chip-text")).toHaveText(["Plan is one of team, free"]);
+    await expect(header(page, "customers", "plan").locator(".masu-filter-button")).toHaveAttribute("data-active", "true");
+  });
+
+  test("a number takes a range, and the chips take the filters away", async ({ page }) => {
+    await header(page, "customers", "seats").hover();
+    await header(page, "customers", "seats").locator(".masu-filter-button").click();
+    await page.locator("#customers .masu-menu-op").selectOption("between");
+    await page.locator("#customers .masu-menu-input").nth(0).fill("10");
+    await page.locator("#customers .masu-menu-input").nth(1).fill("20");
+    await page.locator("#customers .masu-menu-input").nth(1).press("Enter");
+    await settled(page, "customers");
+
+    await expect(page.locator("#customers .masu-chip-text")).toHaveText(["Seats between 10 and 20"]);
+    const seats = Number((await rowText(page, "customers", 0))[5]);
+    expect(seats).toBeGreaterThanOrEqual(10);
+    expect(seats).toBeLessThanOrEqual(20);
+
+    await page.locator("#customers .masu-chip-remove").click();
+    await settled(page, "customers");
+    await expect(page.locator("#customers .masu-chip")).toHaveCount(0);
+    await expect(grid(page, "customers")).toHaveAttribute("aria-rowcount", "100001");
+  });
+
+  test("Alt+↓ on a header opens its menu, Escape gives the focus back", async ({ page }) => {
+    await grid(page, "customers").focus();
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect(page.locator("#customers .masu-menu")).toHaveAttribute("aria-label", "Filter City");
+    await expect(page.locator("#customers .masu-menu-op")).toBeFocused();
+
+    await page.locator("#customers .masu-menu-op").selectOption("is_nil");
+    await page.locator("#customers .masu-menu-apply").press("Enter");
+    await settled(page, "customers");
+    await expect(page.locator("#customers .masu-chip-text")).toHaveText(["City is empty"]);
+    await expect(grid(page, "customers")).toHaveAttribute("aria-rowcount", "5883");
+
+    await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#customers .masu-menu")).toHaveCount(0);
+    await expect(grid(page, "customers")).toBeFocused();
+  });
+});

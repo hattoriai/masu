@@ -34,10 +34,18 @@ descending, MySQL and SQLite first when ascending.
 A list sorts in the LiveView's process: about a fifth of a second for a
 hundred thousand rows by one column. A larger list belongs in a database.
 
-## No filter menu yet
+## Datetime filters
 
-The grid filters by its `filters` attribute and by `Masu.Test`; there is
-no filter menu on the columns in the browser yet.
+The menu takes a date and a time in the browser's time zone, and gives
+the server the instant. A list compares it with a `NaiveDateTime` as if
+that were UTC. An Ecto source compares it with the column's type: a
+`:naive_datetime` column takes it in UTC.
+
+## One filter a column in the menu
+
+The menu edits one filter a column. The `filters` attribute and
+`Masu.Test` may give a column several, which all apply; the menu then
+shows the first, and replaces them all.
 
 ## Pages without LiveView
 

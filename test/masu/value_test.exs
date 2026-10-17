@@ -29,6 +29,8 @@ defmodule Masu.ValueTest do
     assert Value.compare(Decimal.new("1.0"), 1) == :eq
     assert Value.compare(Decimal.new("1.5"), 1.5) == :eq
     assert Value.compare(~D[2026-01-02], ~D[2026-01-10]) == :lt
+    assert Value.compare(~U[2026-01-02 10:00:00Z], ~N[2026-01-02 09:00:00]) == :gt
+    assert Value.compare(~N[2026-01-02 10:00:00], ~U[2026-01-02 10:00:00Z]) == :eq
   end
 
   test "to_wire/1 keeps every digit of a decimal, and writes dates in ISO 8601" do

@@ -122,4 +122,29 @@ defmodule Masu.GridTest do
       assert ids(view, "orders") == [1, 2, 3, 4, 5]
     end
   end
+
+  describe "the values of a column, for its filter menu" do
+    test "a list counts them among the rows of the other filters, the most frequent first", %{
+      conn: conn
+    } do
+      {:ok, view, _html} = live(conn, "/people")
+
+      assert values(view, "people", "admin") == [{false, 3}, {true, 2}]
+
+      view |> filter("people", [{"admin", :eq, true}, {"age", :gt, 50}])
+      assert values(view, "people", "admin") == [{false, 2}, {true, 1}]
+      assert values(view, "people", "city", search: "ARL") == [{"Arlington", 1}]
+    end
+
+    test "an Ecto source counts them with one GROUP BY", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/orders")
+
+      assert values(view, "orders", "status") == [{"paid", 3}, {"draft", 1}, {"late", 1}]
+      assert values(view, "orders", "customer", search: "acme") == [{"Acme", 1}, {"acme corp", 1}]
+
+      view |> search("orders", "acme")
+      assert values(view, "orders", "status") == [{"paid", 2}]
+      assert values(view, "orders", "code") == []
+    end
+  end
 end

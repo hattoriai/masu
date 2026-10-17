@@ -79,6 +79,20 @@ defmodule Masu.Test do
     view |> event(id, "masu:rows", %{"from" => 0, "count" => 0}) |> Map.fetch!("total")
   end
 
+  @doc """
+  The values that the filter menu of the column `key` offers: the values
+  of the column among the rows of the query (without the column's own
+  filters), each with its count, the most frequent first. `:search`
+  narrows them as the menu's search box does.
+  """
+  @spec values(struct(), String.t(), String.t(), keyword()) :: [{term(), non_neg_integer()}]
+  def values(view, id, key, opts \\ []) do
+    view
+    |> event(id, "masu:values", %{"key" => to_string(key), "search" => Keyword.get(opts, :search)})
+    |> Map.fetch!("values")
+    |> Enum.map(fn [value, count] -> {value, count} end)
+  end
+
   @doc "The labels of the columns of the grid `id`, in order."
   @spec columns(struct(), String.t()) :: [String.t()]
   def columns(view, id) do

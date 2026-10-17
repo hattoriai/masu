@@ -9,6 +9,8 @@
 // rows come and go.
 
 import { BlockCache } from "./blocks";
+import { describe, replaceFilter } from "./filters";
+import { FilterMenu } from "./menu";
 import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { nextSorts } from "./sorting";
@@ -52,6 +54,8 @@ export class Grid {
   private emptyEl: HTMLElement | null;
   private statusEl: HTMLElement | null;
   private searchEl: HTMLInputElement | null;
+  private chipsEl: HTMLElement;
+  private menu: { col: number; menu: FilterMenu } | null = null;
 
   private rows = new Map<number, RowElement>();
   private pool: RowElement[] = [];
@@ -85,6 +89,11 @@ export class Grid {
     this.emptyEl = this.gridEl.querySelector<HTMLElement>(".masu-empty");
     this.statusEl = el.querySelector<HTMLElement>(".masu-status");
     this.searchEl = el.querySelector<HTMLInputElement>(".masu-search");
+
+    // The chips of the filters, above the grid.
+    this.chipsEl = document.createElement("div");
+    this.chipsEl.className = "masu-chips";
+    this.gridEl.before(this.chipsEl);
 
     this.makeFormatters();
     if (this.config.initial) this.cache.store(this.config.initial.from, this.config.initial.rows);
@@ -136,6 +145,7 @@ export class Grid {
   }
 
   destroy(): void {
+    this.closeMenu(false);
     for (const cleanup of this.cleanups) cleanup();
     this.cleanups = [];
     this.observer?.disconnect();
@@ -356,6 +366,21 @@ export class Grid {
         cell.setAttribute("aria-sort", position === 0 ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
       }
 
+      if (column.filterable) {
+        const filtered = this.query.filters.some((filter) => filter.key === column.key);
+        const filter = document.createElement("button");
+        filter.type = "button";
+        filter.tabIndex = -1;
+        filter.className = "masu-filter-button";
+        filter.dataset.col = String(col);
+        filter.setAttribute("aria-label", this.message("filter", { label: column.label }));
+        filter.setAttribute("aria-haspopup", "dialog");
+        filter.setAttribute("aria-expanded", this.menu?.col === col ? "true" : "false");
+        if (filtered) filter.dataset.active = "true";
+        filter.innerHTML = FILTER_ICON;
+        cell.appendChild(filter);
+      }
+
       const resizer = document.createElement("span");
       resizer.className = "masu-resizer";
       resizer.setAttribute("aria-hidden", "true");
@@ -363,6 +388,103 @@ export class Grid {
       return cell;
     });
     this.headerRow.replaceChildren(...cells);
+    this.renderChips();
+  }
+
+  private renderChips(): void {
+    const messages = this.messages();
+    const chips = this.query.filters.flatMap((filter) => {
+      const col = this.columns.findIndex((column) => column.key === filter.key);
+      if (col < 0) return [];
+      const chip = document.createElement("span");
+      chip.className = "masu-chip";
+      const text = document.createElement("button");
+      text.type = "button";
+      text.className = "masu-chip-text";
+      text.dataset.col = String(col);
+      text.textContent = describe(filter, this.columns[col], (value) => this.formatters[col](value as CellValue), messages);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "masu-chip-remove";
+      remove.dataset.key = filter.key;
+      remove.setAttribute("aria-label", `${messages.remove_filter}: ${text.textContent}`);
+      remove.textContent = "×";
+      chip.append(text, remove);
+      return [chip];
+    });
+
+    if (chips.length > 1) {
+      const clear = document.createElement("button");
+      clear.type = "button";
+      clear.className = "masu-chips-clear";
+      clear.textContent = messages.clear_all;
+      chips.push(clear);
+    }
+    this.chipsEl.replaceChildren(...chips);
+    this.chipsEl.hidden = chips.length === 0;
+  }
+
+  private onChipClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    const remove = target.closest<HTMLElement>(".masu-chip-remove");
+    if (remove) {
+      this.setQuery({ ...this.query, filters: replaceFilter(this.query.filters, remove.dataset.key!, null) });
+      return;
+    }
+    if (target.closest(".masu-chips-clear")) {
+      this.setQuery({ ...this.query, filters: [] });
+      return;
+    }
+    const text = target.closest<HTMLElement>(".masu-chip-text");
+    if (text) this.openMenu(Number(text.dataset.col));
+  }
+
+  /** Opens the filter menu of a column, under its header. */
+  openMenu(col: number): void {
+    const column = this.columns[col];
+    if (!column?.filterable) return;
+    this.closeMenu(false);
+    const anchor = this.headerRow.children[col] as HTMLElement;
+    this.ensureVisible({ row: this.active.row, col });
+    const menu = new FilterMenu(
+      {
+        root: this.el,
+        column,
+        current: this.query.filters.find((filter) => filter.key === column.key),
+        messages: this.messages(),
+        format: (value) => this.formatters[col](value as CellValue),
+        fetchValues: (search, done) => {
+          this.transport.push("masu:values", { key: column.key, search }, (reply) => {
+            done((reply.values as [unknown, number][]) ?? []);
+          });
+        },
+        apply: (filter) => {
+          this.closeMenu(true);
+          this.setQuery({ ...this.query, filters: replaceFilter(this.query.filters, column.key, filter) });
+        },
+        close: () => this.closeMenu(true),
+      },
+      anchor,
+    );
+    this.menu = { col, menu };
+    anchor.querySelector(".masu-filter-button")?.setAttribute("aria-expanded", "true");
+  }
+
+  private closeMenu(focus: boolean): void {
+    if (!this.menu) return;
+    const { col, menu } = this.menu;
+    this.menu = null;
+    menu.destroy();
+    this.headerRow.children[col]?.querySelector(".masu-filter-button")?.setAttribute("aria-expanded", "false");
+    if (focus) {
+      this.active = { row: -1, col };
+      this.gridEl.focus({ preventScroll: true });
+      this.render();
+    }
+  }
+
+  private messages(): Record<string, string> {
+    return { ...DEFAULT_MESSAGES, ...this.config.messages };
   }
 
   private applyWidths(): void {
@@ -450,6 +572,14 @@ export class Grid {
     this.on(this.gridEl, "keydown", (event) => this.onKeyDown(event));
     this.on(this.gridEl, "mousedown", (event) => this.onMouseDown(event));
     this.on(this.gridEl, "dblclick", (event) => this.onDoubleClick(event));
+    this.on(this.gridEl, "click", (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>(".masu-filter-button");
+      if (!button) return;
+      const col = Number(button.dataset.col);
+      if (this.menu?.col === col) this.closeMenu(true);
+      else this.openMenu(col);
+    });
+    this.on(this.chipsEl, "click", (event) => this.onChipClick(event));
     this.on(this.gridEl, "focus", () => this.schedule());
     this.on(document, "mousemove", (event) => this.onMouseMove(event));
     this.on(document, "mouseup", () => {
@@ -508,6 +638,12 @@ export class Grid {
     if (event.key === "Escape" && this.anchor) {
       this.anchor = null;
       this.render();
+      return;
+    }
+
+    if (event.altKey && event.key === "ArrowDown" && this.active.row === -1) {
+      event.preventDefault();
+      this.openMenu(this.active.col);
       return;
     }
 
@@ -721,12 +857,12 @@ export class Grid {
 
   // Words for a screen reader.
 
-  private message(name: string, values: { count?: number }): string {
-    const messages = { ...DEFAULT_MESSAGES, ...this.config.messages };
+  private message(name: string, values: { count?: number; label?: string }): string {
+    const messages = this.messages();
     const count = values.count ?? 0;
     const template = name === "rows" && count === 1 ? messages.row : messages[name] ?? name;
     const formatted = new Intl.NumberFormat(this.config.locale ?? undefined).format(count);
-    return template.replace("{count}", formatted);
+    return template.replace("{count}", formatted).replace("{label}", values.label ?? "");
   }
 
   private announceCount(): void {
@@ -750,7 +886,43 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   copied: "{count} rows copied",
   copied_one: "1 row copied",
   copy_failed: "The rows could not be copied",
+  filter: "Filter {label}",
+  condition: "Condition",
+  apply: "Apply",
+  clear: "Clear",
+  clear_all: "Clear all",
+  remove_filter: "Remove the filter",
+  search_values: "Search values",
+  no_values: "No values",
+  empty_value: "(empty)",
+  from: "From",
+  to: "To",
+  and: "and",
+  yes: "Yes",
+  no: "No",
+  op_eq: "is",
+  op_neq: "is not",
+  op_contains: "contains",
+  op_not_contains: "does not contain",
+  op_starts_with: "starts with",
+  op_ends_with: "ends with",
+  op_gt: "greater than",
+  op_gte: "at least",
+  op_lt: "less than",
+  op_lte: "at most",
+  op_gt_time: "after",
+  op_gte_time: "on or after",
+  op_lt_time: "before",
+  op_lte_time: "on or before",
+  op_between: "between",
+  op_in: "is one of",
+  op_is_nil: "is empty",
+  op_not_nil: "is not empty",
 };
+
+// A funnel, drawn for Masu.
+const FILTER_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.5 3h11l-4.25 5v4.25l-2.5 1.25V8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
 
 function readConfig(el: HTMLElement): Config {
   return JSON.parse(el.dataset.masu ?? "{}") as Config;

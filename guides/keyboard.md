@@ -13,6 +13,7 @@ cell, as in a spreadsheet.
 | Ctrl+Home, Ctrl+End | the first or last cell of the grid |
 | Page Up, Page Down | a screen of rows up or down |
 | Enter or Space on a header | sorts by its column; with Shift, by it too |
+| Alt+↓ on a header | opens its filter menu; Escape closes it, and the focus comes back |
 | Shift with a move | selects the range from where the selection started |
 | Ctrl+A | selects every row |
 | Escape | drops the selection |

@@ -10,14 +10,11 @@ A live change keeps the scroll, so a row inserted above the screen moves
 the rows below it down by one. Keep the first row on the screen in its
 place instead (by its id), as a feed does.
 
-## A filter menu on each column
+## Filters: pickers and more values
 
-A menu on each header with the filters of its type: text (contains,
-starts with, equal, empty), numbers and dates (between, greater, less,
-with Koyomi's pickers for dates), a set of values with their counts
-(asked of the source), and booleans. A row of chips above the grid shows
-the filters, each with its remove button. The filters go in the query, as
-the search does.
+The date filters use the browser's own date inputs; use Koyomi's pickers
+when the app has Koyomi. Offer the values of a text column, as an enum's
+are, when it has few. Several filters on one column (a range and empty).
 
 ## Editing cells
 

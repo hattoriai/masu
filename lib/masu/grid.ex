@@ -162,6 +162,27 @@ defmodule Masu.Grid do
     {:reply, block(socket, from, count), socket}
   end
 
+  # The values of a column for its filter menu: among the rows of the
+  # query without the column's own filters, so that the menu offers the
+  # values the person may add.
+  def handle_event("masu:values", %{"key" => key} = params, socket) when is_binary(key) do
+    %{source: source, query: query, columns: columns} = socket.assigns
+
+    case Column.find(columns, key) do
+      %Column{filterable: true} = column ->
+        others = %{query | filters: Enum.reject(query.filters, &(&1.key == key))}
+        search = if is_binary(params["search"]), do: String.trim(params["search"])
+        values = Source.values(source, column, others, columns, search: search, limit: 50)
+
+        {:reply,
+         %{"key" => key, "values" => Enum.map(values, fn {v, n} -> [Value.to_wire(v), n] end)},
+         socket}
+
+      _other ->
+        {:reply, %{"key" => key, "values" => []}, socket}
+    end
+  end
+
   def handle_event("masu:query", params, socket) when is_map(params) do
     %{source: source, columns: columns, revision: revision} = socket.assigns
 

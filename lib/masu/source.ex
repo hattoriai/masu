@@ -56,7 +56,20 @@ defmodule Masu.Source do
   """
   @callback change(state(), [Masu.Live.change()], (term() -> term())) :: state()
 
-  @optional_callbacks supports?: 2, change: 3
+  @doc """
+  The values of a column among the rows of a query, with how many rows
+  have each, the most frequent first: what a column's filter menu offers.
+  `search` narrows them to the values that contain it, without case.
+  `nil` counts as a value: the rows with no value.
+
+  A source without it offers no values: the menu then filters by what the
+  person types.
+  """
+  @callback values(state(), Column.t(), Query.t(), [Column.t()], keyword()) :: [
+              {term(), non_neg_integer()}
+            ]
+
+  @optional_callbacks supports?: 2, change: 3, values: 5
 
   @type t :: %__MODULE__{module: module(), state: state()}
 
@@ -110,6 +123,16 @@ defmodule Masu.Source do
     if function_exported?(module, :change, 3),
       do: %{source | state: module.change(state, changes, row_id)},
       else: source
+  end
+
+  @doc false
+  @spec values(t(), Column.t(), Query.t(), [Column.t()], keyword()) :: [
+          {term(), non_neg_integer()}
+        ]
+  def values(%__MODULE__{module: module, state: state}, column, query, columns, opts) do
+    if function_exported?(module, :values, 5),
+      do: module.values(state, column, query, columns, opts),
+      else: []
   end
 
   @doc false

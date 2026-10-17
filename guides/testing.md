@@ -33,6 +33,8 @@ sorts, filters and counts (in the database, for an Ecto source), and
 * `ids(view, id)`: the ids of the rows.
 * `total(view, id)`: how many rows the query has.
 * `columns(view, id)`: the labels, in order.
+* `values(view, id, key, search: nil)`: what the column's filter menu
+  offers, as `{value, count}`, the most frequent first.
 
 ## Querying
 

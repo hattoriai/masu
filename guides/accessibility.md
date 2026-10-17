@@ -30,6 +30,14 @@ active cell is its `aria-activedescendant`: a screen reader follows the
 cell as the arrows move it, while the rows come and go. See
 [Keyboard and copy](keyboard.md) for the keys.
 
+## The filter menu
+
+The funnel of a header is a button named "Filter" and the column's label,
+with `aria-haspopup="dialog"` and `aria-expanded`. The menu is a dialog
+with the same name; the focus goes to its first field, and comes back to
+the header when it closes. An enum's values are a group of checkboxes.
+Each chip has a button that takes its filter away, named for it.
+
 ## Announcements
 
 A live region says how many rows a sort, a filter or a search gives

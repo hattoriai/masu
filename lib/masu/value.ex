@@ -107,6 +107,13 @@ defmodule Masu.Value do
       when module in [Date, DateTime, NaiveDateTime, Time],
       do: module.compare(a, b)
 
+  # A datetime with a zone and one without: the one without is UTC.
+  def compare(%DateTime{} = a, %NaiveDateTime{} = b),
+    do: DateTime.compare(a, DateTime.from_naive!(b, "Etc/UTC"))
+
+  def compare(%NaiveDateTime{} = a, %DateTime{} = b),
+    do: DateTime.compare(DateTime.from_naive!(a, "Etc/UTC"), b)
+
   def compare(%{__struct__: Decimal} = a, b), do: decimal_compare(a, b)
   def compare(a, %{__struct__: Decimal} = b), do: decimal_compare(a, b)
 

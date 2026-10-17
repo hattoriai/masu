@@ -37,6 +37,7 @@
 }
 
 .masu {
+  position: relative;
   display: block;
   max-width: 100%;
   color: var(--masu-text);
@@ -350,4 +351,234 @@
   to {
     background: transparent;
   }
+}
+
+/* The filter button of a header: on hover and on focus, and always when
+   its column is filtered. */
+.masu-filter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.375rem;
+  height: 1.375rem;
+  margin-inline-start: auto;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--masu-radius) - 2px);
+  background: transparent;
+  color: var(--masu-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--masu-transition), background var(--masu-transition);
+}
+
+.masu-hcell.masu-align-end .masu-filter-button {
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}
+
+.masu-hcell:hover .masu-filter-button,
+.masu-hcell.masu-active .masu-filter-button,
+.masu-filter-button[aria-expanded="true"],
+.masu-filter-button[data-active] {
+  opacity: 1;
+}
+
+.masu-filter-button:hover,
+.masu-filter-button[aria-expanded="true"] {
+  background: color-mix(in oklab, var(--masu-text) 8%, transparent);
+  color: var(--masu-text);
+}
+
+.masu-filter-button[data-active] {
+  color: var(--masu-accent);
+}
+
+.masu-filter-button[data-active] svg path {
+  fill: currentColor;
+}
+
+/* The menu. */
+.masu-menu {
+  position: absolute;
+  z-index: 10;
+  width: 17rem;
+  max-width: calc(100% - 0.5rem);
+  padding: 0.75rem;
+  border: 1px solid var(--masu-border);
+  border-radius: var(--masu-radius);
+  background: var(--masu-background);
+  color: var(--masu-text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  font-weight: 400;
+}
+
+.masu-menu-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.masu-menu-op,
+.masu-menu-input {
+  width: 100%;
+  min-width: 0;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--masu-border);
+  border-radius: calc(var(--masu-radius) - 2px);
+  background: var(--masu-background);
+  color: inherit;
+  font: inherit;
+}
+
+.masu-menu-op:focus-visible,
+.masu-menu-input:focus-visible,
+.masu-menu-button:focus-visible,
+.masu-chip button:focus-visible,
+.masu-chips-clear:focus-visible {
+  outline: none;
+  box-shadow: var(--masu-focus-ring);
+}
+
+.masu-menu-fields {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.masu-menu-fields:empty {
+  display: none;
+}
+
+.masu-menu-and {
+  color: var(--masu-muted);
+  font-size: 0.8125em;
+}
+
+.masu-menu-values {
+  display: grid;
+  max-height: 14rem;
+  overflow: auto;
+  color: var(--masu-muted);
+}
+
+.masu-menu-value {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.875rem;
+  padding: 0 0.25rem;
+  border-radius: calc(var(--masu-radius) - 2px);
+  color: var(--masu-text);
+  cursor: pointer;
+}
+
+.masu-menu-value:hover {
+  background: var(--masu-row-hover);
+}
+
+.masu-menu-value input {
+  accent-color: var(--masu-accent);
+}
+
+.masu-menu-value-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.masu-menu-count {
+  color: var(--masu-muted);
+  font-size: 0.8125em;
+  font-variant-numeric: tabular-nums;
+}
+
+.masu-menu-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.masu-menu-button {
+  height: 2rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--masu-border);
+  border-radius: calc(var(--masu-radius) - 2px);
+  background: var(--masu-background);
+  color: var(--masu-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.masu-menu-apply {
+  border-color: var(--masu-accent);
+  background: var(--masu-accent);
+  color: var(--masu-accent-text);
+}
+
+/* The chips of the filters, above the grid. */
+.masu-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: var(--masu-space);
+}
+
+.masu-chips[hidden] {
+  display: none;
+}
+
+.masu-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--masu-border);
+  border-radius: 999px;
+  background: var(--masu-surface);
+}
+
+.masu-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.masu-chip-text {
+  overflow: hidden;
+  max-width: 24rem;
+  padding: 0.125rem 0.25rem 0.125rem 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.masu-chip-remove {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-inline-end: 0.125rem;
+  border-radius: 999px;
+  color: var(--masu-muted) !important;
+  font-size: 1rem !important;
+  line-height: 1;
+}
+
+.masu-chip-remove:hover {
+  background: color-mix(in oklab, var(--masu-text) 8%, transparent) !important;
+  color: var(--masu-text) !important;
+}
+
+.masu-chips-clear {
+  padding: 0.125rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--masu-muted);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

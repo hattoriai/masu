@@ -46,6 +46,24 @@ defmodule Masu.Source.List do
   @impl true
   def supports?(_state, _column), do: true
 
+  @impl true
+  def values(%{all: rows}, column, query, columns, opts) do
+    search = opts |> Keyword.get(:search) |> then(&(&1 && String.downcase(&1)))
+
+    rows
+    |> filter(query.filters, columns)
+    |> search(query.search, columns)
+    |> Enum.frequencies_by(&Column.get(column, &1))
+    |> Enum.filter(fn {value, _count} -> search == nil or value_has?(value, search) end)
+    |> Enum.sort_by(fn {value, count} -> {-count, Value.sort_key_fun([value]).(value)} end)
+    |> Enum.take(Keyword.get(opts, :limit, 50))
+  end
+
+  defp value_has?(nil, _search), do: false
+
+  defp value_has?(value, search),
+    do: value |> Value.to_wire() |> to_string() |> String.downcase() |> String.contains?(search)
+
   # A changed row takes the place of the row with its id, a new one goes
   # at the end, and a deleted one leaves.
   @impl true

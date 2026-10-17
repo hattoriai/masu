@@ -16,8 +16,9 @@ app:
 * live rows: a grid that follows a PubSub topic shows the rows that
   change on it as they change, in the place of each person's order and
   filters, with a short highlight;
-* sorting by several columns, a search box, and filters that the
-  LiveView sets;
+* sorting by several columns, a search box, and a filter menu on each
+  column, with the values of an enum and their counts, and the filters
+  as chips above the grid;
 * columns that resize, and fit their content on a double click;
 * the keyboard of a spreadsheet: the arrows, Page Up and Down, Home and
   End, a range selected with Shift, and ⌘C (Ctrl+C) that copies it as
@@ -38,7 +39,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
 | Sorting | a click on a header; with Shift, by several columns, numbered in the headers; text without case, empty values last |
-| Filters | equal, contains, starts and ends with, greater and less than, between, one of, empty and not empty, checked against each column's type; set by the LiveView (`filters`) and `Masu.Test` (a filter menu on each column is next, see `BACKLOG.md`) |
+| Filters | a menu on each header with the filters of its type: contains, starts and ends with, greater and less than, after and before, between, empty; an enum's values ticked from a list with their counts (one `GROUP BY` in the database); the filters as chips; checked against each column's type on the server |
 | Search | a search box over the text columns, in the list or in the database |
 | Keyboard | the arrows, Ctrl with them, Home, End, Page Up and Down, the header row, Enter on a header to sort, Shift to select, ⌘A, Escape |
 | Copy | ⌘C copies the range as tab-separated values, the values themselves (numbers and dates as a spreadsheet reads them), and asks the server for rows the browser lacks |
@@ -149,6 +150,8 @@ in the same order.
   own HEEx.
 * [Sources](guides/sources.md): lists, Ecto queries and schemas, and
   sources of your own.
+* [Filters](guides/filters.md): the menu of each column, the values of
+  an enum, and the filters of the LiveView.
 * [Live rows](guides/live.md): a grid that follows a PubSub topic.
 * [Keyboard and copy](guides/keyboard.md): the keys, the selection, and
   what a copy gives.

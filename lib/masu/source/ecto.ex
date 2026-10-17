@@ -98,6 +98,34 @@ if Code.ensure_loaded?(Ecto.Query) do
     @impl true
     def supports?(_state, column), do: Column.stored?(column)
 
+    # One GROUP BY of the query (with the person's other filters and
+    # search), the most frequent values first.
+    @impl true
+    def values(state, %Column{field: f} = column, query, columns, opts) do
+      if Column.stored?(column) do
+        state.base
+        |> where_filters(query.filters, columns)
+        |> where_search(query.search, columns)
+        |> where_value_search(f, Keyword.get(opts, :search))
+        |> exclude(:order_by)
+        |> exclude(:preload)
+        |> exclude(:select)
+        |> group_by([r], field(r, ^f))
+        |> select([r], {field(r, ^f), count()})
+        |> order_by([r], desc: count(), asc: field(r, ^f))
+        |> limit(^Keyword.get(opts, :limit, 50))
+        |> state.repo.all(state.repo_opts)
+      else
+        []
+      end
+    end
+
+    defp where_value_search(query, _f, nil), do: query
+    defp where_value_search(query, _f, ""), do: query
+
+    defp where_value_search(query, f, text),
+      do: where(query, ^like(f, "%" <> escape(text) <> "%"))
+
     defp primary_key(%Ecto.Query{from: %{source: {_table, schema}}})
          when is_atom(schema) and schema != nil do
       if function_exported?(schema, :__schema__, 1), do: schema.__schema__(:primary_key), else: []

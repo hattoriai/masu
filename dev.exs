@@ -91,7 +91,7 @@ defmodule MasuDev.Customers do
       city: if(rem(id, 17) == 0, do: nil, else: pick(@cities, id * 3)),
       plan: pick(@plans, id * 11),
       seats: rem(id * 37, 250) + 1,
-      revenue: Decimal.new(rem(id * 7919, 1_000_000)) |> Decimal.div(100),
+      revenue: Decimal.new(rem(id * 7919, 1_000_000)) |> Decimal.div(100) |> Decimal.round(2),
       active: rem(id, 5) != 0,
       signed_up: Date.add(~D[2020-01-01], rem(id * 31, 2000)),
       last_seen: DateTime.add(~U[2026-01-01 00:00:00Z], rem(id * 104_729, 25_000_000), :second)
