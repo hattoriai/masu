@@ -1,0 +1,30 @@
+defmodule MasuTest.ErrorHTML do
+  @moduledoc "Error pages for the test endpoint."
+
+  def render(template, _assigns), do: Phoenix.Controller.status_message_from_template(template)
+end
+
+defmodule MasuTest.Router do
+  @moduledoc "The router of the test endpoint."
+  use Phoenix.Router
+
+  import Phoenix.LiveView.Router
+
+  pipeline :browser do
+    plug(:fetch_session)
+  end
+
+  scope "/" do
+    pipe_through(:browser)
+    live("/people", MasuTest.PeopleLive)
+    live("/orders", MasuTest.OrdersLive)
+  end
+end
+
+defmodule MasuTest.Endpoint do
+  @moduledoc "A Phoenix endpoint for the `Masu.Grid` and `Masu.Test` tests. It runs no server."
+  use Phoenix.Endpoint, otp_app: :masu
+
+  plug(Plug.Session, store: :cookie, key: "_masu_test", signing_salt: "masu-test")
+  plug(MasuTest.Router)
+end

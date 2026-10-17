@@ -1,0 +1,91 @@
+defmodule MasuTest.Repo do
+  @moduledoc "A SQLite repository for the tests of `Masu.Source.Ecto`."
+  use Ecto.Repo, otp_app: :masu, adapter: Ecto.Adapters.SQLite3
+end
+
+defmodule MasuTest.Order do
+  @moduledoc "An order, stored in SQLite."
+  use Ecto.Schema
+
+  schema "orders" do
+    field :number, :string
+    field :customer, :string
+    field :status, :string
+    field :total, :decimal
+    field :placed_on, :date
+  end
+end
+
+defmodule MasuTest.OrdersLive do
+  @moduledoc "A LiveView with a grid of an Ecto schema, for the tests."
+  use Phoenix.LiveView
+
+  import Ecto.Query
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket), do: {:ok, socket}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.data_grid
+      id="orders"
+      source={from(o in MasuTest.Order, where: o.status != "void")}
+      repo={MasuTest.Repo}
+      label="Orders"
+    >
+      <:col field={:number} />
+      <:col field={:customer} />
+      <:col field={:status} type={:enum} />
+      <:col field={:total} type={:decimal} />
+      <:col field={:placed_on} type={:date} />
+      <:col key="code" value={&String.downcase(&1.number)} />
+    </.data_grid>
+    """
+  end
+end
+
+defmodule MasuTest.Orders do
+  @moduledoc "Starts the SQLite repo once, with six orders."
+
+  alias MasuTest.{Order, Repo}
+
+  def setup! do
+    if Process.whereis(Repo) do
+      :ok
+    else
+      # A file of this run's own, deleted before and after it: an earlier
+      # run's file must not give its table to this one.
+      path = Path.join(System.tmp_dir!(), "masu-test-#{System.pid()}.db")
+      File.rm(path)
+      System.at_exit(fn _status -> File.rm(path) end)
+      {:ok, _pid} = Repo.start_link(database: path, pool_size: 1)
+
+      Repo.query!("""
+      CREATE TABLE orders (
+        id INTEGER PRIMARY KEY, number TEXT, customer TEXT, status TEXT, total DECIMAL, placed_on TEXT
+      )
+      """)
+
+      for {number, customer, status, total, day} <- [
+            {"A-1", "Acme", "paid", "10.00", 1},
+            {"A-2", "Bob's", "late", "250.50", 2},
+            {"A-3", "Cyd", "paid", "9.99", 3},
+            {"A-4", "acme corp", "paid", "120.00", 4},
+            {"A-5", "Zed 100%", "draft", "999.00", 5},
+            {"A-6", "Void Inc", "void", "50.00", 6}
+          ] do
+        Repo.insert!(%Order{
+          number: number,
+          customer: customer,
+          status: status,
+          total: Decimal.new(total),
+          placed_on: Date.new!(2026, 1, day)
+        })
+      end
+
+      :ok
+    end
+  end
+end

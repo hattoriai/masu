@@ -1,0 +1,16 @@
+{
+  "name": "masu",
+  "version": "0.1.0",
+  "license": "MIT",
+  "module": "./priv/static/masu.esm.js",
+  "main": "./priv/static/masu.cjs.js",
+  "exports": {
+    ".": {
+      "import": "./priv/static/masu.esm.js",
+      "require": "./priv/static/masu.cjs.js"
+    }
+  },
+  "files": [
+    "priv/static"
+  ]
+}

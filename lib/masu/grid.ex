@@ -1,0 +1,308 @@
+defmodule Masu.Grid do
+  @moduledoc """
+  The LiveComponent behind `Masu.Components.data_grid/1`.
+
+  Render the grid with `data_grid/1`, not with this module: it is public
+  for its events, which the browser sends and `Masu.Test` sends in tests.
+
+  The component holds the grid's source (`Masu.Source`) and query
+  (`Masu.Query`). The browser asks it for blocks of rows:
+
+    * `"masu:rows"` with `from` and `count`: the rows of the current query
+      from row `from`, at most 500 of them;
+    * `"masu:query"` with `sorts`, `filters` and `search`: applies a new
+      query, and answers with its count and its first rows.
+
+  Each answer carries the grid's `revision`, which changes whenever its
+  rows do (a new query, or new rows from the LiveView), so that the
+  browser drops the blocks of an older one.
+
+  A row goes to the browser as a list: its id, then a value for each
+  column, the column's value in JSON (see `Masu.Column` for the types) or,
+  for a column with content, the HTML of its cell.
+  """
+
+  use Phoenix.LiveComponent
+
+  alias Masu.{Column, Query, Source, Value}
+  alias Phoenix.HTML.Safe
+
+  @max_block 500
+  @first_block 100
+  @initial_rows 60
+
+  @messages %{
+    "search" => "Search",
+    "empty" => "No rows",
+    "row" => "{count} row",
+    "rows" => "{count} rows",
+    "loading" => "Loading"
+  }
+
+  @impl true
+  def mount(socket) do
+    {:ok, assign(socket, source: nil, input: nil, revision: 0, initial: nil)}
+  end
+
+  @impl true
+  def update(assigns, socket) do
+    socket = assign(socket, Map.drop(assigns, [:input]))
+    columns = Enum.map(assigns.col, &Column.new/1)
+
+    socket =
+      cond do
+        is_nil(socket.assigns.source) -> start(socket, assigns.input, columns)
+        assigns.input != socket.assigns.input -> restart(socket, assigns.input, columns)
+        true -> assign(socket, columns: supported(socket.assigns.source, columns))
+      end
+
+    {:ok, socket}
+  end
+
+  defp start(socket, input, columns) do
+    source = Source.new(input, source_opts(socket.assigns))
+    columns = supported(source, columns)
+
+    query =
+      case Query.new([sort: socket.assigns.sort, filters: socket.assigns.filters], columns) do
+        {:ok, query} -> query
+        {:error, reason} -> raise ArgumentError, "grid #{socket.assigns.id}: #{reason}"
+      end
+
+    source = Source.prepare(source, query, columns)
+
+    socket
+    |> assign(input: input, source: source, columns: columns, query: query)
+    |> assign(total: Source.count(source))
+    |> assign(initial: Source.rows(source, 0, @initial_rows))
+  end
+
+  # New rows (or a new query of the LiveView): the person's order, filters
+  # and search stay, and the browser drops the rows it has.
+  defp restart(socket, input, columns) do
+    source = Source.new(input, source_opts(socket.assigns))
+    columns = supported(source, columns)
+    source = Source.prepare(source, socket.assigns.query, columns)
+
+    assign(socket,
+      input: input,
+      source: source,
+      columns: columns,
+      total: Source.count(source),
+      revision: socket.assigns.revision + 1,
+      initial: nil
+    )
+  end
+
+  defp source_opts(assigns),
+    do: [repo: assigns.repo, repo_opts: assigns.repo_opts, grid: assigns.id]
+
+  # A column that the source cannot sort or filter by does neither.
+  defp supported(source, columns) do
+    Enum.map(columns, fn column ->
+      if Source.supports?(source, column),
+        do: column,
+        else: %{column | sortable: false, filterable: false, searchable: false}
+    end)
+  end
+
+  @impl true
+  def handle_event("masu:rows", %{"from" => from, "count" => count}, socket)
+      when is_integer(from) and is_integer(count) do
+    from = max(from, 0)
+    count = count |> max(0) |> min(@max_block)
+    {:reply, block(socket, from, count), socket}
+  end
+
+  def handle_event("masu:query", params, socket) when is_map(params) do
+    %{source: source, columns: columns, revision: revision} = socket.assigns
+
+    case Query.from_wire(params, columns) do
+      {:ok, query} ->
+        source = Source.prepare(source, query, columns)
+
+        socket =
+          assign(socket,
+            source: source,
+            query: query,
+            total: Source.count(source),
+            revision: revision + 1,
+            initial: nil
+          )
+
+        reply =
+          socket
+          |> block(0, @first_block)
+          |> Map.put("query", Query.to_wire(query))
+
+        {:reply, reply, socket}
+
+      {:error, reason} ->
+        {:reply, %{"error" => reason, "revision" => revision}, socket}
+    end
+  end
+
+  defp block(socket, from, count) do
+    %{source: source, total: total, revision: revision} = socket.assigns
+    rows = if count == 0, do: [], else: Source.rows(source, from, count)
+
+    %{
+      "from" => from,
+      "rows" => encode_rows(rows, socket.assigns),
+      "total" => total,
+      "revision" => revision
+    }
+  end
+
+  defp encode_rows(rows, assigns) do
+    row_id = assigns.row_id || (&default_row_id/1)
+    Enum.map(rows, fn row -> [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)] end)
+  end
+
+  defp cells(columns, row) do
+    Enum.map(columns, fn
+      %Column{slot: nil} = column -> column |> Column.get(row) |> Value.to_wire()
+      %Column{slot: slot} -> slot_html(slot, row)
+    end)
+  end
+
+  defp default_row_id(%{id: id}), do: id
+  defp default_row_id(%{"id" => id}), do: id
+  defp default_row_id(_row), do: nil
+
+  defp slot_html(slot, row) do
+    assigns = %{slot: slot, row: row}
+
+    ~H"{render_slot([@slot], @row)}"
+    |> Safe.to_iodata()
+    |> IO.iodata_to_binary()
+  end
+
+  @impl true
+  def render(assigns) do
+    assigns =
+      assigns
+      |> assign(:messages, Map.merge(@messages, stringify(assigns.messages)))
+      |> assign(:cols, Enum.map_join(assigns.columns, " ", &"#{&1.width}px"))
+
+    ~H"""
+    <div
+      id={@id}
+      class={["masu", @class]}
+      phx-hook="Masu"
+      phx-target={@myself}
+      data-masu={config(assigns)}
+      {@rest}
+    >
+      <div id={"#{@id}-ui"} class="masu-ui" phx-update="ignore">
+        <div :if={@searchable} class="masu-toolbar">
+          <input
+            type="search"
+            class="masu-search"
+            placeholder={@messages["search"]}
+            aria-label={@messages["search"]}
+            aria-controls={"#{@id}-grid"}
+            value={@query.search}
+            autocomplete="off"
+          />
+        </div>
+        <div
+          id={"#{@id}-grid"}
+          class="masu-grid"
+          role="grid"
+          tabindex="0"
+          aria-label={@label}
+          aria-labelledby={@label_id}
+          aria-rowcount={@total + 1}
+          aria-colcount={length(@columns)}
+          aria-multiselectable="true"
+          style={"--masu-cols: #{@cols}; --masu-row-height: #{@row_height}px; height: #{@height}"}
+        >
+          <div class="masu-head" role="rowgroup">
+            <div class="masu-row masu-header" role="row" aria-rowindex="1">
+              <div
+                :for={{column, i} <- Enum.with_index(@columns, 1)}
+                class={["masu-hcell", "masu-align-#{column.align}", column.sortable && "masu-sortable"]}
+                role="columnheader"
+                aria-colindex={i}
+                aria-sort={aria_sort(@query, column)}
+                data-key={column.key}
+              >
+                <span class="masu-label">{column.label}</span>
+              </div>
+            </div>
+          </div>
+          <div class="masu-body" role="rowgroup" style={"height: #{@total * @row_height}px"}>
+            <div
+              :for={{row, index} <- Enum.with_index(@initial || [])}
+              class="masu-row"
+              role="row"
+              aria-rowindex={index + 2}
+              style={"transform: translateY(#{index * @row_height}px)"}
+            >
+              <div
+                :for={{column, i} <- Enum.with_index(@columns, 1)}
+                class={["masu-cell", "masu-align-#{column.align}", "masu-type-#{column.type}"]}
+                role="gridcell"
+                aria-colindex={i}
+              >
+                <%= if column.slot do %>
+                  {render_slot([column.slot], row)}
+                <% else %>
+                  {column |> Column.get(row) |> Value.to_wire()}
+                <% end %>
+              </div>
+            </div>
+          </div>
+          <div class="masu-empty" hidden={@total > 0}>
+            <%= if @empty != [] do %>
+              {render_slot(@empty)}
+            <% else %>
+              {@messages["empty"]}
+            <% end %>
+          </div>
+        </div>
+        <div class="masu-status" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+    """
+  end
+
+  defp aria_sort(%Query{sorts: [%{key: key, direction: direction} | _]}, %Column{key: key}),
+    do: if(direction == :asc, do: "ascending", else: "descending")
+
+  defp aria_sort(_query, %Column{sortable: true}), do: "none"
+  defp aria_sort(_query, _column), do: nil
+
+  defp config(assigns) do
+    JSON.encode!(%{
+      "v" => 1,
+      "columns" => Enum.map(assigns.columns, &column_config/1),
+      "rowHeight" => assigns.row_height,
+      "total" => assigns.total,
+      "revision" => assigns.revision,
+      "query" => Query.to_wire(assigns.query),
+      "locale" => assigns.locale,
+      "searchable" => assigns.searchable,
+      "messages" => assigns.messages,
+      "initial" =>
+        assigns.initial && %{"from" => 0, "rows" => encode_rows(assigns.initial, assigns)}
+    })
+  end
+
+  defp column_config(%Column{} = column) do
+    %{
+      "key" => column.key,
+      "label" => column.label,
+      "type" => Atom.to_string(column.type),
+      "width" => column.width,
+      "minWidth" => column.min_width,
+      "align" => Atom.to_string(column.align),
+      "sortable" => column.sortable,
+      "filterable" => column.filterable,
+      "html" => column.slot != nil
+    }
+  end
+
+  defp stringify(map), do: Map.new(map, fn {key, value} -> {to_string(key), value} end)
+end

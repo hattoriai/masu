@@ -1,0 +1,338 @@
+/*
+ * Masu grid styles.
+ *
+ * Every colour, space, radius and font comes from a --masu-* custom
+ * property. Set them on .masu (or higher) to theme the grids, or load
+ * masu-sumi.css to map them to the Sumi tokens. The defaults below have
+ * no specificity, so a value set on :root, on an ancestor or on .masu
+ * itself wins. They are Kotoba's and Koyomi's own defaults, so that a page
+ * with all three looks like one thing.
+ */
+
+:where(:root) {
+  --masu-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --masu-font-size: 0.875rem;
+  --masu-line-height: 1.4;
+  --masu-text: #1f1f23;
+  --masu-muted: #6b6b76;
+  --masu-background: #ffffff;
+  --masu-surface: #f6f6f7;
+  --masu-border: #d9d9de;
+  /* The lines between the rows and between the cells. */
+  --masu-rule: #ececef;
+  --masu-accent: #2f5bd3;
+  --masu-accent-text: #ffffff;
+  --masu-header-background: var(--masu-surface);
+  --masu-header-text: var(--masu-text);
+  --masu-row-hover: rgba(31, 31, 35, 0.035);
+  --masu-selection: rgba(47, 91, 211, 0.12);
+  --masu-active: var(--masu-accent);
+  --masu-loading: color-mix(in oklab, var(--masu-border) 55%, transparent);
+  --masu-radius: 6px;
+  --masu-cell-padding: 0 0.75rem;
+  --masu-space: 0.5rem;
+  --masu-field-height: 2.25rem;
+  --masu-focus-ring: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent);
+  --masu-transition: 120ms ease-out;
+}
+
+.masu {
+  display: block;
+  max-width: 100%;
+  color: var(--masu-text);
+  font-family: var(--masu-font);
+  font-size: var(--masu-font-size);
+  line-height: var(--masu-line-height);
+}
+
+.masu *,
+.masu *::before,
+.masu *::after {
+  box-sizing: border-box;
+}
+
+/* The search box. */
+
+.masu-toolbar {
+  display: flex;
+  gap: var(--masu-space);
+  margin-bottom: var(--masu-space);
+}
+
+.masu-search {
+  width: min(100%, 20rem);
+  height: var(--masu-field-height);
+  padding: 0 0.75rem;
+  border: 1px solid var(--masu-border);
+  border-radius: var(--masu-radius);
+  background: var(--masu-background);
+  color: inherit;
+  font: inherit;
+}
+
+.masu-search:focus-visible {
+  outline: none;
+  box-shadow: var(--masu-focus-ring);
+}
+
+/* The grid: one scroll box, with the header that stays on top. */
+
+.masu-grid {
+  position: relative;
+  overflow: auto;
+  border: 1px solid var(--masu-border);
+  border-radius: var(--masu-radius);
+  background: var(--masu-background);
+  overscroll-behavior: contain;
+  contain: strict;
+}
+
+.masu-grid:focus-visible {
+  outline: none;
+  box-shadow: var(--masu-focus-ring);
+}
+
+.masu-row {
+  display: grid;
+  grid-template-columns: var(--masu-cols);
+  width: var(--masu-width, max-content);
+  min-width: 100%;
+  height: var(--masu-row-height, 36px);
+}
+
+.masu-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  width: var(--masu-width, max-content);
+  min-width: 100%;
+  background: var(--masu-header-background);
+}
+
+.masu-header {
+  border-bottom: 1px solid var(--masu-border);
+}
+
+.masu-hcell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  padding: var(--masu-cell-padding);
+  color: var(--masu-header-text);
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.masu-hcell.masu-align-end {
+  flex-direction: row-reverse;
+}
+
+.masu-hcell.masu-align-center {
+  justify-content: center;
+}
+
+.masu-sortable {
+  cursor: pointer;
+}
+
+.masu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The sort mark: an arrow when sorted, a faint one on hover, and the
+   position in the order when there are several. */
+.masu-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  color: var(--masu-muted);
+  font-size: 0.75em;
+  font-variant-numeric: tabular-nums;
+}
+
+.masu-sort::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-inline-end: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0;
+  transform: translateY(-2px) rotate(45deg);
+  transition: opacity var(--masu-transition), transform var(--masu-transition);
+}
+
+.masu-sortable:hover .masu-sort::after {
+  opacity: 0.35;
+}
+
+.masu-sort[data-dir] {
+  color: var(--masu-text);
+}
+
+.masu-sort[data-dir]::after {
+  opacity: 1;
+}
+
+.masu-sort[data-dir="asc"]::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.masu-resizer {
+  position: absolute;
+  top: 0;
+  inset-inline-end: -4px;
+  z-index: 1;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.masu-resizer::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  inset-inline-start: 3px;
+  width: 2px;
+  height: 50%;
+  border-radius: 1px;
+  background: var(--masu-border);
+  opacity: 0;
+  transition: opacity var(--masu-transition);
+}
+
+.masu-hcell:hover .masu-resizer::after,
+.masu-resizing .masu-resizer::after {
+  opacity: 1;
+}
+
+.masu-resizing,
+.masu-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+/* The rows: placed by the grid, each at its own height. */
+
+.masu-body {
+  position: relative;
+  min-width: 100%;
+  width: var(--masu-width, max-content);
+}
+
+.masu-body > .masu-row {
+  position: absolute;
+  top: 0;
+  inset-inline-start: 0;
+  border-bottom: 1px solid var(--masu-rule);
+}
+
+.masu-body > .masu-row:hover {
+  background: var(--masu-row-hover);
+}
+
+.masu-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: var(--masu-cell-padding);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.masu-cell > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.masu-align-end {
+  justify-content: flex-end;
+  text-align: end;
+}
+
+.masu-align-center {
+  justify-content: center;
+  text-align: center;
+}
+
+.masu-type-integer,
+.masu-type-number,
+.masu-type-decimal,
+.masu-type-date,
+.masu-type-datetime,
+.masu-type-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.masu-null {
+  color: var(--masu-muted);
+}
+
+.masu-selected {
+  background: var(--masu-selection);
+}
+
+.masu-grid:focus-visible .masu-active,
+.masu-grid:focus .masu-active {
+  box-shadow: inset 0 0 0 2px var(--masu-active);
+}
+
+.masu-col-selected {
+  background: color-mix(in oklab, var(--masu-selection) 60%, var(--masu-header-background));
+}
+
+/* A row the grid is still asking for. */
+.masu-loading > .masu-cell::before {
+  content: "";
+  display: block;
+  width: 60%;
+  height: 0.6em;
+  border-radius: 999px;
+  background: var(--masu-loading);
+}
+
+.masu-loading > .masu-cell.masu-align-end::before {
+  margin-inline-start: auto;
+}
+
+.masu-empty {
+  position: sticky;
+  inset-inline-start: 0;
+  padding: 2rem 1rem;
+  color: var(--masu-muted);
+  text-align: center;
+}
+
+.masu-empty[hidden] {
+  display: none;
+}
+
+.masu-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .masu *,
+  .masu *::before,
+  .masu *::after {
+    transition: none !important;
+  }
+}
+
+/* A query that the server is applying. */
+.masu-busy .masu-body {
+  opacity: 0.6;
+  transition: opacity var(--masu-transition) 150ms;
+}
