@@ -89,3 +89,6 @@ end
 `prepare/3` gets the query with every key and value already checked
 against the grid's columns. The optional `supports?/2` says whether the
 source can sort and filter by a column; the grid turns off the others.
+
+A source of a tree implements `nodes/3` and `siblings/2` too: see
+[Trees and details](trees.md).

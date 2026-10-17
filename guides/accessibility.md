@@ -22,6 +22,11 @@ the focus.
   on the screen are in the page.
 * A selected cell has `aria-selected="true"`.
 * A row that is coming from the server has `aria-busy="true"`.
+* A tree's scroll box has the `treegrid` role, and each row `aria-level`,
+  `aria-setsize` and `aria-posinset`, and `aria-expanded` when it has
+  children (see [Trees and details](trees.md)).
+* An open detail is a `region` named "Details"; Alt+↓ goes into it and
+  Escape comes back to its row.
 
 ## The focus
 

@@ -74,6 +74,15 @@ grid's reason.
 
 `columns/2` and `rows/3` read the columns that show, in their order.
 
+## Trees and details
+
+* `nodes(view, id, opts)`: the rows of a tree, as maps of `:id`,
+  `:level`, `:children` and `:expanded`.
+* `expand(view, id, row_id)`, `collapse(view, id, row_id)` and
+  `expand_siblings(view, id, row_id)`: as the arrows and `*`.
+* `detail(view, id, row_id, open \\ true)`: opens a row's detail, which
+  `render/1` then has; a grid in it is read with its own id.
+
 ## What these tests do not cover
 
 `Masu.Test` does not run the browser: the drawing of the rows, the

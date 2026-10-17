@@ -16,6 +16,21 @@ copy is exact in every browser.
 Every row has the height of `row_height`. A cell does not wrap, and
 clips what does not fit.
 
+## A tree in a database
+
+An Ecto tree keeps the ids of the rows that show, and reads a block's
+rows with `WHERE id IN (...)`. A filter keeps its matches and their
+ancestors the same way, so a filter that keeps hundreds of thousands of
+rows of a tree runs into the database's limit of query parameters
+(65,535 in PostgreSQL). A tree deeper than a hundred levels shows its
+deeper rows as roots while a filter applies.
+
+## Details
+
+A detail is as tall as its content, and the rows are one height: a
+detail of a grid in a detail is measured as it changes. Fifty details
+are open at most.
+
 ## A deep OFFSET
 
 An Ecto source reads a block with `LIMIT` and `OFFSET`. Deep in a table

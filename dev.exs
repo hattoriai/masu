@@ -151,6 +151,8 @@ defmodule MasuDev.Layouts do
           {"Live", "/live"},
           {"Together", "/together"},
           {"Views", "/views"},
+          {"Tree", "/tree"},
+          {"Details", "/details"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -318,6 +320,148 @@ defmodule MasuDev.ViewsLive do
       <:col field={:signed_up} type={:date} label="Signed up" />
       <:col field={:last_seen} type={:datetime} label="Last seen" />
       <:col field={:revenue} type={:decimal} pinned={:end} />
+    </.data_grid>
+    """
+  end
+end
+
+defmodule MasuDev.Files do
+  @moduledoc "A tree of 22,200 files: 200 folders of 10 folders of 10 files."
+
+  def all do
+    :persistent_term.get({__MODULE__, :all}, nil) ||
+      tap(build(), &:persistent_term.put({__MODULE__, :all}, &1))
+  end
+
+  # Projects are 1..200, their parts 1_000_000 + ..., files 2_000_000 + ...
+  defp part(top, mid), do: 1_000_000 + top * 100 + mid
+
+  defp build do
+    kinds = ~w(pdf png csv txt mp4)
+
+    for top <- 1..200,
+        mid <- [nil | Enum.to_list(1..10)],
+        leaf <- if(mid, do: [nil | Enum.to_list(1..10)], else: [nil]) do
+      cond do
+        is_nil(mid) ->
+          %{
+            id: top,
+            parent_id: nil,
+            name: "Project #{top}",
+            kind: "folder",
+            size: nil,
+            modified: day(top)
+          }
+
+        is_nil(leaf) ->
+          %{
+            id: part(top, mid),
+            parent_id: top,
+            name: "Part #{mid}",
+            kind: "folder",
+            size: nil,
+            modified: day(top + mid)
+          }
+
+        true ->
+          kind = Enum.at(kinds, rem(top + mid + leaf, 5))
+
+          %{
+            id: 2_000_000 + top * 10_000 + mid * 100 + leaf,
+            parent_id: part(top, mid),
+            name: "File #{leaf}.#{kind}",
+            kind: kind,
+            size: rem(top * 7919 + mid * 104_729 + leaf * 1299, 9_000_000) + 1000,
+            modified: day(top + mid + leaf)
+          }
+      end
+    end
+  end
+
+  defp day(n), do: Date.add(~D[2025-01-01], rem(n * 37, 600))
+end
+
+defmodule MasuDev.TreeLive do
+  @moduledoc """
+  A tree of 22,200 rows: → opens a folder, ← closes it, * opens every
+  folder beside it; a filter keeps the files that match and their folders.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket), do: {:ok, assign(socket, files: MasuDev.Files.all())}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="tree-label">Tree</h1>
+    <.data_grid id="files" rows={@files} tree={:parent_id} label_id="tree-label" searchable height="34rem">
+      <:col field={:name} width={320} />
+      <:col field={:kind} type={:enum} width={120} />
+      <:col field={:size} type={:integer} />
+      <:col field={:modified} type={:date} />
+    </.data_grid>
+    """
+  end
+end
+
+defmodule MasuDev.DetailsLive do
+  @moduledoc """
+  Orders that open on their lines: Alt+→ (or the arrow) opens an order's
+  detail, a grid of its own; Alt+↓ goes into it, Escape comes back.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket) do
+    orders =
+      for id <- 1..2_000 do
+        customer = Enum.at(MasuDev.Customers.all(), id)
+
+        %{
+          id: id,
+          number: "SO-#{10_000 + id}",
+          customer: customer.name,
+          city: customer.city,
+          placed_on: Date.add(~D[2026-01-01], rem(id * 13, 280))
+        }
+      end
+
+    {:ok, assign(socket, orders: orders)}
+  end
+
+  def lines(order) do
+    for n <- 1..(3 + rem(order.id, 6)) do
+      %{
+        id: order.id * 100 + n,
+        product: Enum.at(~w(Bolt Nut Washer Gear Spring Valve Seal Pump), rem(order.id * n, 8)),
+        quantity: rem(order.id * n * 7, 40) + 1,
+        price: Decimal.new(rem(order.id * n * 13, 9000) + 100) |> Decimal.div(100)
+      }
+    end
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="details-label">Details</h1>
+    <.data_grid id="orders" rows={@orders} label_id="details-label" searchable height="34rem">
+      <:col field={:number} width={140} />
+      <:col field={:customer} width={220} />
+      <:col field={:city} />
+      <:col field={:placed_on} type={:date} label="Placed on" />
+      <:detail :let={order}>
+        <p style="margin: 0 0 0.5rem">{order.customer} ordered {length(lines(order))} lines.</p>
+        <.data_grid id={"lines-#{order.id}"} rows={lines(order)} height="12rem">
+          <:col field={:product} />
+          <:col field={:quantity} type={:integer} />
+          <:col field={:price} type={:decimal} />
+        </.data_grid>
+      </:detail>
     </.data_grid>
     """
   end
@@ -531,6 +675,8 @@ defmodule MasuDev.Router do
     live("/live", MasuDev.QuotesLive)
     live("/together", MasuDev.TogetherLive)
     live("/views", MasuDev.ViewsLive)
+    live("/tree", MasuDev.TreeLive)
+    live("/details", MasuDev.DetailsLive)
   end
 end
 

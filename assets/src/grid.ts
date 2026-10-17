@@ -15,6 +15,7 @@ import { FilterMenu } from "./menu";
 import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { moveKey, pins, scrollFor, visualLeft, type Pins } from "./layout";
+import { indexAt, rowTop, totalHeight, type Gap } from "./offsets";
 import { ColumnsPanel, ViewsPanel } from "./panels";
 import { nextSorts } from "./sorting";
 import { toTSV } from "./tsv";
@@ -43,6 +44,16 @@ const CURSOR_DELAY = 150;
 interface RowElement extends HTMLDivElement {
   masuIndex?: number;
   masuRow?: Row | null;
+  masuTop?: number;
+}
+
+/** A row's place in a tree (Masu.Tree), after its cells. */
+interface TreeNode {
+  level: number;
+  children: boolean;
+  expanded: boolean;
+  position: number;
+  size: number;
 }
 
 export class Grid {
@@ -64,7 +75,15 @@ export class Grid {
 
   /** The part of the grid the browser owns (phx-update="ignore"): menus go in it, out of the server's renders. */
   private uiEl: HTMLElement;
+  /** The scroll box: the server's, for the details it renders in it. */
   private gridEl: HTMLElement;
+  /** The header and the rows: the browser's (phx-update="ignore"). */
+  private contentEl: HTMLElement;
+  /** The open details, rendered by the server (the `:detail` slot), placed under their rows. */
+  private detailsEl: HTMLElement | null;
+  private gaps: (Gap & { el: HTMLElement })[] = [];
+  private detailObserver: ResizeObserver | null = null;
+  private patchObserver: MutationObserver | null = null;
   private head: HTMLElement;
   private headerRow: HTMLElement;
   private body: HTMLElement;
@@ -123,6 +142,8 @@ export class Grid {
   private followEl: HTMLElement | null = null;
   /** A query is on its way to the server. */
   private querying = false;
+  /** The next revision's rows are not the old ones moved (a tree's row opened): drop the old. */
+  private freshRows = false;
   private cursorTimer: ReturnType<typeof setTimeout> | null = null;
   private requestTimer: ReturnType<typeof setTimeout> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,19 +161,22 @@ export class Grid {
     this.revision = this.config.revision;
     this.query = this.config.query;
 
-    this.gridEl = el.querySelector<HTMLElement>(".masu-grid")!;
-    this.uiEl = el.querySelector<HTMLElement>(".masu-ui") ?? el;
-    this.head = this.gridEl.querySelector<HTMLElement>(".masu-head")!;
+    // Only this grid's own elements: a detail may hold another grid.
+    this.gridEl = el.querySelector<HTMLElement>(":scope > .masu-grid")!;
+    this.uiEl = el.querySelector<HTMLElement>(":scope > .masu-ui") ?? el;
+    this.contentEl = this.gridEl.querySelector<HTMLElement>(":scope > .masu-content") ?? this.gridEl;
+    this.detailsEl = this.gridEl.querySelector<HTMLElement>(":scope > .masu-details");
+    this.head = this.contentEl.querySelector<HTMLElement>(":scope > .masu-head")!;
     this.headerRow = this.head.querySelector<HTMLElement>(".masu-header")!;
-    this.body = this.gridEl.querySelector<HTMLElement>(".masu-body")!;
-    this.emptyEl = this.gridEl.querySelector<HTMLElement>(".masu-empty");
-    this.statusEl = el.querySelector<HTMLElement>(".masu-status");
-    this.searchEl = el.querySelector<HTMLInputElement>(".masu-search");
+    this.body = this.contentEl.querySelector<HTMLElement>(":scope > .masu-body")!;
+    this.emptyEl = this.contentEl.querySelector<HTMLElement>(":scope > .masu-empty");
+    this.statusEl = el.querySelector<HTMLElement>(":scope > .masu-status");
+    this.searchEl = this.uiEl.querySelector<HTMLInputElement>(".masu-search");
 
-    // The chips of the filters, above the grid.
+    // The chips of the filters, above the grid, in the browser's part.
     this.chipsEl = document.createElement("div");
     this.chipsEl.className = "masu-chips";
-    this.gridEl.before(this.chipsEl);
+    this.uiEl.appendChild(this.chipsEl);
 
     this.makeFormatters();
     if (this.config.initial) this.cache.store(this.config.initial.from, this.config.initial.rows);
@@ -162,6 +186,7 @@ export class Grid {
     this.body.replaceChildren();
     this.renderToolbar();
     this.listen();
+    this.watchPatches();
     this.render();
     this.showNotice();
   }
@@ -204,6 +229,7 @@ export class Grid {
     }
     this.renderToolbar();
     this.showNotice();
+    this.measureDetails();
 
     if (config.revision > this.revision) {
       // New rows from the server (a live change, or new rows of the
@@ -220,7 +246,8 @@ export class Grid {
       // The rows of the older revision stay on the screen until the new
       // ones come, so that the grid does not blink as its rows change;
       // not when the columns moved.
-      this.stale = keysChanged ? null : this.cache;
+      this.stale = keysChanged || this.freshRows ? null : this.cache;
+      this.freshRows = false;
       this.cache = new BlockCache(this.cache.size, this.cache.maxBlocks);
       if (config.initial) this.cache.store(config.initial.from, config.initial.rows);
       if (this.pendingBlock?.revision === this.revision) this.cache.store(this.pendingBlock.from, this.pendingBlock.rows);
@@ -235,6 +262,8 @@ export class Grid {
   destroy(): void {
     this.closeMenu(false);
     this.closePanel(false);
+    this.detailObserver?.disconnect();
+    this.patchObserver?.disconnect();
     this.editor?.input.remove();
     this.editor = null;
     for (const cleanup of this.cleanups) cleanup();
@@ -309,19 +338,19 @@ export class Grid {
 
   private render(): void {
     const rh = this.config.rowHeight;
-    this.body.style.height = `${this.total * rh}px`;
-    this.gridEl.setAttribute("aria-rowcount", String(this.total + 1));
-    this.gridEl.setAttribute("aria-colcount", String(this.columns.length));
+    setStyle(this.body, "height", `${totalHeight(this.total, rh, this.gaps)}px`);
+    setAttribute(this.gridEl, "aria-rowcount", String(this.total + 1));
+    setAttribute(this.gridEl, "aria-colcount", String(this.columns.length));
     if (this.emptyEl) this.emptyEl.hidden = this.total > 0;
 
     const headHeight = this.head.offsetHeight;
-    const { first, last } = visibleRows(
-      this.gridEl.scrollTop,
-      this.gridEl.clientHeight - headHeight,
-      rh,
-      this.total,
-      OVERSCAN,
-    );
+    const { first, last } =
+      this.gaps.length === 0
+        ? visibleRows(this.gridEl.scrollTop, this.gridEl.clientHeight - headHeight, rh, this.total, OVERSCAN)
+        : {
+            first: Math.max(0, indexAt(this.gridEl.scrollTop, rh, this.gaps) - OVERSCAN),
+            last: Math.min(this.total - 1, indexAt(this.gridEl.scrollTop + this.gridEl.clientHeight - headHeight, rh, this.gaps) + OVERSCAN),
+          };
 
     for (const [index, rowEl] of this.rows) {
       if (index < first || index > last) {
@@ -339,10 +368,16 @@ export class Grid {
       if (!rowEl) {
         rowEl = this.pool.pop() ?? this.makeRow();
         rowEl.masuIndex = index;
-        rowEl.style.transform = `translateY(${index * rh}px)`;
+        rowEl.masuTop = undefined;
         rowEl.setAttribute("aria-rowindex", String(index + 2));
         this.body.appendChild(rowEl);
         this.rows.set(index, rowEl);
+      }
+      // A detail opened above it moves it down.
+      const top = this.rowTop(index);
+      if (rowEl.masuTop !== top) {
+        rowEl.masuTop = top;
+        rowEl.style.transform = `translateY(${top}px)`;
       }
       this.fillRow(rowEl, index, this.cache.get(index) ?? this.stale?.get(index) ?? null);
       this.markRow(rowEl, index, selection);
@@ -351,6 +386,7 @@ export class Grid {
     this.markHeader(selection);
     this.updateActiveDescendant();
     if (this.editor) this.editor.input.style.insetInlineStart = `${this.colLeft(this.editor.col)}px`;
+    this.placeDetails(headHeight);
     this.drawPeople();
     this.reportCursor();
     this.cache.evict(this.cache.blockOf(first));
@@ -429,6 +465,7 @@ export class Grid {
         cell.textContent = this.formatters[col](value);
         cell.classList.toggle("masu-null", value === null);
       }
+      if (col === 0) this.decorateFirstCell(cell, row);
 
       const key = row === null ? "" : cellKey(row[0], column.key);
       const error = row === null ? undefined : this.errors.get(key);
@@ -446,6 +483,186 @@ export class Grid {
         cell.removeAttribute("aria-invalid");
       }
     });
+
+    // A row of a tree says where it is.
+    const node = row === null ? null : this.nodeOf(row);
+    if (node) {
+      rowEl.setAttribute("aria-level", String(node.level + 1));
+      rowEl.setAttribute("aria-posinset", String(node.position));
+      rowEl.setAttribute("aria-setsize", String(node.size));
+      if (node.children) rowEl.setAttribute("aria-expanded", String(node.expanded));
+      else rowEl.removeAttribute("aria-expanded");
+    } else {
+      for (const name of ["aria-level", "aria-posinset", "aria-setsize", "aria-expanded"]) rowEl.removeAttribute(name);
+    }
+  }
+
+  /** The place in the tree of a row (Masu.Tree), after its cells and its read-only cells. */
+  private nodeOf(row: Row): TreeNode | null {
+    if (!this.config.tree) return null;
+    const meta = (row as unknown[])[this.columns.length + 1 + (this.config.locks ? 1 : 0)];
+    if (!Array.isArray(meta)) return null;
+    const [level, children, expanded, position, size] = meta as [number, boolean, boolean, number, number];
+    return { level, children, expanded, position, size };
+  }
+
+  /** The first cell of a row: its indent and arrow in a tree, the arrow of its detail. */
+  private decorateFirstCell(cell: HTMLElement, row: Row | null): void {
+    if (!this.config.tree && !this.config.detail) return;
+    const node = row === null ? null : this.nodeOf(row);
+    cell.classList.toggle("masu-tree-cell", node !== null);
+    if (node) cell.style.setProperty("--masu-level", String(node.level));
+    else cell.style.removeProperty("--masu-level");
+    if (row === null) return;
+
+    if (this.config.detail) {
+      const toggle = document.createElement("span");
+      toggle.className = "masu-detail-toggle";
+      toggle.setAttribute("aria-hidden", "true");
+      toggle.dataset.open = String(this.openDetails().has(JSON.stringify(row[0])));
+      cell.prepend(toggle);
+    }
+    if (node) {
+      const twisty = document.createElement("span");
+      twisty.className = "masu-twisty";
+      twisty.setAttribute("aria-hidden", "true");
+      twisty.dataset.state = node.children ? (node.expanded ? "open" : "closed") : "leaf";
+      cell.prepend(twisty);
+    }
+  }
+
+  /** The ids of the rows whose detail is open (as JSON). */
+  private openDetails(): Set<string> {
+    return new Set((this.config.details ?? []).map(([id]) => JSON.stringify(id)));
+  }
+
+  /** The top of a row, under the details open above it. */
+  private rowTop(index: number): number {
+    return rowTop(index, this.config.rowHeight, this.gaps);
+  }
+
+  /** The row at the top of the screen. */
+  private indexAtTop(): number {
+    return indexAt(this.gridEl.scrollTop, this.config.rowHeight, this.gaps);
+  }
+
+  /** The first row the screen shows whole: where one who follows this person starts. */
+  private firstWholeRow(): number {
+    const index = this.indexAtTop();
+    return this.rowTop(index) < this.gridEl.scrollTop ? index + 1 : index;
+  }
+
+  // Details: the server renders the open ones (the `:detail` slot) in the
+  // scroll box; the browser places each under its row, at the start of
+  // the screen, as wide as the screen, and moves the rows under it down by
+  // its height.
+
+  /** Reads the open details and their heights. */
+  private measureDetails(): void {
+    if (!this.detailsEl) return;
+    const els = new Map<string, HTMLElement>();
+    for (const el of this.detailsEl.children) {
+      if (el instanceof HTMLElement && el.dataset.id) els.set(el.dataset.id, el);
+    }
+    const before = JSON.stringify(this.gaps.map((gap) => [gap.index, gap.height]));
+    const width = `${this.gridEl.clientWidth}px`;
+    this.gaps = (this.config.details ?? [])
+      .flatMap(([id, index]) => {
+        const el = els.get(JSON.stringify(id));
+        if (!el) return [];
+        setStyle(el, "width", width);
+        return [{ index, height: el.offsetHeight, el }];
+      })
+      .sort((a, b) => a.index - b.index);
+
+    this.detailObserver ??= new ResizeObserver(() => {
+      const heights = JSON.stringify(this.gaps.map((gap) => gap.el.offsetHeight));
+      if (heights === JSON.stringify(this.gaps.map((gap) => gap.height))) return;
+      this.measureDetails();
+    });
+    this.detailObserver.disconnect();
+    for (const gap of this.gaps) this.detailObserver.observe(gap.el);
+    this.observeDetailStyles();
+
+    if (JSON.stringify(this.gaps.map((gap) => [gap.index, gap.height])) !== before) {
+      for (const rowEl of this.rows.values()) rowEl.masuRow = undefined;
+      this.render();
+    }
+  }
+
+  private placeDetails(headHeight: number): void {
+    const rh = this.config.rowHeight;
+    const left = Math.abs(this.gridEl.scrollLeft);
+    for (const gap of this.gaps) {
+      setStyle(gap.el, "transform", `translate(${left}px, ${headHeight + this.rowTop(gap.index) + rh}px)`);
+    }
+  }
+
+  /**
+   * The server renders the scroll box and the details again: what the
+   * browser set on them (the active cell, the details' places) is set
+   * again, before the screen is drawn.
+   */
+  private watchPatches(): void {
+    this.patchObserver = new MutationObserver((records) => {
+      if (records.some((record) => record.target === this.gridEl && record.attributeName === "aria-activedescendant")) {
+        this.updateActiveDescendant();
+      }
+      if (records.some((record) => record.target !== this.gridEl)) this.measureDetails();
+      this.placeDetails(this.head.offsetHeight);
+    });
+    this.patchObserver.observe(this.gridEl, { attributes: true, attributeFilter: ["aria-activedescendant"] });
+    if (this.detailsEl) this.patchObserver.observe(this.detailsEl, { childList: true, attributes: true, subtree: false });
+    this.observeDetailStyles();
+  }
+
+  /** Each detail's style, which a render of the server takes away. */
+  private observeDetailStyles(): void {
+    if (!this.detailsEl || !this.patchObserver) return;
+    for (const el of this.detailsEl.children) {
+      this.patchObserver.observe(el, { attributes: true, attributeFilter: ["style"] });
+    }
+  }
+
+  /** Whether an event comes from a detail (which may hold a grid of its own). */
+  private inDetail(target: EventTarget | null): boolean {
+    return this.detailsEl !== null && target instanceof Node && this.detailsEl.contains(target);
+  }
+
+  /** Opens or closes a row of the tree, or every row beside it (`*`). */
+  private toggleNode(index: number, open: boolean, siblings = false): void {
+    const row = this.cache.get(index) ?? this.stale?.get(index);
+    if (!row) return;
+    // The rows under it move: the old ones are of no use.
+    this.freshRows = true;
+    const from = Math.max(0, this.indexAtTop() - OVERSCAN);
+    this.transport.push("masu:toggle", { id: row[0], open, siblings, from }, (reply) => {
+      const answer = reply as unknown as BlockReply | null;
+      if (answer?.rows) this.takeBlock(answer);
+    });
+  }
+
+  /** Opens or closes the detail of a row. */
+  private toggleDetail(index: number, open?: boolean): void {
+    const row = this.cache.get(index) ?? this.stale?.get(index);
+    if (!row || !this.config.detail) return;
+    const isOpen = this.openDetails().has(JSON.stringify(row[0]));
+    const next = open ?? !isOpen;
+    if (next === isOpen) return;
+    this.transport.push("masu:detail", { id: row[0], open: next });
+    this.announce(this.message(next ? "detail_shown" : "detail_hidden", {}));
+  }
+
+  /** Moves the focus into the open detail of a row: its first control, or the detail. */
+  private focusDetail(index: number): boolean {
+    const gap = this.gaps.find((g) => g.index === index);
+    if (!gap) return false;
+    const target =
+      gap.el.querySelector<HTMLElement>('.masu-grid, a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])') ??
+      gap.el;
+    if (target === gap.el) gap.el.tabIndex = -1;
+    target.focus();
+    return true;
   }
 
   private flashing(id: unknown): { color: string | undefined } | null {
@@ -481,8 +698,9 @@ export class Grid {
   private updateActiveDescendant(): void {
     const id =
       this.active.row === -1 ? `${this.id}-h${this.active.col}` : `${this.id}-r${this.active.row}-c${this.active.col}`;
-    if (document.getElementById(id) && this.total + 1 > 0) this.gridEl.setAttribute("aria-activedescendant", id);
-    else this.gridEl.removeAttribute("aria-activedescendant");
+    // Set only when it changes: the patch watcher hears every set.
+    if (document.getElementById(id) && this.total + 1 > 0) setAttribute(this.gridEl, "aria-activedescendant", id);
+    else if (this.gridEl.hasAttribute("aria-activedescendant")) this.gridEl.removeAttribute("aria-activedescendant");
   }
 
   private renderHeader(): void {
@@ -637,14 +855,14 @@ export class Grid {
   }
 
   private applyWidths(): void {
-    this.gridEl.style.setProperty("--masu-cols", this.widths.map((width) => `${width}px`).join(" "));
-    this.gridEl.style.setProperty("--masu-width", `${this.widths.reduce((a, b) => a + b, 0)}px`);
+    this.contentEl.style.setProperty("--masu-cols", this.widths.map((width) => `${width}px`).join(" "));
+    this.contentEl.style.setProperty("--masu-width", `${this.widths.reduce((a, b) => a + b, 0)}px`);
     this.pinned = pins(
       this.columns.map((column) => column.pinned ?? null),
       this.widths,
     );
     for (const [col, offset] of [...this.pinned.start, ...this.pinned.end]) {
-      this.gridEl.style.setProperty(`--masu-pin-${col}`, `${offset}px`);
+      this.contentEl.style.setProperty(`--masu-pin-${col}`, `${offset}px`);
     }
   }
 
@@ -725,10 +943,19 @@ export class Grid {
 
   private listen(): void {
     this.on(this.gridEl, "scroll", () => this.schedule(), { passive: true });
-    this.on(this.gridEl, "keydown", (event) => this.onKeyDown(event));
-    this.on(this.gridEl, "mousedown", (event) => this.onMouseDown(event));
-    this.on(this.gridEl, "dblclick", (event) => this.onDoubleClick(event));
+    // A detail's own keys and clicks are its own (it may hold a grid).
+    this.on(this.gridEl, "keydown", (event) => {
+      if (this.inDetail(event.target)) this.onDetailKey(event);
+      else this.onKeyDown(event);
+    });
+    this.on(this.gridEl, "mousedown", (event) => {
+      if (!this.inDetail(event.target)) this.onMouseDown(event);
+    });
+    this.on(this.gridEl, "dblclick", (event) => {
+      if (!this.inDetail(event.target)) this.onDoubleClick(event);
+    });
     this.on(this.gridEl, "click", (event) => {
+      if (this.inDetail(event.target)) return;
       const button = (event.target as HTMLElement).closest<HTMLElement>(".masu-filter-button");
       if (!button) return;
       const col = Number(button.dataset.col);
@@ -738,7 +965,7 @@ export class Grid {
     this.on(this.chipsEl, "click", (event) => this.onChipClick(event));
     this.on(this.el, "click", (event) => {
       const person = (event.target as HTMLElement).closest<HTMLElement>(".masu-person[data-person]");
-      if (person) this.toggleFollow(person.dataset.person!);
+      if (person && person.closest(".masu") === this.el) this.toggleFollow(person.dataset.person!);
     });
     // The person's own scrolling, clicking or typing ends a follow.
     for (const type of ["wheel", "touchstart", "mousedown", "keydown"] as const) {
@@ -795,6 +1022,7 @@ export class Grid {
   private onKeyDown(event: KeyboardEvent): void {
     const mod = event.ctrlKey || event.metaKey;
     if (this.editor) return;
+    if (this.onRowKey(event, mod)) return;
     if (this.onEditKey(event, mod)) return;
 
     if (mod && event.key.toLowerCase() === "a") {
@@ -808,6 +1036,8 @@ export class Grid {
     }
 
     if (event.key === "Escape" && this.anchor) {
+      // Taken: a grid around this one (in a detail) leaves the focus here.
+      event.preventDefault();
       this.anchor = null;
       this.render();
       return;
@@ -851,8 +1081,99 @@ export class Grid {
     this.render();
   }
 
+  /**
+   * The keys of a row: in a tree, → opens the row of the active cell of the
+   * first column, ← closes it (or goes to its parent), * opens every row
+   * beside it; Alt+→ and Alt+← open and close a row's detail, Alt+↓ goes
+   * into it.
+   */
+  private onRowKey(event: KeyboardEvent, mod: boolean): boolean {
+    const { row, col } = this.active;
+    if (row < 0 || mod) return false;
+    const data = this.cache.get(row) ?? this.stale?.get(row);
+    if (!data) return false;
+
+    if (event.altKey && this.config.detail) {
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        this.toggleDetail(row, event.key === "ArrowRight");
+        return true;
+      }
+      if (event.key === "ArrowDown" && this.focusDetail(row)) {
+        event.preventDefault();
+        return true;
+      }
+    }
+
+    const node = this.nodeOf(data);
+    if (!node || col !== 0 || event.altKey) return false;
+    // * takes Shift on most keyboards; the arrows with Shift select.
+    if (event.key === "*") {
+      event.preventDefault();
+      this.toggleNode(row, true, true);
+      return true;
+    }
+    if (event.shiftKey) return false;
+    if (event.key === "ArrowRight" && node.children && !node.expanded) {
+      event.preventDefault();
+      this.toggleNode(row, true);
+      return true;
+    }
+    if (event.key === "ArrowLeft") {
+      if (node.children && node.expanded) {
+        event.preventDefault();
+        this.toggleNode(row, false);
+        return true;
+      }
+      if (node.level > 0) {
+        // To the parent: the row above with a smaller level.
+        for (let index = row - 1; index >= 0; index--) {
+          const above = this.cache.get(index) ?? this.stale?.get(index);
+          const aboveNode = above ? this.nodeOf(above) : null;
+          if (aboveNode && aboveNode.level < node.level) {
+            event.preventDefault();
+            this.active = { row: index, col };
+            this.anchor = null;
+            this.ensureVisible(this.active);
+            this.render();
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Escape in a detail gives the focus back to its row. */
+  private onDetailKey(event: KeyboardEvent): void {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    const gap = this.gaps.find((g) => g.el.contains(event.target as Node));
+    if (!gap) return;
+    event.preventDefault();
+    this.active = { row: gap.index, col: Math.max(0, this.active.col) };
+    this.anchor = null;
+    this.gridEl.focus({ preventScroll: true });
+    this.ensureVisible(this.active);
+    this.render();
+  }
+
   private onMouseDown(event: MouseEvent): void {
     const target = event.target as HTMLElement;
+    // The arrow of a tree's row, and of a detail.
+    const arrow = target.closest<HTMLElement>(".masu-twisty, .masu-detail-toggle");
+    if (arrow) {
+      const cell = this.cellAt(arrow);
+      if (cell) {
+        event.preventDefault();
+        this.gridEl.focus({ preventScroll: true });
+        this.active = cell;
+        this.anchor = null;
+        this.render();
+        if (arrow.classList.contains("masu-detail-toggle")) this.toggleDetail(cell.row);
+        else if (arrow.dataset.state !== "leaf") this.toggleNode(cell.row, arrow.dataset.state === "closed");
+        return;
+      }
+    }
     if (target.closest("a, button, input, select, textarea, label, [contenteditable]")) return;
 
     const resizer = target.closest<HTMLElement>(".masu-resizer");
@@ -916,7 +1237,7 @@ export class Grid {
   private cellAt(element: HTMLElement): Cell | null {
     const cellEl = element.closest<HTMLElement>(".masu-cell");
     const rowEl = cellEl?.parentElement as RowElement | null;
-    if (!cellEl || !rowEl || rowEl.masuIndex === undefined) return null;
+    if (!cellEl || !rowEl || rowEl.masuIndex === undefined || rowEl.parentElement !== this.body) return null;
     return { row: rowEl.masuIndex, col: Array.prototype.indexOf.call(rowEl.children, cellEl) };
   }
 
@@ -976,7 +1297,7 @@ export class Grid {
 
   /** Tells the server of a change of layout, with where the screen starts. */
   private sendLayout(changes: { order?: string[]; hidden?: string[]; pinned?: Record<string, string>; widths?: Record<string, number> }): void {
-    const from = Math.max(0, Math.floor(this.gridEl.scrollTop / this.config.rowHeight) - OVERSCAN);
+    const from = Math.max(0, this.indexAtTop() - OVERSCAN);
     this.transport.push("masu:layout", { ...changes, from }, (reply) => {
       const answer = reply as unknown as BlockReply | null;
       if (answer?.rows) this.takeBlock(answer);
@@ -1073,11 +1394,11 @@ export class Grid {
     const wanted = this.config.columnsMenu || this.config.views !== null;
     if (!wanted && !this.columnsButton && !this.viewsButton) return;
 
-    let toolbar = this.el.querySelector<HTMLElement>(".masu-toolbar");
+    let toolbar = this.uiEl.querySelector<HTMLElement>(":scope > .masu-toolbar");
     if (!toolbar) {
       toolbar = document.createElement("div");
       toolbar.className = "masu-toolbar";
-      this.chipsEl.before(toolbar);
+      this.uiEl.prepend(toolbar);
     }
     let actions = toolbar.querySelector<HTMLElement>(".masu-toolbar-actions");
     if (!actions) {
@@ -1260,7 +1581,7 @@ export class Grid {
     if (column.type === "integer" || column.type === "number" || column.type === "decimal") input.inputMode = "decimal";
     input.setAttribute("aria-label", column.label);
     input.value = text ?? inputText(column.type, raw);
-    input.style.transform = `translateY(${cell.row * this.config.rowHeight}px)`;
+    input.style.transform = `translateY(${this.rowTop(cell.row)}px)`;
     input.style.insetInlineStart = `${this.colLeft(cell.col)}px`;
     input.style.width = `${this.widths[cell.col]}px`;
     input.style.height = `${this.config.rowHeight}px`;
@@ -1547,7 +1868,7 @@ export class Grid {
         const el = document.createElement("div");
         el.className = "masu-peer-range";
         el.style.setProperty("--masu-peer-color", person.color);
-        el.style.transform = `translateY(${index * this.config.rowHeight}px)`;
+        el.style.transform = `translateY(${this.rowTop(index)}px)`;
         el.style.insetInlineStart = `${left}px`;
         el.style.width = `${width}px`;
         el.style.height = `${this.config.rowHeight}px`;
@@ -1566,7 +1887,7 @@ export class Grid {
       const el = document.createElement("div");
       el.className = `masu-peer${person.editing ? " masu-peer-editing" : ""}${index === 0 ? " masu-peer-top" : ""}`;
       el.style.setProperty("--masu-peer-color", person.color);
-      el.style.transform = `translateY(${index * this.config.rowHeight}px)`;
+      el.style.transform = `translateY(${this.rowTop(index)}px)`;
       el.style.insetInlineStart = `${this.colLeft(col)}px`;
       if (this.columns[col].pinned) el.classList.add("masu-peer-pinned");
       el.style.width = `${this.widths[col]}px`;
@@ -1720,7 +2041,7 @@ export class Grid {
       }
       // Their screen's first row first, then their cell, if this screen
       // is smaller than theirs.
-      this.gridEl.scrollTop = index * this.config.rowHeight;
+      this.gridEl.scrollTop = this.rowTop(index);
       this.render();
       const cell = person.cell ? this.indexOf(person.cell[0]) : undefined;
       if (cell !== undefined) this.scrollToCell(cell, Math.max(col, 0));
@@ -1750,7 +2071,7 @@ export class Grid {
   private scrollToCell(index: number, col: number): void {
     const rh = this.config.rowHeight;
     const view = this.gridEl.clientHeight - this.head.offsetHeight;
-    const top = index * rh;
+    const top = this.rowTop(index);
     if (top < this.gridEl.scrollTop || top + rh > this.gridEl.scrollTop + view) {
       this.gridEl.scrollTop = Math.max(0, top - (view - rh) / 2);
     }
@@ -1786,7 +2107,7 @@ export class Grid {
       this.followEl = document.createElement("div");
       this.followEl.className = "masu-following";
       this.followEl.setAttribute("role", "status");
-      this.gridEl.before(this.followEl);
+      this.uiEl.appendChild(this.followEl);
     }
     const name = person.name ?? person.id;
     const words = this.message(kind, { label: name });
@@ -1818,7 +2139,7 @@ export class Grid {
 
   /** The avatar of the person followed is pressed. */
   private markFollowed(): void {
-    for (const el of this.el.querySelectorAll<HTMLElement>(".masu-person[data-person]")) {
+    for (const el of this.el.querySelectorAll<HTMLElement>(":scope > .masu-people .masu-person[data-person]")) {
       el.setAttribute("aria-pressed", el.dataset.person === this.following ? "true" : "false");
     }
   }
@@ -1832,7 +2153,7 @@ export class Grid {
       const cell = data ? [data[0], this.columns[this.active.col].key] : null;
       const range = this.rangeForOthers();
       // The first row on the screen, for those who follow this person.
-      const first = this.cache.get(Math.ceil(this.gridEl.scrollTop / this.config.rowHeight));
+      const first = this.cache.get(this.firstWholeRow());
       const top = first ? first[0] : null;
       const cursor = JSON.stringify([cell, range, this.editor !== null, top]);
       if (cursor === this.sentCursor) return;
@@ -1907,7 +2228,7 @@ export class Grid {
     const rh = this.config.rowHeight;
     const headHeight = this.head.offsetHeight;
     if (cell.row >= 0) {
-      const top = cell.row * rh;
+      const top = this.rowTop(cell.row);
       const bottom = top + rh;
       const viewTop = this.gridEl.scrollTop;
       const viewBottom = viewTop + this.gridEl.clientHeight - headHeight;
@@ -1938,6 +2259,15 @@ export class Grid {
   private announce(text: string): void {
     if (this.statusEl) this.statusEl.textContent = text;
   }
+}
+
+/** Sets a style property when it changes: the patch watcher hears every set. */
+function setStyle(el: HTMLElement, name: string, value: string): void {
+  if (el.style.getPropertyValue(name) !== value) el.style.setProperty(name, value);
+}
+
+function setAttribute(el: HTMLElement, name: string, value: string): void {
+  if (el.getAttribute(name) !== value) el.setAttribute(name, value);
 }
 
 function keysOf(columns: ColumnConfig[]): string {
@@ -2025,6 +2355,8 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   moved: "{label} moved",
   views_menu: "Views",
   views_current: "Views: {label}",
+  detail_shown: "Details shown",
+  detail_hidden: "Details hidden",
   view_reset: "The grid's own view",
   view_name: "Name this view",
   view_share: "Share with everyone",

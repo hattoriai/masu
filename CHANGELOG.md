@@ -62,6 +62,16 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Masu.Test.place/3`).
   Each person's selected range shows to the others in their color. A
   refused edit names who changed the cell: "Changed by Ada meanwhile."
+- Trees and details (`Masu.Tree`): `tree={:parent_id}` shows rows in a
+  tree (a `treegrid`), opened and closed with their arrow, →, ← and `*`,
+  as one list of the rows that are open: a tree of twenty thousand rows
+  scrolls as a list does. Siblings sort among themselves, and a filter
+  keeps its matches and their ancestors. Both sources take it; the Ecto
+  source reads the children of a row when it opens. A `:detail` slot
+  opens a row on anything rendered by the server under it (another
+  `data_grid` too), with Alt+→/←, Alt+↓ into it and Escape out.
+  `Masu.Test.nodes/3`, `expand/3`, `collapse/3`, `expand_siblings/3` and
+  `detail/4`.
 - Layout and views: `pinned={:start | :end}` and `hidden` on a `:col`;
   columns that move by dragging their header (or Alt+Shift+←/→), and a
   columns menu (`columns_menu`) to show, hide, pin and move them. A
