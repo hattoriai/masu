@@ -173,18 +173,12 @@ if Code.ensure_loaded?(Ecto.Query) do
 
       {ecto, order} = order(ecto, query.sorts, columns, state.primary_key)
 
-      count =
-        ecto
-        |> exclude(:order_by)
-        |> exclude(:preload)
-        |> subquery()
-        |> select(count())
-        |> state.repo.one(state.repo_opts)
-
+      # The count is asked for when the grid wants it (it may not): a
+      # count(*) can be the slowest query of all.
       %{
         state
         | query: ecto,
-          count: count,
+          count: :later,
           order: order,
           segments: nil,
           totals: totals_of(state, query, columns),
@@ -395,6 +389,16 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     @impl true
     def count(%{count: nil} = state), do: state |> prepare(%Query{}, []) |> count()
+
+    def count(%{count: :later, query: ecto} = state) do
+      ecto
+      |> exclude(:order_by)
+      |> exclude(:preload)
+      |> subquery()
+      |> select(count())
+      |> state.repo.one(state.repo_opts)
+    end
+
     def count(%{count: count}), do: count
 
     @impl true

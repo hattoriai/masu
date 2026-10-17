@@ -52,6 +52,9 @@ it changes, so a link reproduces what the person sees:
 /orders?orders[sort]=-total&orders[q]=acme&orders[group]=status&orders[hide]=notes,seats&orders[pin]=number:start
 ```
 
+A grid of pages (`paging={:pages}`) keeps its page there too,
+`orders[page]=3`.
+
 Only what differs from the grid's own view (of its attributes) is in the
 params (see `Masu.View` for each of them), and the URL is replaced, not
 pushed: a sort is not a step of the browser's history. A link opened

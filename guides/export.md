@@ -144,10 +144,52 @@ with the primary key as the last sort, which the grid always adds. A
 query with its own `order_by` (and no sort of the person's) is read by
 `OFFSET`.
 
+## Large tables: counts
+
+A grid counts its rows to scroll over them all, and a count can be the
+slowest query of all: a `count(*)` of an ad-hoc query, a scan of a
+warehouse. `count` says when the grid counts:
+
+| `count` | The grid |
+| --- | --- |
+| `:exact` (the default) | counts with each query |
+| `:deferred` | shows the first rows, then counts in a task: the first screen does not wait for the count |
+| `:none` | does not count, until the person goes to the end (Ctrl+End, or the scrollbar's end), once |
+
+```heex
+<.data_grid id="events" source={Event} repo={Repo} count={:none}>
+```
+
+Until it knows the count, the grid scrolls over the rows it read and a
+block more, and grows as a block comes back full; a block that comes
+back short says where the rows end. A screen reader hears that the count
+is not known (`aria-rowcount="-1"`), and the status says "1,000+ rows".
+A source of your own may not know its count either (`{:at_least, n}`,
+`:unknown`), or know it with its rows; see [Sources](sources.md).
+
+## Pages
+
+The grid scrolls by default. `paging={:pages}` shows a page of rows at a
+time, with a pager under the grid: "1–50 of 1,234", Previous and Next,
+and a page to go to:
+
+```heex
+<.data_grid id="report" source={Order} repo={Repo} paging={:pages} page_size={50} url>
+```
+
+Each page is a block of the source, as the grid reads any rows: a page
+needs nothing of a source. The page is part of the person's view (in the
+URL with `url`, in saved views, `"page" => "3"`); a new order, filter or
+search goes to the first page. Without a count, the pager says "1–50 of
+1,000+" and has a next page while the page is full. New rows (`create`)
+go on the last page.
+
 ## Testing
 
 `Masu.Test.export/4` exports a grid as its menu does, downloads the file
 through your router's route, and gives it (`{name, binary}`);
 `Masu.Test.export_url/3` gives the link, to test the route's pipeline.
 `Masu.Test.select/4`, `select_all/3` and `selection/2` select rows and
-read the selection.
+read the selection. `Masu.Test.count/2` says what a grid knows of its
+count, `ask_count/2` asks for it as Ctrl+End does, and `page/3` goes to
+a page.

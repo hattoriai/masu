@@ -179,6 +179,20 @@ defmodule Masu.Components do
     default: [],
     doc: "with `tree`: the ids of the rows that start open"
 
+  attr :count, :atom,
+    default: :exact,
+    values: [:exact, :deferred, :none],
+    doc:
+      "how the grid counts its rows: `:exact` with the query, `:deferred` after the first rows (in a task), `:none` only when the person goes to the end; see the Export, selection and large tables guide"
+
+  attr :paging, :atom,
+    default: :scroll,
+    values: [:scroll, :pages],
+    doc:
+      "`:pages` shows a page of rows at a time, with a pager below the grid, and the page in the view"
+
+  attr :page_size, :integer, default: 50, doc: "with `paging={:pages}`: the rows of a page"
+
   attr :row_id, :any,
     default: nil,
     doc: "a function that gives a row's id; the `id` of the row unless given"
@@ -203,7 +217,8 @@ defmodule Masu.Components do
 
   attr :messages, :map,
     default: %{},
-    doc: "words that replace the built-in ones (`search`, `empty`, `rows`, `loading`)"
+    doc:
+      "words that replace the built-in ones (`search`, `empty`, `rows`, `loading`; the pager's `previous`, `next`, `page`, `of_pages`, `range`)"
 
   attr :class, :any, default: nil, doc: "classes for the grid element"
   attr :rest, :global, doc: "attributes for the grid element"
@@ -286,6 +301,9 @@ defmodule Masu.Components do
       person={@person}
       on_save={@on_save}
       row_id={@row_id}
+      count={@count}
+      paging={@paging}
+      page_size={@page_size}
       sort={@sort}
       filters={@filters}
       searchable={@searchable}
