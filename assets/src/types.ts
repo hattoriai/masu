@@ -92,6 +92,10 @@ export interface Person {
   /** The range they selected: its rows' ids and its columns' keys. */
   range: { rows: unknown[]; keys: string[] } | null;
   editing: boolean;
+  /** Their order, filters and search; null when their grid keeps them (`share_view={false}`). */
+  view: QuerySpec | null;
+  /** The id of the first row on their screen. */
+  top: unknown;
 }
 
 export interface Options {

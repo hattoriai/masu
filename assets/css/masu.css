@@ -739,6 +739,13 @@ button.masu-person:focus-visible {
   outline: none;
 }
 
+/* While following, the filters shown are the followed person's: their
+   chips take that person's color. */
+.masu[data-following] .masu-chip {
+  border-color: var(--masu-follow-color, var(--masu-accent));
+  background: color-mix(in oklab, var(--masu-follow-color, var(--masu-accent)) 10%, var(--masu-surface));
+}
+
 /* A person's selected range: a wash in their color. */
 .masu-peer-range {
   position: absolute;

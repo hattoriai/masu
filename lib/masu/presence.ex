@@ -52,9 +52,10 @@ defmodule Masu.Presence do
 
   The avatars are HEEx: give the grid a `:person` slot to draw them with
   your own component; it gets each person as a map with `:id`, `:name`,
-  `:color`, `:avatar`, `:initials`, `:cell`, `:range` and `:editing`. Each
-  avatar is a button that follows the person (their cell stays in view,
-  in this person's own order):
+  `:color`, `:avatar`, `:initials`, `:cell`, `:range`, `:editing`, `:view`
+  and `:top`. Each avatar is a button that follows the person: the grid
+  shows their order, filters and search (unless their grid has
+  `share_view={false}`) and keeps their place in view:
 
       <:person :let={person}>
         <.avatar src={person.avatar} name={person.name} ring={person.color} />
@@ -84,7 +85,9 @@ defmodule Masu.Presence do
           initials: String.t(),
           cell: [term()] | nil,
           range: map() | nil,
-          editing: boolean()
+          editing: boolean(),
+          view: map() | nil,
+          top: term()
         }
 
   @doc """
@@ -108,26 +111,34 @@ defmodule Masu.Presence do
   def topic(live_topic), do: "masu:presence:" <> live_topic
 
   @doc false
-  # The meta of this LiveView's user, as the grid tracks it.
-  @spec meta(map()) :: map()
-  def meta(%{id: _id} = user) do
+  # The meta of this LiveView's user, as the grid tracks it: who they are,
+  # and their view (the query's wire form), or nil when the grid keeps it
+  # to itself (`share_view={false}`).
+  @spec meta(map(), map() | nil) :: map()
+  def meta(user, view \\ nil)
+
+  def meta(%{id: _id} = user, view) do
     %{
       name: Map.get(user, :name),
       color: color(user),
       avatar: Map.get(user, :avatar),
       cell: nil,
       range: nil,
-      editing: false
+      editing: false,
+      view: view,
+      top: nil
     }
   end
 
-  def meta(user),
+  def meta(user, _view),
     do: raise(ArgumentError, "a Masu grid's user is a map with an :id, got: #{inspect(user)}")
 
   @doc false
-  @spec track(module(), String.t(), map()) :: :ok
-  def track(presence, live_topic, user) do
-    {:ok, _ref} = presence.track(self(), topic(live_topic), to_string(user.id), meta(user))
+  @spec track(module(), String.t(), map(), map() | nil) :: :ok
+  def track(presence, live_topic, user, view \\ nil) do
+    {:ok, _ref} =
+      presence.track(self(), topic(live_topic), to_string(user.id), meta(user, view))
+
     :ok
   end
 
@@ -138,15 +149,13 @@ defmodule Masu.Presence do
   end
 
   @doc false
-  # Where this LiveView's user is now: a cell ([row id, column key]) or
-  # nil, the range they selected (`%{"rows" => ids, "keys" => keys}`, or
-  # nil), and whether they are editing the cell.
-  @spec move(module(), String.t(), map(), [term()] | nil, map() | nil, boolean()) :: :ok
-  def move(presence, live_topic, user, cell, range, editing) do
+  # Where this LiveView's user is now, any of: `cell` ([row id, column
+  # key] or nil), `range` (`%{"rows" => ids, "keys" => keys}` or nil),
+  # `editing`, `top` (the id of the first row on their screen) and `view`.
+  @spec update(module(), String.t(), map(), map()) :: :ok
+  def update(presence, live_topic, user, changes) do
     {:ok, _ref} =
-      presence.update(self(), topic(live_topic), to_string(user.id), fn meta ->
-        Map.merge(meta, %{cell: cell, range: range, editing: editing})
-      end)
+      presence.update(self(), topic(live_topic), to_string(user.id), &Map.merge(&1, changes))
 
     :ok
   end
@@ -169,7 +178,9 @@ defmodule Masu.Presence do
         initials: initials(meta.name || id),
         cell: meta.cell,
         range: Map.get(meta, :range),
-        editing: meta.editing
+        editing: meta.editing,
+        view: Map.get(meta, :view),
+        top: Map.get(meta, :top)
       }
     end
     |> Enum.sort_by(&{&1.name || "", &1.id})

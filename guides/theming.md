@@ -90,5 +90,5 @@ the active cell a line of it.
 | `.masu-people`, `.masu-person`, `.masu-initials`, `.masu-people-more` | the avatars of the others; each has `--masu-peer-color` |
 | `.masu-peer`, `.masu-peer-label`, `.masu-peer-editing`, `.masu-peer-top` | another person's cell, their name, while they type, on the first row; with `--masu-peer-color` |
 | `.masu-peer-range` | another person's selected range, a row at a time; with `--masu-peer-color` |
-| `.masu[data-following]`, `.masu-following`, `.masu-following-stop` | following a person: the grid (with `--masu-follow-color`), the banner, its Stop button; the avatar has `aria-pressed="true"` |
+| `.masu[data-following]`, `.masu-following`, `.masu-following-stop` | following a person: the grid (with `--masu-follow-color`; its `.masu-chip`s take the color), the banner (`data-kind`: `following`, `follow_hidden`, `their_view`), its button; the avatar has `aria-pressed="true"` |
 | `.masu-changed` | a row that changed on the grid's topic, for a moment (see [Live rows](live.md)) |

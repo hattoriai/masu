@@ -52,9 +52,14 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   filters), a cell someone types in as "Ada is typing" and locked for the
   others, and the rows they save flash in their color. `configure/1` of
   the bundle draws the labels; CSS for the rest.
-- Following a person: a click on their avatar keeps their cell in view in
-  this person's own order (`c:Masu.Source.locate/3`, a `row_number()`
-  window for Ecto; `Masu.Test.place/3`), until this person scrolls.
+- Following a person: a click on their avatar shows their view (order,
+  filters, search) and keeps their place in it on the screen; Stop brings
+  back one's own view and place, and taking over (scrolling, clicking,
+  typing) keeps theirs, with "Back to your view". `share_view={false}`
+  keeps a person's view to themselves; whoever follows them stays in
+  their own order, and the grid finds the person's row in it
+  (`c:Masu.Source.locate/3`, a `row_number()` window for Ecto;
+  `Masu.Test.place/3`).
   Each person's selected range shows to the others in their color. A
   refused edit names who changed the cell: "Changed by Ada meanwhile."
 - Live rows: `live={{pubsub, topic}}`, the `Masu.Live` hook, and

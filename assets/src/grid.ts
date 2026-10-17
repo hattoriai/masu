@@ -16,6 +16,7 @@ import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { nextSorts } from "./sorting";
 import { toTSV } from "./tsv";
+import { sameView } from "./view";
 import type { BlockReply, CellValue, ColumnConfig, Config, Options, Person, QuerySpec, Row, Transport } from "./types";
 
 const options: Options = {};
@@ -91,9 +92,20 @@ export class Grid {
   private people: Person[] = [];
   private peerEls: HTMLElement[] = [];
   private sentCursor = "null";
-  /** The person this person follows (Figma's follow): their cell stays in view. */
+  /** The person this person follows (Figma's follow): the grid shows their view, and their place in it. */
   private following: string | null = null;
+  /** The followed person as last seen, for the banner after they leave. */
+  private followed: Person | null = null;
+  /**
+   * The person's own view and place, kept while they follow someone, and
+   * after, while the grid still shows that person's view: "Back to your view".
+   */
+  private ownView: OwnView | null = null;
+  /** A view of someone else's that the server refused: not asked for again. */
+  private refusedView: string | null = null;
   private followEl: HTMLElement | null = null;
+  /** A query is on its way to the server. */
+  private querying = false;
   private cursorTimer: ReturnType<typeof setTimeout> | null = null;
   private requestTimer: ReturnType<typeof setTimeout> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -191,21 +203,34 @@ export class Grid {
 
   // The query: a new order, filters or search, applied by the server.
 
-  setQuery(query: QuerySpec): void {
+  /**
+   * Applies a view: the person's own (`self`), that of the person they
+   * follow (`follow`), or their own again (`restore`). `then` runs once the
+   * rows of the new view came.
+   */
+  setQuery(query: QuerySpec, origin: "self" | "follow" | "restore" = "self", then?: () => void): void {
+    // A view of the person's own ends following, and the view kept aside.
+    if (origin === "self") this.dropFollow();
+    else if (this.searchEl) this.searchEl.value = query.search ?? "";
+
     // The new query shows at once, so that a second click builds on the
     // first; only the answer to the last query asked for is applied.
     const previous = this.query;
     const sent = ++this.queries;
     this.query = query;
+    this.querying = true;
     this.renderHeader();
     this.el.classList.add("masu-busy");
 
     this.transport.push("masu:query", query, (reply) => {
       if (sent !== this.queries) return;
+      this.querying = false;
       this.el.classList.remove("masu-busy");
       const answer = reply as unknown as BlockReply;
       if (answer.error) {
+        if (origin === "follow") this.refusedView = JSON.stringify(query);
         this.query = previous;
+        if (origin !== "self" && this.searchEl) this.searchEl.value = previous.search ?? "";
         this.renderHeader();
         this.announce(answer.error);
         return;
@@ -222,7 +247,8 @@ export class Grid {
       this.renderHeader();
       this.clearRows();
       this.render();
-      this.announceCount();
+      if (origin === "self") this.announceCount();
+      then?.();
     });
   }
 
@@ -643,7 +669,7 @@ export class Grid {
     });
     // The person's own scrolling, clicking or typing ends a follow.
     for (const type of ["wheel", "touchstart", "mousedown", "keydown"] as const) {
-      this.on(this.gridEl, type, () => this.stopFollowing(), { passive: true });
+      this.on(this.gridEl, type, () => this.stopFollowing(false), { passive: true });
     }
     this.on(this.gridEl, "focus", () => this.schedule());
     this.on(document, "mousemove", (event) => this.onMouseMove(event));
@@ -1269,54 +1295,149 @@ export class Grid {
     return { rows, keys: this.columns.slice(range.left, range.right + 1).map((column) => column.key) };
   }
 
-  /** Follows a person (their cell stays in view), or stops following them. */
+  /**
+   * Follows a person, or stops following them. The grid shows their view
+   * (their order, filters and search, when their grid shares them) and
+   * keeps their place in it on the screen; the person's own view is kept
+   * aside, and comes back on Stop.
+   */
   toggleFollow(id: string): void {
-    if (this.following === id) this.stopFollowing();
+    if (this.following === id) {
+      this.stopFollowing(true);
+      return;
+    }
+    this.ownView ??= {
+      query: this.query,
+      scrollTop: this.gridEl.scrollTop,
+      scrollLeft: this.gridEl.scrollLeft,
+      active: { ...this.active },
+      anchor: this.anchor && { ...this.anchor },
+    };
+    this.following = id;
+    this.refusedView = null;
+    this.follow();
+  }
+
+  /**
+   * Stops following. Stop (`restore`) brings the person's own view back;
+   * their own scrolling, clicking or typing keeps the view they see, with
+   * "Back to your view" while it is not their own.
+   */
+  private stopFollowing(restore: boolean): void {
+    if (!this.following) return;
+    const person = this.followed;
+    this.following = null;
+    delete this.el.dataset.following;
+    this.markFollowed();
+
+    if (restore) this.backToOwnView();
+    else if (this.ownView && person && !sameView(this.ownView.query, this.query)) this.showBanner(person, "their_view");
     else {
-      this.following = id;
-      this.follow();
+      this.ownView = null;
+      this.removeBanner();
     }
   }
 
-  private stopFollowing(): void {
-    if (!this.following) return;
+  /** The person made a view of their own: nothing to go back to. */
+  private dropFollow(): void {
     this.following = null;
-    this.followEl?.remove();
-    this.followEl = null;
+    this.ownView = null;
     delete this.el.dataset.following;
-    this.el.style.removeProperty("--masu-follow-color");
+    this.removeBanner();
     this.markFollowed();
   }
 
-  /** Scrolls to the followed person's cell: in view already, or where the server says it is in this order. */
+  /** The person's own view and place again. */
+  private backToOwnView(): void {
+    const own = this.ownView;
+    this.ownView = null;
+    this.removeBanner();
+    if (!own) return;
+    const place = () => {
+      this.gridEl.scrollTop = own.scrollTop;
+      this.gridEl.scrollLeft = own.scrollLeft;
+      this.active = { row: Math.min(own.active.row, this.total - 1), col: own.active.col };
+      this.anchor = own.anchor;
+      this.render();
+    };
+    if (sameView(own.query, this.query)) place();
+    else this.setQuery(own.query, "restore", place);
+  }
+
+  /** Shows the followed person's view, then their place in it. */
   private follow(): void {
     const person = this.people.find((p) => p.id === this.following);
     if (!person) {
-      this.stopFollowing();
+      // They left: the grid keeps what it shows.
+      this.stopFollowing(false);
       return;
     }
+    this.followed = person;
     this.el.dataset.following = person.id;
     this.el.style.setProperty("--masu-follow-color", person.color);
-    this.showFollowing(person, null);
+    this.showBanner(person, "following");
     this.markFollowed();
-    if (!person.cell) return;
 
-    const [id, key] = person.cell;
-    const col = Math.max(0, this.columns.findIndex((column) => column.key === key));
-    const wanted = JSON.stringify(id);
-    for (const [index, rowEl] of this.rows) {
-      if (rowEl.masuRow && JSON.stringify(rowEl.masuRow[0]) === wanted) {
-        this.scrollToCell(index, col);
+    const view = person.view;
+    if (view && !sameView(view, this.query) && JSON.stringify(view) !== this.refusedView) {
+      this.setQuery(view, "follow", () => this.placeFollowed());
+      this.announceView(person, view);
+    } else if (!this.querying) {
+      this.placeFollowed();
+    }
+  }
+
+  /**
+   * Scrolls to the followed person's place: the first row of their screen
+   * when the grid shows their view, else their cell, where the server says
+   * it is in this person's order.
+   */
+  private placeFollowed(): void {
+    const person = this.people.find((p) => p.id === this.following);
+    if (!person) return;
+    const shared = person.view !== null && sameView(person.view, this.query);
+    const top = shared && person.top !== null && person.top !== undefined ? person.top : null;
+    const target = top ?? person.cell?.[0];
+    if (target === undefined || target === null) return;
+    const col = person.cell ? Math.max(0, this.columns.findIndex((column) => column.key === person.cell![1])) : -1;
+
+    const place = (index: number | null) => {
+      if (this.following !== person.id) return;
+      if (index === null) {
+        this.showBanner(person, "follow_hidden");
         return;
       }
+      if (top === null) {
+        this.scrollToCell(index, Math.max(col, 0));
+        return;
+      }
+      // Their screen's first row first, then their cell, if this screen
+      // is smaller than theirs.
+      this.gridEl.scrollTop = index * this.config.rowHeight;
+      this.render();
+      const cell = person.cell ? this.indexOf(person.cell[0]) : undefined;
+      if (cell !== undefined) this.scrollToCell(cell, Math.max(col, 0));
+    };
+
+    const index = this.indexOf(target);
+    if (index !== undefined) {
+      place(index);
+      return;
     }
     const revision = this.revision;
-    this.transport.push("masu:locate", { id }, (reply) => {
-      if (this.following !== person.id || reply.revision !== revision) return;
-      const index = reply.index as number | null;
-      if (index === null || index === undefined) this.showFollowing(person, "follow_hidden");
-      else this.scrollToCell(index, col);
+    this.transport.push("masu:locate", { id: target }, (reply) => {
+      if (reply.revision !== revision) return;
+      place((reply.index as number | null | undefined) ?? null);
     });
+  }
+
+  /** The index of a row on the screen, by its id. */
+  private indexOf(id: unknown): number | undefined {
+    const wanted = JSON.stringify(id);
+    for (const [index, rowEl] of this.rows) {
+      if (rowEl.masuRow && JSON.stringify(rowEl.masuRow[0]) === wanted) return index;
+    }
+    return undefined;
   }
 
   private scrollToCell(index: number, col: number): void {
@@ -1334,8 +1455,24 @@ export class Grid {
     this.schedule();
   }
 
-  /** The banner of the person followed: "Following Ada", and Stop. */
-  private showFollowing(person: Person, note: string | null): void {
+  /** Says whose view the grid now shows, with its filters, for a screen reader. */
+  private announceView(person: Person, view: QuerySpec): void {
+    const messages = this.messages();
+    const parts = view.filters.flatMap((filter) => {
+      const col = this.columns.findIndex((column) => column.key === filter.key);
+      return col < 0 ? [] : [describe(filter, this.columns[col], (value) => this.formatters[col](value as CellValue), messages)];
+    });
+    if (view.search) parts.push(`"${view.search}"`);
+    const text = this.message("showing_view", { label: person.name ?? person.id });
+    this.announce(parts.length > 0 ? `${text}: ${parts.join("; ")}` : text);
+  }
+
+  /**
+   * The banner above the grid: "Following Ada" with Stop, "Ada is on a row
+   * your filters leave out", or, once the person took over, "Ada's view"
+   * with "Back to your view".
+   */
+  private showBanner(person: Person, kind: "following" | "follow_hidden" | "their_view"): void {
     if (!this.followEl) {
       this.followEl = document.createElement("div");
       this.followEl.className = "masu-following";
@@ -1343,14 +1480,31 @@ export class Grid {
       this.gridEl.before(this.followEl);
     }
     const name = person.name ?? person.id;
+    const words = this.message(kind, { label: name });
+    this.followEl.style.setProperty("--masu-follow-color", person.color);
+    // Drawn again only when it says something new: a button replaced
+    // under the pointer loses its click.
+    if (this.followEl.dataset.kind === kind && this.followEl.firstChild?.textContent === words) return;
+    this.followEl.dataset.kind = kind;
     const text = document.createElement("span");
-    text.textContent = this.message(note ?? "following", { label: name });
-    const stop = document.createElement("button");
-    stop.type = "button";
-    stop.className = "masu-following-stop";
-    stop.textContent = this.message("stop_following", {});
-    stop.addEventListener("click", () => this.stopFollowing());
-    this.followEl.replaceChildren(text, stop);
+    text.textContent = words;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "masu-following-stop";
+    if (kind === "their_view") {
+      button.textContent = this.message("back_to_view", {});
+      button.addEventListener("click", () => this.backToOwnView());
+    } else {
+      button.textContent = this.message("stop_following", {});
+      button.addEventListener("click", () => this.stopFollowing(true));
+    }
+    this.followEl.replaceChildren(text, button);
+  }
+
+  private removeBanner(): void {
+    this.followEl?.remove();
+    this.followEl = null;
+    this.el.style.removeProperty("--masu-follow-color");
   }
 
   /** The avatar of the person followed is pressed. */
@@ -1368,10 +1522,13 @@ export class Grid {
       const data = this.active.row >= 0 ? (this.cache.get(this.active.row) ?? this.stale?.get(this.active.row)) : undefined;
       const cell = data ? [data[0], this.columns[this.active.col].key] : null;
       const range = this.rangeForOthers();
-      const cursor = JSON.stringify([cell, range, this.editor !== null]);
+      // The first row on the screen, for those who follow this person.
+      const first = this.cache.get(Math.ceil(this.gridEl.scrollTop / this.config.rowHeight));
+      const top = first ? first[0] : null;
+      const cursor = JSON.stringify([cell, range, this.editor !== null, top]);
       if (cursor === this.sentCursor) return;
       this.sentCursor = cursor;
-      this.transport.push("masu:cursor", { cell, range, editing: this.editor !== null });
+      this.transport.push("masu:cursor", { cell, range, editing: this.editor !== null, top });
     }, CURSOR_DELAY);
   }
 
@@ -1526,6 +1683,9 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   following: "Following {label}",
   follow_hidden: "{label} is on a row your filters leave out",
   stop_following: "Stop",
+  showing_view: "Showing {label}'s view",
+  their_view: "{label}'s view",
+  back_to_view: "Back to your view",
 };
 
 // A funnel, drawn for Masu.
@@ -1539,6 +1699,14 @@ interface Editor {
   id: unknown;
   original: CellValue;
   done: boolean;
+}
+
+interface OwnView {
+  query: QuerySpec;
+  scrollTop: number;
+  scrollLeft: number;
+  active: Cell;
+  anchor: Cell | null;
 }
 
 interface Edit {

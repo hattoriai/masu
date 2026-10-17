@@ -51,14 +51,34 @@ out (the avatar stays).
 
 ## Following someone
 
-A click on a person's avatar follows them, as in a design tool: the grid
-keeps their cell in view as they move, in this person's own order (the
-server finds the row's place in it, `c:Masu.Source.locate/3`), and says
-so above the grid: "Following Ada", with Stop. The grid has a ring in
-their color, and their avatar `aria-pressed`. Scrolling, a click in the
-grid or a key stops following, as does a second click on the avatar.
-When this person's filters leave the row out, the grid says so: "Ada is
-on a row your filters leave out".
+A click on a person's avatar follows them, as in a design tool, and shows
+what they see: their order, filters and search, and their place in it
+(the first row on their screen, and their cell). As they scroll, sort or
+filter, the grid goes with them. Above the grid: "Following Ada", with
+Stop; the grid has a ring in their color, their filter chips take it
+too, and a screen reader hears "Showing Ada's view" with their filters.
+Their avatar is `aria-pressed`.
+
+Following never costs the person their place. Their own view (order,
+filters, search, scroll position and selection) is kept aside:
+
+* **Stop**, or a second click on the avatar, brings it back.
+* **Scrolling, a click in the grid or a key** stops following but keeps
+  Ada's view (they followed her to see it); the banner says "Ada's view",
+  with "Back to your view".
+* **A view of their own** (a sort, a filter or a search) is theirs from
+  then on: there is nothing to go back to.
+
+When the views already match, following only scrolls.
+
+### Keeping a view to oneself
+
+Someone's order, filters and search go to the others who have the grid
+open, so that they can follow them: their search text included. A grid
+with `share_view={false}` keeps them; whoever follows that person then
+stays in their own view, and the grid scrolls to the person's cell where
+the server finds it in that view (`c:Masu.Source.locate/3`), or says
+"Ada is on a row your filters leave out".
 
 ## Selected ranges
 
@@ -101,7 +121,8 @@ rows move. Each is a `.masu-peer` element with the person's color in
 `.masu-peer-editing` while they type; a selected range is
 `.masu-peer-range` elements. Following someone puts `data-following` on
 the grid, their color in `--masu-follow-color`, and a `.masu-following`
-banner with a `.masu-following-stop` button. Style them in CSS (see
+banner (`data-kind` is `following`, `follow_hidden` or `their_view`) with
+a `.masu-following-stop` button. Style them in CSS (see
 [Theming](theming.md)), or draw the label yourself:
 
 ```js
@@ -117,14 +138,15 @@ browser has them (`id`, `name`, `color`, `cell`, `range`, `editing`).
 
 **The words** ("Ada is typing", "Ada is editing this cell", the name of
 the avatars' group, "Follow Ada", "Following Ada", Stop, "Ada is on a
-row your filters leave out") are in the grid's `messages`: `peer_typing`,
-`peer_editing`, `people`, `follow`, `following`, `stop_following` and
-`follow_hidden`.
+row your filters leave out", "Showing Ada's view", "Ada's view", "Back to
+your view") are in the grid's `messages`: `peer_typing`, `peer_editing`,
+`people`, `follow`, `following`, `stop_following`, `follow_hidden`,
+`showing_view`, `their_view` and `back_to_view`.
 
 ## What travels
 
-A person's place (their cell and range) goes to the server when it changes, at most every 150
+A person's place (their cell, range and first row on the screen) goes to the server when it changes, at most every 150
 ms, and to the others through `Phoenix.Presence`, which also notices a
 person who leaves or whose connection drops. A person's name, color and
-avatar go to everyone who has the grid open: give `user` only what they
-may see.
+avatar, and their view unless `share_view={false}`, go to everyone who
+has the grid open: give `user` only what they may see.

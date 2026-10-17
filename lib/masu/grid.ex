@@ -113,7 +113,7 @@ defmodule Masu.Grid do
     if socket.assigns.tracked != topic do
       if socket.assigns.tracked, do: Masu.Presence.untrack(presence, socket.assigns.tracked, user)
       :ok = Masu.Live.follow_presence(pubsub, topic)
-      :ok = Masu.Presence.track(presence, topic, user)
+      :ok = Masu.Presence.track(presence, topic, user, shared_view(socket.assigns))
     end
 
     socket |> assign(tracked: topic) |> refresh_people()
@@ -127,11 +127,20 @@ defmodule Masu.Grid do
     |> assign(people: people)
     |> push_event("masu:people", %{
       "id" => socket.assigns.id,
-      "people" => Enum.map(people, &Map.take(&1, [:id, :name, :color, :cell, :range, :editing]))
+      "people" =>
+        Enum.map(
+          people,
+          &Map.take(&1, [:id, :name, :color, :cell, :range, :editing, :view, :top])
+        )
     })
   end
 
   defp refresh_people(socket), do: socket
+
+  # The person's view (order, filters, search) goes to the others, who
+  # see it when they follow them; `share_view={false}` keeps it.
+  defp shared_view(%{share_view: false}), do: nil
+  defp shared_view(%{query: query}), do: Query.to_wire(query)
 
   # Changes from the topic: the source takes them and applies the query
   # again; the browser asks again for the rows it shows, and highlights
@@ -310,10 +319,15 @@ defmodule Masu.Grid do
   def handle_event("masu:cursor", %{"cell" => cell, "editing" => editing} = params, socket)
       when (is_nil(cell) or (is_list(cell) and length(cell) == 2)) and is_boolean(editing) do
     %{presence: presence, tracked: topic, user: user} = socket.assigns
-    range = range(params["range"])
 
-    if presence && topic,
-      do: :ok = Masu.Presence.move(presence, topic, user, cell, range, editing)
+    place = %{
+      cell: cell,
+      range: range(params["range"]),
+      editing: editing,
+      top: top(params["top"])
+    }
+
+    if presence && topic, do: :ok = Masu.Presence.update(presence, topic, user, place)
 
     {:noreply, socket}
   end
@@ -340,7 +354,7 @@ defmodule Masu.Grid do
           |> block(0, @first_block)
           |> Map.put("query", Query.to_wire(query))
 
-        {:reply, reply, socket}
+        {:reply, reply, share_view(socket)}
 
       {:error, reason} ->
         {:reply, %{"error" => reason, "revision" => revision}, socket}
@@ -353,6 +367,22 @@ defmodule Masu.Grid do
     do: %{"rows" => Enum.take(rows, 500), "keys" => Enum.filter(keys, &is_binary/1)}
 
   defp range(_other), do: nil
+
+  # The first row on the person's screen, by its id.
+  defp top(id) when is_binary(id) or is_integer(id), do: id
+  defp top(_other), do: nil
+
+  defp share_view(%{assigns: %{presence: presence, tracked: topic} = assigns} = socket)
+       when presence != nil and is_binary(topic) do
+    case shared_view(assigns) do
+      nil -> :ok
+      view -> :ok = Masu.Presence.update(presence, topic, assigns.user, %{view: view})
+    end
+
+    socket
+  end
+
+  defp share_view(socket), do: socket
 
   defp block(socket, from, count) do
     %{source: source, total: total, revision: revision} = socket.assigns

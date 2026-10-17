@@ -392,7 +392,8 @@ defmodule MasuDev.TogetherLive do
   edits of one cell are a conflict. Each browser is a person (`?as=Ada`,
   or a name of its own), whom the others see (Masu.Presence). `?room=`
   gives a page of its own, as the browser tests do, and `?presence=0` a
-  page where no one sees the others; `?rows=300` takes more customers.
+  page where no one sees the others; `?rows=300` takes more customers, and
+  `?share=0` keeps this person's view from those who follow them.
   """
   use Phoenix.LiveView
 
@@ -411,6 +412,7 @@ defmodule MasuDev.TogetherLive do
        user: user,
        topic: "together:" <> (params["room"] || "main"),
        presence: if(params["presence"] != "0", do: MasuDev.Presence),
+       share_view: params["share"] != "0",
        locale: params["locale"] || "en-GB"
      )}
   end
@@ -436,6 +438,7 @@ defmodule MasuDev.TogetherLive do
       live={{MasuDev.PubSub, @topic}}
       presence={@presence}
       user={@user}
+      share_view={@share_view}
       label_id="together-label"
       searchable
       height="30rem"
