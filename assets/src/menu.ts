@@ -19,6 +19,9 @@ export interface MenuHost {
   fetchValues(search: string | null, done: (values: [unknown, number][]) => void): void;
   apply(filter: FilterSpec | null): void;
   close(): void;
+  /** Groups the rows by the column, or stops (Masu.Group); absent when the grid does not group. */
+  group?: (on: boolean) => void;
+  grouped?: boolean;
 }
 
 let menus = 0;
@@ -48,6 +51,16 @@ export class FilterMenu {
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute("aria-label", (messages.filter ?? "Filter {label}").replace("{label}", column.label));
     this.el.id = id;
+
+    if (host.group) {
+      const group = button(
+        (messages[host.grouped ? "ungroup_by" : "group_by"] ?? "Group by {label}").replace("{label}", column.label),
+        "button",
+        "masu-menu-group",
+      );
+      group.addEventListener("click", () => host.group!(!host.grouped));
+      this.el.appendChild(group);
+    }
 
     this.form = document.createElement("form");
     this.form.className = "masu-menu-form";
@@ -124,9 +137,9 @@ export class FilterMenu {
     this.el.style.insetInlineStart = `${left}px`;
   }
 
+  /** The first control of the filter (the condition, else its value), not the Group by button above it. */
   private focusFirst(): void {
-    this.fields.querySelector<HTMLElement>("input, select")?.focus() ??
-      this.el.querySelector<HTMLElement>("select, button")?.focus();
+    this.form.querySelector<HTMLElement>("select, input, button")?.focus();
   }
 
   private renderFields(): void {

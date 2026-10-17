@@ -65,6 +65,12 @@ decimals and dates.
 `align` is `:start`, `:center` or `:end`. Numbers align to the end,
 booleans to the center, everything else to the start.
 
+## Totals
+
+`aggregate={:sum}` (or `:avg`, `:min`, `:max`, `:count`,
+`:count_distinct`) totals the column in a row at the bottom of the grid
+and in the row of each group: see [Groups and totals](groups.md).
+
 ## Pinned and hidden
 
 `pinned={:start}` or `pinned={:end}` keeps a column in view while the

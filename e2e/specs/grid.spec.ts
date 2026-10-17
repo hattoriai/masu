@@ -574,6 +574,22 @@ test.describe("layout and views", () => {
     await expect(page.getByRole("button", { name: "Columns" })).toBeFocused();
   });
 
+  test("a filter on a column that the person hides keeps its chip", async ({ page }) => {
+    await openPage(page, `/views?as=${person("ada")}`);
+    await header(page, "views", "plan").locator(".masu-filter-button").click();
+    await page.getByRole("checkbox", { name: /^team/ }).check();
+    await page.locator("#views .masu-menu-apply").click();
+    await settled(page, "views");
+    const chip = page.locator("#views .masu-chip:not(.masu-chip-group) .masu-chip-text");
+    await expect(chip).toHaveText("Plan is one of team");
+
+    await page.getByRole("button", { name: "Columns" }).click();
+    await page.getByRole("checkbox", { name: "Plan" }).uncheck();
+    await expect.poll(() => headers(page)).not.toContain("Plan");
+    await expect(chip).toHaveText("Plan is one of team");
+    await expect(chip).toBeDisabled();
+  });
+
   test("the view goes into the URL, and the link opens it in another browser", async ({ page, browser }) => {
     await openPage(page, `/views?as=${person("ada")}`);
     await page.locator(".masu-search").fill("Oslo");
@@ -738,5 +754,67 @@ test.describe("details", () => {
     const rowBox = (await page.locator("#orders-r1999-c0").boundingBox())!;
     const box = (await detail.boundingBox())!;
     expect(Math.abs(box.y - (rowBox.y + rowBox.height))).toBeLessThan(3);
+  });
+});
+
+test.describe("groups", () => {
+  const row = (page: import("@playwright/test").Page, index: number) => page.locator(`#groups .masu-body .masu-row[aria-rowindex="${index + 2}"]`);
+
+  test("groups open on their groups and their rows, with their counts and totals", async ({ page }) => {
+    await openPage(page, "/groups");
+    await expect(page.locator("#groups-grid")).toHaveAttribute("role", "treegrid");
+    await expect(page.locator("#groups-r0-c0 .masu-group-label")).toHaveText("Plan: business");
+    await expect(page.locator("#groups-r0-c0 .masu-group-count")).toHaveText("20,000");
+    await expect(row(page, 0)).toHaveClass(/masu-group-row/);
+    await expect(row(page, 0)).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#groups-r0-c3")).toHaveText("2,490,000");
+
+    // The totals of every row, at the bottom.
+    const totals = page.locator("#groups .masu-totals");
+    await expect(totals.locator(".masu-cell").first()).toHaveText("Total");
+    await expect(totals.locator(".masu-cell").nth(3)).toHaveText("12,550,000");
+
+    await page.locator("#groups-r0-c0").click();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#groups-r1-c0 .masu-group-label")).toHaveText(/^City: /);
+    await expect(row(page, 1)).toHaveAttribute("aria-level", "2");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await expect(row(page, 2)).toHaveAttribute("aria-level", "3");
+    await expect(row(page, 2)).not.toHaveClass(/masu-group-row/);
+    await expect(page.locator("#groups-r2-c1")).toHaveText("business");
+
+    // ← on the group's row closes it.
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowLeft");
+    await expect(row(page, 2)).toHaveClass(/masu-group-row/);
+  });
+
+  test("the header menu groups by a column, a chip stops it, and a total sorts the groups", async ({ page }) => {
+    await openPage(page, "/groups");
+    await expect(page.locator("#groups .masu-chip-group")).toHaveText(["Grouped by Plan×", "Grouped by City×"]);
+    await page.getByRole("button", { name: "Stop grouping by Plan" }).click();
+    await expect(page.locator("#groups-r0-c0 .masu-group-label")).toHaveText(/^City: /);
+
+    await header(page, "groups", "active").locator(".masu-filter-button").click();
+    await page.getByRole("button", { name: "Group by Active" }).click();
+    await expect(page.locator("#groups .masu-chip-group")).toHaveText(["Grouped by City×", "Grouped by Active×"]);
+
+    await page.getByRole("button", { name: "Stop grouping by City" }).click();
+    await expect(page.locator("#groups-r0-c0 .masu-group-label")).toHaveText(/^Active: /);
+    await expect(page.locator("#groups .masu-body .masu-group-row")).toHaveCount(2);
+
+    await page.getByRole("button", { name: "Stop grouping by Active" }).click();
+    await page.locator("#groups-r0-c0").click();
+    await page.keyboard.press("ArrowUp");
+    // Grouped by plan again, sorted by the groups' revenue.
+    await header(page, "groups", "plan").locator(".masu-filter-button").click();
+    await page.getByRole("button", { name: "Group by Plan" }).click();
+    await header(page, "groups", "revenue").click();
+    await settled(page, "groups");
+    const ascending = await page.locator("#groups-r0-c0 .masu-group-label").textContent();
+    await header(page, "groups", "revenue").click();
+    await settled(page, "groups");
+    await expect(page.locator("#groups-r0-c0 .masu-group-label")).not.toHaveText(ascending!);
   });
 });

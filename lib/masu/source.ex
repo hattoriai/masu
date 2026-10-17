@@ -100,7 +100,14 @@ defmodule Masu.Source do
   """
   @callback siblings(state(), id :: term()) :: [term()]
 
+  @doc """
+  The totals of the rows of the query (`Masu.Group`): the value of each
+  column with an `aggregate`, by its key.
+  """
+  @callback totals(state()) :: %{String.t() => term()}
+
   @optional_callbacks supports?: 2,
+                      totals: 1,
                       change: 3,
                       values: 5,
                       fetch: 3,
@@ -192,6 +199,12 @@ defmodule Masu.Source do
   @spec nodes(t(), non_neg_integer(), pos_integer()) :: [{term(), map()}] | nil
   def nodes(%__MODULE__{module: module, state: state}, offset, limit) do
     if function_exported?(module, :nodes, 3), do: module.nodes(state, offset, limit)
+  end
+
+  @doc false
+  @spec totals(t()) :: %{String.t() => term()}
+  def totals(%__MODULE__{module: module, state: state}) do
+    if function_exported?(module, :totals, 1), do: module.totals(state), else: %{}
   end
 
   @doc false

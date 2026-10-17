@@ -22,7 +22,7 @@ defmodule Masu.Source.List do
 
   @behaviour Masu.Source
 
-  alias Masu.{Column, Filter, Query, Tree, Value}
+  alias Masu.{Column, Filter, Group, Query, Tree, Value}
 
   @impl true
   def init(rows, opts) when is_list(rows) do
@@ -32,7 +32,11 @@ defmodule Masu.Source.List do
       tree: Keyword.get(opts, :tree),
       row_id: Keyword.get(opts, :row_id) || (&Map.get(&1, :id)),
       nodes: nil,
-      flat: []
+      flat: [],
+      segments: nil,
+      leaves: %{},
+      groups: [],
+      totals: %{}
     }
   end
 
@@ -68,31 +72,73 @@ defmodule Masu.Source.List do
       state
       | view: flat |> Enum.map(&Map.fetch!(by_id, elem(&1, 0))) |> List.to_tuple(),
         nodes: flat |> Enum.map(&elem(&1, 2)) |> List.to_tuple(),
-        flat: flat
+        flat: flat,
+        totals: Group.aggregates(rows, columns)
+    }
+  end
+
+  # Grouped (Masu.Group): the groups of each level that shows, and the
+  # rows of each open group, in the LiveView.
+  def prepare(%{all: rows} = state, %Query{groups: [_ | _] = keys} = query, columns) do
+    found = rows |> filter(query.filters, columns) |> search(query.search, columns)
+    sorted = sort(found, query.sorts, columns)
+
+    groups = fn path, key ->
+      sorted
+      |> Enum.filter(&in_path?(&1, path, columns))
+      |> Group.of_rows(Column.find(columns, key), path, columns, query.sorts)
+    end
+
+    segments = Group.segments(keys, &MapSet.member?(query.expanded, &1), groups)
+
+    leaves =
+      for {:rows, path, _count, _level} <- segments, into: %{} do
+        {path, sorted |> Enum.filter(&in_path?(&1, path, columns)) |> List.to_tuple()}
+      end
+
+    %{
+      state
+      | segments: segments,
+        leaves: leaves,
+        groups: Enum.map(keys, &Column.find(columns, &1)),
+        totals: Group.aggregates(found, columns)
     }
   end
 
   def prepare(%{all: rows} = state, %Query{} = query, columns) do
-    view =
-      rows
-      |> filter(query.filters, columns)
-      |> search(query.search, columns)
-      |> sort(query.sorts, columns)
-      |> List.to_tuple()
-
-    %{state | view: view}
+    found = rows |> filter(query.filters, columns) |> search(query.search, columns)
+    view = found |> sort(query.sorts, columns) |> List.to_tuple()
+    %{state | view: view, segments: nil, totals: Group.aggregates(found, columns)}
   end
 
+  defp in_path?(row, path, columns),
+    do:
+      Enum.all?(path, fn {key, value} -> Column.get(Column.find(columns, key), row) == value end)
+
   @impl true
+  def totals(%{totals: totals}), do: totals
+
+  @impl true
+  def count(%{segments: [_ | _] = segments}), do: Group.count(segments)
+  def count(%{segments: []}), do: 0
   def count(%{view: view}), do: tuple_size(view)
 
   @impl true
-  def rows(%{view: view}, offset, limit) do
-    last = min(offset + limit, tuple_size(view)) - 1
-    if offset > last, do: [], else: for(i <- offset..last//1, do: elem(view, i))
+  def rows(%{segments: segments} = state, offset, limit) when is_list(segments),
+    do: state |> nodes(offset, limit) |> Enum.map(&elem(&1, 0))
+
+  def rows(%{view: view}, offset, limit), do: slice(view, offset, limit)
+
+  defp slice(tuple, offset, limit) do
+    last = min(offset + limit, tuple_size(tuple)) - 1
+    if offset > last, do: [], else: for(i <- offset..last//1, do: elem(tuple, i))
   end
 
   @impl true
+  def nodes(%{segments: segments, leaves: leaves}, offset, limit) when is_list(segments) do
+    Group.slice(segments, offset, limit, &slice(Map.fetch!(leaves, &1), &2, &3))
+  end
+
   def nodes(%{nodes: nil}, _offset, _limit), do: nil
 
   def nodes(%{nodes: nodes} = state, offset, limit) do
@@ -102,6 +148,7 @@ defmodule Masu.Source.List do
   end
 
   @impl true
+  def siblings(%{segments: segments}, id) when is_list(segments), do: Group.siblings(segments, id)
   def siblings(%{flat: flat}, id), do: Tree.siblings(flat, id)
 
   defp parent_of(field, row) when is_atom(field), do: Map.get(row, field)
@@ -135,6 +182,16 @@ defmodule Masu.Source.List do
   end
 
   @impl true
+  def locate(%{segments: segments} = state, id, row_id) when is_list(segments) do
+    # The row's place among the rows of its group, if its group is open.
+    Enum.find_value(state.leaves, fn {path, rows} ->
+      local =
+        Enum.find(0..(tuple_size(rows) - 1)//1, &(Value.to_wire(row_id.(elem(rows, &1))) == id))
+
+      local && Group.index(segments, path, local)
+    end)
+  end
+
   def locate(%{view: view}, id, row_id) do
     Enum.find(0..(tuple_size(view) - 1)//1, &(Value.to_wire(row_id.(elem(view, &1))) == id))
   end

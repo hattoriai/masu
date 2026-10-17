@@ -16,6 +16,16 @@ copy is exact in every browser.
 Every row has the height of `row_height`. A cell does not wrap, and
 clips what does not fit.
 
+## Groups in a database
+
+An Ecto source keeps the groups that show (their values, counts and
+totals) in the LiveView: grouping by a column of a hundred thousand
+values holds a hundred thousand groups. SQLite sums decimals as floating
+point numbers; PostgreSQL and MySQL sum them exactly. A database orders
+`NULL` groups by its own rule, a list puts them last. Following a person
+(`Masu.Presence`) does not find their row in a grouped Ecto grid, and a
+detail does not show there.
+
 ## A tree in a database
 
 An Ecto tree keeps the ids of the rows that show, and reads a block's

@@ -67,7 +67,7 @@ defmodule Masu.PresenceTest do
     assert_eventually(fn -> people(ada) == ["Alan"] end)
 
     assert_push_event(ada, "masu:people", %{"people" => [%{name: "Alan", view: view}]}, 1000)
-    assert view == %{"sorts" => [], "filters" => [], "search" => nil}
+    assert view == %{"sorts" => [], "filters" => [], "search" => nil, "groups" => []}
 
     render_hook(element(alan, "#people"), "masu:query", %{
       "sorts" => [%{"key" => "name", "dir" => "desc"}],

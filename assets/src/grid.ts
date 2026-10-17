@@ -64,6 +64,9 @@ export class Grid {
   private columns: ColumnConfig[];
   private widths: number[];
   private formatters: Formatter[] = [];
+  private aggregateFormatters: Formatter[] = [];
+  /** The row of totals (Masu.Group). */
+  private footEl: HTMLElement | null = null;
   private total: number;
   private revision: number;
   private query: QuerySpec;
@@ -185,6 +188,7 @@ export class Grid {
     this.applyWidths();
     this.body.replaceChildren();
     this.renderToolbar();
+    this.renderTotals();
     this.listen();
     this.watchPatches();
     this.render();
@@ -228,6 +232,7 @@ export class Grid {
       this.searchEl.value = search;
     }
     this.renderToolbar();
+    this.renderTotals();
     this.showNotice();
     this.measureDetails();
 
@@ -445,6 +450,7 @@ export class Grid {
     rowEl.classList.toggle("masu-loading", row === null);
     rowEl.setAttribute("aria-busy", row === null ? "true" : "false");
 
+    rowEl.classList.toggle("masu-group-row", row !== null && isGroup(row));
     const flash = row === null ? null : this.flashing(row[0]);
     rowEl.classList.toggle("masu-changed", flash !== null);
     // The flash of a row someone saved takes their color.
@@ -457,6 +463,11 @@ export class Grid {
       cell.id = `${this.id}-r${index}-c${col}`;
       if (row === null) {
         cell.textContent = "";
+      } else if (isGroup(row)) {
+        // A group's row: its totals, in their columns.
+        const value = row[col + 1] as CellValue;
+        cell.textContent = value === null ? "" : this.aggregateFormat(col)(value);
+        cell.classList.remove("masu-null");
       } else if (column.html) {
         const value = row[col + 1] as unknown;
         cell.innerHTML = (Array.isArray(value) ? (value[0] as string) : (value as string | null)) ?? "";
@@ -515,7 +526,22 @@ export class Grid {
     else cell.style.removeProperty("--masu-level");
     if (row === null) return;
 
-    if (this.config.detail) {
+    if (node && isGroup(row)) {
+      // A group's label: its column, its value, how many rows.
+      const meta = (row as unknown[])[this.columns.length + 2 + (this.config.locks ? 1 : 0)] as [string, CellValue, number];
+      const [key, value, count] = meta;
+      const column = this.catalogColumn(key);
+      const label = document.createElement("span");
+      label.className = "masu-group-label";
+      const shown = column ? formatter(column.type, this.config.locale ?? undefined)(value) : String(value);
+      label.textContent = `${column?.label ?? key}: ${value === null ? this.message("empty_value", {}) : shown}`;
+      const counter = document.createElement("span");
+      counter.className = "masu-group-count";
+      counter.textContent = new Intl.NumberFormat(this.config.locale ?? undefined).format(count);
+      cell.replaceChildren(label, counter);
+    }
+
+    if (this.config.detail && !isGroup(row)) {
       const toggle = document.createElement("span");
       toggle.className = "masu-detail-toggle";
       toggle.setAttribute("aria-hidden", "true");
@@ -760,16 +786,38 @@ export class Grid {
 
   private renderChips(): void {
     const messages = this.messages();
+    const groups = (this.query.groups ?? []).flatMap((key) => {
+      const column = this.catalogColumn(key);
+      if (!column) return [];
+      const chip = document.createElement("span");
+      chip.className = "masu-chip masu-chip-group";
+      const text = document.createElement("span");
+      text.className = "masu-chip-text";
+      text.textContent = this.message("grouped_by", { label: column.label });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "masu-chip-remove";
+      remove.dataset.group = key;
+      remove.setAttribute("aria-label", this.message("ungroup_by", { label: column.label }));
+      remove.textContent = "×";
+      chip.append(text, remove);
+      return [chip];
+    });
+
     const chips = this.query.filters.flatMap((filter) => {
+      // A filter on a hidden column keeps its chip, which opens no menu.
       const col = this.columns.findIndex((column) => column.key === filter.key);
-      if (col < 0) return [];
+      const column = col >= 0 ? this.columns[col] : this.catalogColumn(filter.key);
+      if (!column) return [];
+      const format = col >= 0 ? this.formatters[col] : formatter(column.type, this.config.locale ?? undefined);
       const chip = document.createElement("span");
       chip.className = "masu-chip";
       const text = document.createElement("button");
       text.type = "button";
       text.className = "masu-chip-text";
-      text.dataset.col = String(col);
-      text.textContent = describe(filter, this.columns[col], (value) => this.formatters[col](value as CellValue), messages);
+      if (col >= 0) text.dataset.col = String(col);
+      else text.disabled = true;
+      text.textContent = describe(filter, column, (value) => format(value as CellValue), messages);
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "masu-chip-remove";
@@ -787,13 +835,44 @@ export class Grid {
       clear.textContent = messages.clear_all;
       chips.push(clear);
     }
-    this.chipsEl.replaceChildren(...chips);
-    this.chipsEl.hidden = chips.length === 0;
+    this.chipsEl.replaceChildren(...groups, ...chips);
+    this.chipsEl.hidden = groups.length + chips.length === 0;
+  }
+
+  /** A column of the grid, shown or hidden, as a column's config (for its label and type). */
+  private catalogColumn(key: string): ColumnConfig | null {
+    const shown = this.columns.find((column) => column.key === key);
+    if (shown) return shown;
+    const entry = this.config.catalog?.find((column) => column.key === key);
+    if (!entry) return null;
+    return {
+      key: entry.key,
+      label: entry.label,
+      type: entry.type,
+      width: entry.width,
+      minWidth: 48,
+      align: "start",
+      sortable: true,
+      filterable: entry.filterable,
+      editable: false,
+      html: false,
+      pinned: null,
+    };
+  }
+
+  /** Groups the rows by a column, or stops (Masu.Group). */
+  private groupBy(key: string, on: boolean): void {
+    const groups = (this.query.groups ?? []).filter((k) => k !== key);
+    this.setQuery({ ...this.query, groups: on ? [...groups, key] : groups });
   }
 
   private onChipClick(event: MouseEvent): void {
     const target = event.target as HTMLElement;
     const remove = target.closest<HTMLElement>(".masu-chip-remove");
+    if (remove?.dataset.group) {
+      this.groupBy(remove.dataset.group, false);
+      return;
+    }
     if (remove) {
       this.setQuery({ ...this.query, filters: replaceFilter(this.query.filters, remove.dataset.key!, null) });
       return;
@@ -830,6 +909,14 @@ export class Grid {
           this.setQuery({ ...this.query, filters: replaceFilter(this.query.filters, column.key, filter) });
         },
         close: () => this.closeMenu(true),
+        group:
+          this.config.groupable && column.sortable
+            ? (on) => {
+                this.closeMenu(true);
+                this.groupBy(column.key, on);
+              }
+            : undefined,
+        grouped: (this.query.groups ?? []).includes(column.key),
       },
       anchor,
     );
@@ -869,6 +956,47 @@ export class Grid {
   private makeFormatters(): void {
     const locale = this.config.locale ?? undefined;
     this.formatters = this.columns.map((column) => formatter(column.type, locale));
+    // A count is an integer; an average of integers has decimals.
+    this.aggregateFormatters = this.columns.map((column, col) =>
+      column.aggregate === "count" || column.aggregate === "count_distinct"
+        ? formatter("integer", locale)
+        : column.aggregate === "avg" && column.type === "integer"
+          ? formatter("number", locale)
+          : this.formatters[col],
+    );
+  }
+
+  private aggregateFormat(col: number): Formatter {
+    return this.aggregateFormatters[col] ?? this.formatters[col];
+  }
+
+  /** The row of totals of the query, at the bottom of the grid (Masu.Group). */
+  private renderTotals(): void {
+    const totals = this.config.totals;
+    if (!totals) {
+      this.footEl?.remove();
+      this.footEl = null;
+      return;
+    }
+    if (!this.footEl) {
+      this.footEl = document.createElement("div");
+      this.footEl.className = "masu-foot";
+      this.footEl.setAttribute("role", "rowgroup");
+      this.body.after(this.footEl);
+    }
+    const row = document.createElement("div");
+    row.className = "masu-row masu-totals";
+    row.setAttribute("role", "row");
+    row.setAttribute("aria-label", this.message("totals", {}));
+    this.columns.forEach((column, col) => {
+      const cell = this.makeCell(column, col);
+      cell.removeAttribute("aria-colindex");
+      const value = totals[column.key];
+      if (value !== undefined && value !== null) cell.textContent = this.aggregateFormat(col)(value);
+      else if (col === 0) cell.textContent = this.message("totals", {});
+      row.appendChild(cell);
+    });
+    this.footEl.replaceChildren(row);
   }
 
   // The rows the grid lacks, asked for once the scrolling pauses.
@@ -1800,8 +1928,9 @@ export class Grid {
     });
   }
 
-  /** Whether the row's state makes its cell of `col` read-only. */
+  /** Whether the row's state makes its cell of `col` read-only; a group's row is. */
   private locked(data: Row, col: number): boolean {
+    if (isGroup(data)) return true;
     if (!this.config.locks) return false;
     const lock = (data as unknown[])[this.columns.length + 1];
     return lock === true || (Array.isArray(lock) && lock.includes(col));
@@ -2261,6 +2390,12 @@ export class Grid {
   }
 }
 
+/** A group's row (Masu.Group): its id is its path, `["masu-group", key, value, ...]`. */
+function isGroup(row: Row): boolean {
+  const id = row[0];
+  return Array.isArray(id) && id[0] === "masu-group";
+}
+
 /** Sets a style property when it changes: the patch watcher hears every set. */
 function setStyle(el: HTMLElement, name: string, value: string): void {
   if (el.style.getPropertyValue(name) !== value) el.style.setProperty(name, value);
@@ -2356,6 +2491,10 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   views_menu: "Views",
   views_current: "Views: {label}",
   detail_shown: "Details shown",
+  group_by: "Group by {label}",
+  ungroup_by: "Stop grouping by {label}",
+  grouped_by: "Grouped by {label}",
+  totals: "Total",
   detail_hidden: "Details hidden",
   view_reset: "The grid's own view",
   view_name: "Name this view",

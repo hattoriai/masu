@@ -98,4 +98,7 @@ the active cell a line of it.
 | `.masu[data-following]`, `.masu-following`, `.masu-following-stop` | following a person: the grid (with `--masu-follow-color`; its `.masu-chip`s take the color), the banner (`data-kind`: `following`, `follow_hidden`, `their_view`), its button; the avatar has `aria-pressed="true"` |
 | `.masu-content`, `.masu-details`, `.masu-detail` | the header and rows (the browser's), the open details (the server's), a detail |
 | `.masu-tree-cell`, `.masu-twisty`, `.masu-detail-toggle` | the first cell of a tree's row (indented by `--masu-level` × `--masu-indent`), its arrow (`data-state`: `open`, `closed`, `leaf`), a detail's arrow (`data-open`) |
+| `.masu-group-row`, `.masu-group-label`, `.masu-group-count` | a group's row, its label, its count |
+| `.masu-foot`, `.masu-totals` | the row of totals at the bottom |
+| `.masu-chip-group`, `.masu-menu-group` | the chip of a grouped column, the Group by button of the header menu |
 | `.masu-changed` | a row that changed on the grid's topic, for a moment (see [Live rows](live.md)) |

@@ -34,7 +34,7 @@ defmodule Masu.Grid do
 
   use Phoenix.LiveComponent
 
-  alias Masu.{Column, Layout, Query, Source, Tree, Value, View}
+  alias Masu.{Column, Group, Layout, Query, Source, Tree, Value, View}
   alias Phoenix.HTML.Safe
 
   @max_block 500
@@ -222,7 +222,14 @@ defmodule Masu.Grid do
     all = supported(source, columns, socket.assigns)
 
     query =
-      case Query.new([sort: socket.assigns.sort, filters: socket.assigns.filters], all) do
+      case Query.new(
+             [
+               sort: socket.assigns.sort,
+               filters: socket.assigns.filters,
+               group_by: socket.assigns.group_by
+             ],
+             all
+           ) do
         {:ok, query} -> query
         {:error, reason} -> raise ArgumentError, "grid #{socket.assigns.id}: #{reason}"
       end
@@ -546,7 +553,9 @@ defmodule Masu.Grid do
       if params["siblings"] == true, do: Source.siblings(source, id), else: [id]
 
     open = params["open"] != false
-    filtered? = query.filters != [] or query.search != nil
+    # A tree's rows in a filter are open unless closed; groups are closed
+    # unless opened.
+    filtered? = (query.filters != [] or query.search != nil) and not Group.id?(id)
 
     query =
       cond do
@@ -742,16 +751,26 @@ defmodule Masu.Grid do
     row_id = row_id(assigns)
     locks? = locks?(assigns)
 
-    Enum.map(rows, fn row_or_node ->
-      {row, info} =
-        case row_or_node do
-          {row, %{level: _} = info} -> {row, info}
-          row -> {row, nil}
-        end
+    Enum.map(rows, fn
+      # A group's row: its totals in their columns, read-only, then its
+      # place and [key, value, count] (Masu.Group).
+      {%Group{} = group, info} ->
+        cells =
+          [Group.id(group) | Enum.map(assigns.columns, &Value.to_wire(group.aggregates[&1.key]))]
 
-      cells = [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)]
-      cells = if locks?, do: cells ++ [locks(assigns, row)], else: cells
-      if info, do: cells ++ [Tree.to_wire(info)], else: cells
+        cells = if locks?, do: cells ++ [true], else: cells
+        cells ++ [Tree.to_wire(info), [group.key, Value.to_wire(group.value), group.count]]
+
+      row_or_node ->
+        {row, info} =
+          case row_or_node do
+            {row, %{level: _} = info} -> {row, info}
+            row -> {row, nil}
+          end
+
+        cells = [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)]
+        cells = if locks?, do: cells ++ [locks(assigns, row)], else: cells
+        if info, do: cells ++ [Tree.to_wire(info)], else: cells
     end)
   end
 
@@ -863,7 +882,7 @@ defmodule Masu.Grid do
       <div
         id={"#{@id}-grid"}
         class="masu-grid"
-        role={if @tree, do: "treegrid", else: "grid"}
+        role={if @tree || @query.groups != [], do: "treegrid", else: "grid"}
         tabindex="0"
         aria-label={@label}
         aria-labelledby={@label_id}
@@ -967,7 +986,9 @@ defmodule Masu.Grid do
       "view" => assigns.view_params,
       "views" => views_config(assigns),
       "notice" => assigns.notice,
-      "tree" => assigns.tree != nil,
+      "tree" => assigns.tree != nil or assigns.query.groups != [],
+      "totals" => totals(assigns),
+      "groupable" => assigns.tree == nil,
       "detail" => assigns.detail != [],
       "details" => for({id, _row, index} <- assigns.detail_rows, do: [id, index]),
       "initial" => assigns.initial && %{"from" => 0, "rows" => encode_initial(assigns)}
@@ -991,8 +1012,26 @@ defmodule Masu.Grid do
       "filterable" => column.filterable,
       "editable" => column.editable,
       "html" => column.slot != nil,
-      "pinned" => column.pinned && Atom.to_string(column.pinned)
+      "pinned" => column.pinned && Atom.to_string(column.pinned),
+      "aggregate" => aggregate_name(column.aggregate)
     }
+  end
+
+  defp aggregate_name(nil), do: nil
+  defp aggregate_name(aggregate) when is_atom(aggregate), do: Atom.to_string(aggregate)
+  defp aggregate_name(_fun), do: "custom"
+
+  # The totals of the query in the columns that show, or nil: no column
+  # has an aggregate (Masu.Group).
+  defp totals(%{source: source, columns: columns}) do
+    if Enum.any?(columns, & &1.aggregate) do
+      totals = Source.totals(source)
+
+      for %Column{aggregate: a, key: key} <- columns,
+          a != nil,
+          into: %{},
+          do: {key, Value.to_wire(totals[key])}
+    end
   end
 
   defp catalog_entry(%Column{} = column) do

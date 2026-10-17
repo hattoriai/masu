@@ -62,6 +62,15 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Masu.Test.place/3`).
   Each person's selected range shows to the others in their color. A
   refused edit names who changed the cell: "Changed by Ada meanwhile."
+- Groups and totals (`Masu.Group`): `aggregate` on a column (`:sum`,
+  `:avg`, `:min`, `:max`, `:count`, `:count_distinct`, or a function of
+  a list's rows) and a row of totals at the bottom; `group_by` and
+  "Group by" in the header menu, with a chip, as part of the view. Groups
+  open on groups and rows as a tree does, with their counts and totals,
+  and sort by value or by a total. An Ecto source groups and totals in
+  the database, a `GROUP BY` for each level that shows, and reads an open
+  group's rows a block at a time. `Masu.Test.group/3`, `groups/3` and
+  `totals/2`. A filter on a hidden column keeps its chip.
 - Trees and details (`Masu.Tree`): `tree={:parent_id}` shows rows in a
   tree (a `treegrid`), opened and closed with their arrow, →, ← and `*`,
   as one list of the rows that are open: a tree of twenty thousand rows

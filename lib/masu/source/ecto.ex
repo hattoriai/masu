@@ -44,7 +44,7 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     import Ecto.Query
 
-    alias Masu.{Column, Filter, Query, Sort, Tree}
+    alias Masu.{Column, Filter, Group, Query, Sort, Tree}
 
     # How many levels a filter climbs to find the ancestors of its rows.
     @max_depth 100
@@ -77,7 +77,10 @@ if Code.ensure_loaded?(Ecto.Query) do
         order: [],
         tree: tree!(Keyword.get(opts, :tree), base),
         flat: nil,
-        filtered: false
+        filtered: false,
+        segments: nil,
+        group_columns: [],
+        totals: %{}
       }
     end
 
@@ -123,7 +126,42 @@ if Code.ensure_loaded?(Ecto.Query) do
         end
 
       flat = Tree.flatten(entries, open?)
-      %{state | flat: flat, count: length(flat), order: order, filtered: filtered}
+
+      %{
+        state
+        | flat: flat,
+          count: length(flat),
+          order: order,
+          filtered: filtered,
+          totals: totals_of(state, query, columns)
+      }
+    end
+
+    # Grouped (Masu.Group): one GROUP BY for each level that shows, and the
+    # rows of an open group read a block at a time.
+    def prepare(state, %Query{groups: [_ | _] = keys} = query, columns) do
+      filtered =
+        state.base
+        |> where_filters(query.filters, columns)
+        |> where_search(query.search, columns)
+
+      {ordered, order} = order(filtered, query.sorts, columns, state.primary_key)
+
+      groups = fn path, key ->
+        groups_of(state, filtered, path, Column.find(columns, key), columns, query.sorts)
+      end
+
+      segments = Group.segments(keys, &MapSet.member?(query.expanded, &1), groups)
+
+      %{
+        state
+        | query: ordered,
+          order: order,
+          segments: segments,
+          count: Group.count(segments),
+          group_columns: Enum.map(keys, &Column.find(columns, &1)),
+          totals: totals_of(state, query, columns)
+      }
     end
 
     def prepare(state, %Query{} = query, columns) do
@@ -142,8 +180,142 @@ if Code.ensure_loaded?(Ecto.Query) do
         |> select(count())
         |> state.repo.one(state.repo_opts)
 
-      %{state | query: ecto, count: count, order: order}
+      %{
+        state
+        | query: ecto,
+          count: count,
+          order: order,
+          segments: nil,
+          totals: totals_of(state, query, columns)
+      }
     end
+
+    @impl true
+    def totals(%{totals: totals}), do: totals
+
+    # The groups of a column under a path, with their counts and totals.
+    defp groups_of(state, filtered, path, %Column{key: key, field: f} = column, columns, sorts) do
+      aggregates = aggregate_selects(columns)
+
+      select =
+        Map.merge(aggregates, %{
+          "masu:value" => dynamic([r], field(r, ^f)),
+          "masu:count" => dynamic([r], count())
+        })
+
+      filtered
+      |> where_path(path, columns)
+      |> exclude(:order_by)
+      |> exclude(:preload)
+      |> exclude(:select)
+      |> group_by([r], field(r, ^f))
+      |> select(^select)
+      |> order_by(^group_order(column, sorts, columns))
+      |> state.repo.all(state.repo_opts)
+      |> Enum.map(fn found ->
+        value = found["masu:value"]
+
+        %Group{
+          key: key,
+          value: value,
+          count: found["masu:count"],
+          aggregates: found |> Map.take(Map.keys(aggregates)) |> round_averages(columns),
+          path: path ++ [{key, value}]
+        }
+      end)
+    end
+
+    # Groups by their value, turned by a sort on their column, or by an
+    # aggregate when the first sort is on a column with one.
+    defp group_order(%Column{key: key, field: f}, sorts, columns) do
+      case sorts do
+        [%Sort{key: ^key, direction: direction} | _] ->
+          [{direction, dynamic([r], field(r, ^f))}]
+
+        [%Sort{key: sort_key, direction: direction} | _] ->
+          by_total(Column.find(columns, sort_key), direction, f)
+
+        [] ->
+          [asc: dynamic([r], field(r, ^f))]
+      end
+    end
+
+    defp by_total(column, direction, f) do
+      case column && aggregate_select(column) do
+        nil -> [asc: dynamic([r], field(r, ^f))]
+        expression -> [{direction, expression}]
+      end
+    end
+
+    defp where_path(query, path, columns) do
+      Enum.reduce(path, query, fn {key, value}, query ->
+        f = Column.find(columns, key).field
+
+        if is_nil(value),
+          do: where(query, [r], is_nil(field(r, ^f))),
+          else: where(query, [r], field(r, ^f) == ^value)
+      end)
+    end
+
+    # The totals of the query (with the person's filters and search).
+    defp totals_of(state, query, columns) do
+      case aggregate_selects(columns) do
+        selects when selects == %{} ->
+          %{}
+
+        selects ->
+          state.base
+          |> where_filters(query.filters, columns)
+          |> where_search(query.search, columns)
+          |> exclude(:order_by)
+          |> exclude(:preload)
+          |> exclude(:select)
+          |> select(^selects)
+          |> state.repo.one(state.repo_opts)
+          |> round_averages(columns)
+      end
+    end
+
+    defp round_averages(totals, columns) do
+      Map.new(totals, fn {key, value} ->
+        case Column.find(columns, key) do
+          %Column{aggregate: :avg} -> {key, Group.average(value)}
+          _other -> {key, value}
+        end
+      end)
+    end
+
+    defp aggregate_selects(columns) do
+      for column <- columns, expression = aggregate_select(column), into: %{} do
+        {column.key, expression}
+      end
+    end
+
+    # A column's aggregate in SQL; a decimal stays a decimal. A function
+    # of the rows is for lists only.
+    defp aggregate_select(%Column{aggregate: aggregate} = column)
+         when aggregate in [:sum, :avg, :min, :max, :count, :count_distinct] do
+      if Column.stored?(column), do: aggregate_expression(aggregate, column.field, column.type)
+    end
+
+    defp aggregate_select(_column), do: nil
+
+    defp aggregate_expression(:count, f, _type), do: dynamic([r], count(field(r, ^f)))
+
+    defp aggregate_expression(:count_distinct, f, _type),
+      do: dynamic([r], count(field(r, ^f), :distinct))
+
+    defp aggregate_expression(:sum, f, :decimal),
+      do: dynamic([r], type(sum(field(r, ^f)), :decimal))
+
+    defp aggregate_expression(:sum, f, _type), do: dynamic([r], sum(field(r, ^f)))
+
+    defp aggregate_expression(:avg, f, :decimal),
+      do: dynamic([r], type(avg(field(r, ^f)), :decimal))
+
+    defp aggregate_expression(:avg, f, _type), do: dynamic([r], avg(field(r, ^f)))
+    defp aggregate_expression(:min, f, _type), do: dynamic([r], min(field(r, ^f)))
+    defp aggregate_expression(:max, f, _type), do: dynamic([r], max(field(r, ^f)))
 
     defp open_children(ordered, level, expanded, %{tree: parent} = state) do
       open = for {id, _parent} <- level, MapSet.member?(expanded, id), do: id
@@ -199,6 +371,9 @@ if Code.ensure_loaded?(Ecto.Query) do
     def count(%{count: count}), do: count
 
     @impl true
+    def rows(%{segments: segments} = state, offset, limit) when is_list(segments),
+      do: state |> nodes(offset, limit) |> Enum.map(&elem(&1, 0))
+
     def rows(%{flat: flat} = state, offset, limit) when is_list(flat) do
       state |> nodes(offset, limit) |> Enum.map(&elem(&1, 0))
     end
@@ -213,6 +388,16 @@ if Code.ensure_loaded?(Ecto.Query) do
     # The rows of a block of the tree, by their ids, with their places. A
     # row the source has not opened may have children: one query tells.
     @impl true
+    def nodes(%{segments: segments} = state, offset, limit) when is_list(segments) do
+      Group.slice(segments, offset, limit, fn path, from, count ->
+        state.query
+        |> where_path(path, state.group_columns)
+        |> offset(^from)
+        |> limit(^count)
+        |> state.repo.all(state.repo_opts)
+      end)
+    end
+
     def nodes(%{flat: nil}, _offset, _limit), do: nil
 
     def nodes(%{flat: flat} = state, offset, limit) do
@@ -228,6 +413,9 @@ if Code.ensure_loaded?(Ecto.Query) do
     end
 
     @impl true
+    def siblings(%{segments: segments}, id) when is_list(segments),
+      do: Group.siblings(segments, id)
+
     def siblings(%{flat: flat} = state, id) when is_list(flat) do
       candidates =
         case List.keyfind(flat, id, 0) do
@@ -299,7 +487,10 @@ if Code.ensure_loaded?(Ecto.Query) do
     # The place of a row in the grid's order: its row_number() in a window
     # of the same order, which PostgreSQL, MySQL 8 and SQLite 3.25 have; in
     # a tree, its place among the rows that show.
+    # In groups, a row is not found (the follower stays where they are).
     @impl true
+    def locate(%{segments: segments}, _id, _row_id) when is_list(segments), do: nil
+
     def locate(%{flat: flat}, id, _row_id) when is_list(flat),
       do: Enum.find_index(flat, &(elem(&1, 0) == id))
 

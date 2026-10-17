@@ -12,6 +12,7 @@ defmodule Masu.View do
       %{
         "sort" => "-revenue,name",
         "q" => "acme",
+        "group" => "plan",
         "filter" => %{"0" => %{"key" => "plan", "op" => "in", "value" => ["team"]}},
         "cols" => "id,name,plan,city,revenue",
         "hide" => "seats",
@@ -41,6 +42,7 @@ defmodule Masu.View do
     |> put_if(query.sorts != dq.sorts, "sort", fn -> Enum.map_join(query.sorts, ",", &sort/1) end)
     |> put_if(query.search != dq.search, "q", fn -> query.search || "" end)
     |> put_if(query.filters != dq.filters, "filter", fn -> filters(query.filters) end)
+    |> put_if(query.groups != dq.groups, "group", fn -> Enum.join(query.groups, ",") end)
     |> put_if(layout.order != dl.order, "cols", fn -> Enum.join(layout.order, ",") end)
     |> put_if(Enum.sort(layout.hidden) != Enum.sort(dl.hidden), "hide", fn ->
       layout.hidden |> Enum.sort() |> Enum.join(",")
@@ -87,12 +89,7 @@ defmodule Masu.View do
     {sorts, dropped_sorts} = read_sorts(params["sort"], columns, default.query.sorts)
     {filters, dropped_filters} = read_filters(params["filter"], columns, default.query.filters)
 
-    search =
-      case params["q"] do
-        q when is_binary(q) -> q |> String.trim() |> then(&if(&1 == "", do: nil, else: &1))
-        _other -> default.query.search
-      end
-
+    search = read_search(params["q"], default.query.search)
     keys = MapSet.new(columns, & &1.key)
 
     layout =
@@ -120,8 +117,10 @@ defmodule Masu.View do
       end)
       |> Layout.fit(columns)
 
+    groups = read_groups(params["group"], columns, default.query.groups)
+
     view = %__MODULE__{
-      query: %Query{sorts: sorts, filters: filters, search: search},
+      query: %Query{sorts: sorts, filters: filters, search: search, groups: groups},
       layout: layout
     }
 
@@ -129,6 +128,16 @@ defmodule Masu.View do
   end
 
   def from_params(_params, _columns, default), do: {default, []}
+
+  defp read_search(q, _default) when is_binary(q),
+    do: q |> String.trim() |> then(&if(&1 == "", do: nil, else: &1))
+
+  defp read_search(_q, default), do: default
+
+  defp read_groups(text, columns, _default) when is_binary(text),
+    do: text |> String.split(",", trim: true) |> Query.groups(columns)
+
+  defp read_groups(_text, _columns, default), do: default
 
   defp read_sorts(nil, _columns, default), do: {default, []}
 
