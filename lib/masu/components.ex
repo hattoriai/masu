@@ -191,7 +191,20 @@ defmodule Masu.Components do
     doc:
       "`:pages` shows a page of rows at a time, with a pager below the grid, and the page in the view"
 
-  attr :page_size, :integer, default: 50, doc: "with `paging={:pages}`: the rows of a page"
+  attr :page_size, :integer,
+    default: 50,
+    doc:
+      "with `paging={:pages}`: the rows of a page, read from the source at once (at most `max_block`)"
+
+  attr :block_size, :integer,
+    default: 100,
+    doc:
+      "the rows the grid reads from its source at once as the person scrolls (at most `max_block`)"
+
+  attr :max_block, :integer,
+    default: 500,
+    doc:
+      "the most rows of one read from the source: higher for a source where a read is costly and rows are small; see the Export, selection and large tables guide"
 
   attr :row_id, :any,
     default: nil,
@@ -258,6 +271,8 @@ defmodule Masu.Components do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> needs rows or a source"
     end
 
+    check_blocks!(assigns)
+
     if assigns.views && is_nil(assigns.user) do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with views needs user"
     end
@@ -304,6 +319,8 @@ defmodule Masu.Components do
       count={@count}
       paging={@paging}
       page_size={@page_size}
+      block_size={@block_size}
+      max_block={@max_block}
       sort={@sort}
       filters={@filters}
       searchable={@searchable}
@@ -319,5 +336,25 @@ defmodule Masu.Components do
       empty={@empty}
     />
     """
+  end
+
+  # A block, and a page, are one read of the source: no larger than the
+  # most rows of a read.
+  defp check_blocks!(%{id: id, block_size: block, max_block: max} = assigns) do
+    unless is_integer(max) and max > 0 do
+      raise ArgumentError, "<.data_grid id=#{inspect(id)}> max_block must be a positive integer"
+    end
+
+    unless is_integer(block) and block > 0 and block <= max do
+      raise ArgumentError,
+            "<.data_grid id=#{inspect(id)}> block_size is #{inspect(block)}: it must be from 1 to max_block (#{max})"
+    end
+
+    if assigns.paging == :pages and
+         not (is_integer(assigns.page_size) and assigns.page_size in 1..max) do
+      raise ArgumentError,
+            "<.data_grid id=#{inspect(id)}> page_size is #{inspect(assigns.page_size)}: a page is one read, " <>
+              "from 1 to max_block (#{max}); raise max_block for larger pages"
+    end
   end
 end

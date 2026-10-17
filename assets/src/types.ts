@@ -90,6 +90,8 @@ export interface Config {
   /** "scroll", or "pages" (`paging={:pages}`): a page of rows at a time. */
   paging?: "scroll" | "pages";
   pageSize: number;
+  /** The rows of one read of the server: a page's, in a grid of pages. */
+  blockSize?: number;
   /** The page, from 0. */
   page: number;
   revision: number;

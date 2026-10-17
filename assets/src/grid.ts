@@ -76,7 +76,7 @@ export class Grid {
   private countAsked = false;
   private revision: number;
   private query: QuerySpec;
-  private cache = new BlockCache();
+  private cache: BlockCache;
   /** The rows of the revision before, shown until the new ones come. */
   private stale: BlockCache | null = null;
   /** The rows on the screen are old: ask for them at once, not after a pause. */
@@ -192,6 +192,7 @@ export class Grid {
     this.exact = this.config.exact !== false;
     this.revision = this.config.revision;
     this.query = this.config.query;
+    this.cache = cacheFor(this.config);
 
     // Only this grid's own elements: a detail may hold another grid.
     this.gridEl = el.querySelector<HTMLElement>(":scope > .masu-grid")!;
@@ -252,7 +253,7 @@ export class Grid {
       this.pool = [];
     }
     if (keysChanged) {
-      this.cache = new BlockCache(this.cache.size, this.cache.maxBlocks);
+      this.cache = cacheFor(config);
       this.stale = null;
       this.active = { row: this.active.row, col: Math.min(this.active.col, this.columns.length - 1) };
     }
@@ -302,7 +303,7 @@ export class Grid {
       // not when the columns moved.
       this.stale = keysChanged || this.freshRows ? null : this.cache;
       this.freshRows = false;
-      this.cache = new BlockCache(this.cache.size, this.cache.maxBlocks);
+      this.cache = cacheFor(config);
       if (config.initial) this.cache.store(config.initial.from, config.initial.rows);
       if (this.pendingBlock?.revision === this.revision) this.cache.store(this.pendingBlock.from, this.pendingBlock.rows);
       this.pendingBlock = null;
@@ -454,7 +455,8 @@ export class Grid {
     this.drawPeople();
     this.reportCursor();
     this.cache.evict(this.cache.blockOf(first));
-    this.planRequests(first, Math.min(last, this.span() - 1));
+    // A page reads its own rows, and no other page's.
+    this.planRequests(first, Math.min(last, this.span() - 1), this.paged() ? [base, this.end() - 1] : null);
     // At the end of the rows it knows, a grid that does not know its
     // count asks for it, once.
     if (!this.exact && !this.paged() && count > 0 && local.last >= this.span() - 1) this.askCount();
@@ -1191,15 +1193,18 @@ export class Grid {
 
   // The rows the grid lacks, asked for once the scrolling pauses.
 
-  private planRequests(first: number, last: number): void {
+  private planRequests(first: number, last: number, within: [number, number] | null = null): void {
     if (this.requestTimer) clearTimeout(this.requestTimer);
-    if (this.cache.missing(first - PREFETCH, last + PREFETCH, this.span()).length === 0) {
+    // Rows ahead of the screen, but not past a page's.
+    const from = within ? Math.max(first - PREFETCH, within[0]) : first - PREFETCH;
+    const to = within ? Math.min(last + PREFETCH, within[1]) : last + PREFETCH;
+    if (this.cache.missing(from, to, this.span()).length === 0) {
       this.stale = null;
       return;
     }
     const ask = () => {
       this.requestTimer = null;
-      for (const block of this.cache.missing(first - PREFETCH, last + PREFETCH, this.span())) this.request(block);
+      for (const block of this.cache.missing(from, to, this.span())) this.request(block);
     };
     if (this.urgent) {
       this.urgent = false;
@@ -3304,6 +3309,15 @@ export class Grid {
   private announce(text: string): void {
     if (this.statusEl) this.statusEl.textContent = text;
   }
+}
+
+/**
+ * The rows the browser keeps, in blocks of the server's size (a page's, in
+ * a grid of pages): about six thousand rows, however large a block.
+ */
+function cacheFor(config: Config): BlockCache {
+  const size = Math.max(1, config.blockSize ?? 100);
+  return new BlockCache(size, Math.max(3, Math.ceil(6000 / size)));
 }
 
 /** A new row's id, until it saves: a string of its own. */

@@ -74,6 +74,11 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_select`. An Ecto source reads the next block by key, not by
   `OFFSET`. `Masu.Test.export/4`, `export_url/3`, `select/4`, `select_all/3` and
   `selection/2`.
+- Reads: `block_size` (100) is the rows of one read as the person
+  scrolls, and `max_block` (500) the most of one read; a page
+  (`paging={:pages}`) is one read, up to `max_block`, and the next page is
+  not read ahead. The first render reads one block, which the browser
+  keeps.
 - Counts and pages: `count={:deferred}` counts after the first rows, in
   a task; `count={:none}` counts when the person goes to the end. A
   source's `count/1` may give `{:at_least, n}` or `:unknown`, and

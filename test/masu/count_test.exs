@@ -24,7 +24,7 @@ defmodule Masu.CountTest do
   describe "a source that does not know its count" do
     test "knows the rows it read, and more as it reads; a short block says where they end" do
       view = open("?mode=unknown")
-      assert count(view, "engine") == {:at_least, 60}
+      assert count(view, "engine") == {:at_least, 100}
       assert aria_rowcount(view, "engine") == "-1"
 
       assert length(ids(view, "engine", from: 100, count: 100)) == 100
@@ -56,7 +56,7 @@ defmodule Masu.CountTest do
 
   test "count={:none} counts when the person goes to the end" do
     view = open()
-    assert count(view, "never") == {:at_least, 60}
+    assert count(view, "never") == {:at_least, 100}
     assert ask_count(view, "never") == {:exact, 237}
     assert aria_rowcount(view, "never") == "238"
 

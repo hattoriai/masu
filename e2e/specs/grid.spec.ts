@@ -1059,6 +1059,28 @@ test.describe("rows without a count, and pages", () => {
     await expect(page.locator("#report .masu-pager-range")).toHaveText("99,976–100,000 of 100,000");
   });
 
+  test("a page is one read of the source, and the next page is not read ahead", async ({ page }) => {
+    const reads: string[] = [];
+    page.on("websocket", (ws) =>
+      ws.on("framesent", (frame) => {
+        const text = String(frame.payload);
+        // The report's reads: blocks of its page size, 25.
+        if (text.includes('"masu:rows"') && text.includes('"count":25')) reads.push(text);
+      }),
+    );
+    await page.reload();
+    await expect(page.locator("#report .masu-pager-range")).toHaveText("1–25 of 100,000");
+    // The first page came with the grid: nothing to read.
+    await page.waitForTimeout(300);
+    expect(reads).toHaveLength(0);
+
+    await page.locator("#report .masu-pager").getByRole("button", { name: "Next" }).click();
+    await expect(page.locator('#report .masu-row[aria-rowindex="27"]')).toContainText("26");
+    await page.waitForTimeout(300);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toContain('"from":25');
+  });
+
   test("in a grid of pages, a new row goes on the last page", async ({ page }) => {
     const range = page.locator("#notes .masu-pager-range");
     await expect(range).toHaveText("1–5 of 12");
