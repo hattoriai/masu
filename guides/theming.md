@@ -22,8 +22,16 @@ defaults, so that a page with all three looks like one thing.
 | `--masu-text`, `--masu-muted` | text, and empty values |
 | `--masu-background`, `--masu-surface` | the rows, and the surfaces |
 | `--masu-border`, `--masu-rule` | the frame, and the lines between rows |
+| `--masu-grid-border`, `--masu-grid-radius`, `--masu-grid-shadow` | the grid's box (a 1px `--masu-border` with `--masu-radius` unless set; `none` and `0` for a table without one) |
 | `--masu-header-background`, `--masu-header-text` | the header |
-| `--masu-row-hover` | a row under the pointer |
+| `--masu-header-height` | the header's row (the rows' height unless set) |
+| `--masu-header-font-size`, `--masu-header-font-weight`, `--masu-header-text-transform`, `--masu-header-letter-spacing` | the header's type |
+| `--masu-header-padding` | a header cell's padding (the cells' unless set) |
+| `--masu-header-border`, `--masu-header-shadow` | the line under the header, or its shadow |
+| `--masu-header-hover` | a header cell under the pointer |
+| `--masu-row-background`, `--masu-row-alt-background` | the rows, and every second row (zebra rows: the second, the fourth, as `:nth-child(even)` counts) |
+| `--masu-row-border` | the line under each row (a 1px line of `--masu-rule` unless set; `none` gives a row its whole height) |
+| `--masu-row-hover`, `--masu-cell-hover` | a row and a cell under the pointer, over the row's own background |
 | `--masu-selection`, `--masu-active` | a selected range, and the line of the active cell |
 | `--masu-accent`, `--masu-accent-text`, `--masu-focus-ring` | the focus |
 | `--masu-loading` | the bars of a row that is coming |
@@ -37,21 +45,111 @@ A changed row has the color of the person who saved it in
 `--masu-cols`, `--masu-width` and `--masu-row-height` on itself: the widths of the columns and the height of a row (the
 `row_height` attribute).
 
-## Dark mode without Sumi
+## Density
 
-Set the colours for your dark theme:
+`density` sets the room around a cell's text: `:compact` (rows of 28
+pixels), `:normal` (36) or `:comfortable` (48), and their padding.
+`row_height` sets the rows' height itself.
+
+```heex
+<.data_grid id="orders" rows={@orders} density={:compact}>
+```
+
+## Dark mode
+
+Masu follows the app's own switch: a `dark` class on an ancestor (as
+Tailwind and Phoenix's generated apps put on `<html>`), or
+`data-theme="dark"`. It does not follow the system's setting by itself,
+so that a light app stays light; an app that does maps its own media
+query to one of them.
+
+Its dark palette is a neutral one. Set your own under the same switch:
 
 ```css
-[data-theme="dark"] .masu {
+.dark .masu {
   --masu-text: #ececef;
-  --masu-muted: #9a9aa5;
   --masu-background: #17171a;
   --masu-surface: #1f1f23;
   --masu-border: #33333a;
   --masu-rule: #26262b;
-  --masu-row-hover: rgba(255, 255, 255, 0.04);
 }
 ```
+
+## With Tailwind
+
+Map the tokens to your theme's colors in `app.css`, once, for light and
+dark:
+
+```css
+/* Tailwind 4 */
+.masu {
+  --masu-font: var(--font-sans);
+  --masu-text: var(--color-zinc-800);
+  --masu-background: var(--color-white);
+  --masu-header-background: var(--color-white);
+  --masu-row-alt-background: var(--color-zinc-50);
+  --masu-accent: var(--color-indigo-600);
+}
+
+.dark .masu {
+  --masu-text: var(--color-zinc-100);
+  --masu-background: var(--color-zinc-900);
+  --masu-header-background: var(--color-zinc-900);
+  --masu-row-alt-background: var(--color-zinc-800);
+}
+```
+
+With Tailwind 3, use `theme()`: `--masu-text: theme(colors.zinc.800)`.
+`class` on the grid takes any class of yours, to scope a look to some
+grids: `<.data_grid class="report-grid" ...>`.
+
+## Make Masu look like your table
+
+An app with tables of its own wants its grids to look like them. Measure
+your table (a browser's computed styles of a header cell, a cell, an
+even row), and set the tokens to the values. Lotus Web's results table,
+in tokens, with `row_height={52}`:
+
+```css
+.lotus-results {
+  --masu-font: "Inter var", sans-serif;
+  --masu-font-size: 0.875rem;
+  --masu-line-height: 1.25rem;
+  --masu-text: rgb(39 39 42);
+  --masu-background: rgb(255 255 255);
+  --masu-header-background: rgb(255 255 255);
+  --masu-header-text: rgb(39 39 42);
+  --masu-header-height: 48px;
+  --masu-header-border: none;
+  --masu-header-shadow: 0 1px 0 0 rgb(209 213 219);
+  --masu-header-hover: rgb(239 246 255);
+  --masu-grid-border: none;
+  --masu-grid-radius: 0;
+  --masu-row-border: none;
+  --masu-row-alt-background: rgb(249 250 251);
+  --masu-row-hover: transparent;
+  --masu-cell-hover: rgb(239 246 255);
+  --masu-cell-padding: 0 0.75rem;
+}
+
+.dark .lotus-results {
+  --masu-text: rgb(244 244 245);
+  --masu-background: rgb(23 23 23);
+  --masu-header-background: rgb(23 23 23);
+  --masu-header-text: rgb(244 244 245);
+  --masu-header-shadow: 0 1px 0 0 rgb(75 85 99);
+  --masu-header-hover: rgb(30 58 138 / 0.2);
+  --masu-row-alt-background: rgb(55 65 81);
+  --masu-cell-hover: rgb(30 58 138 / 0.2);
+}
+```
+
+In Lotus Web itself, the values would be its own variables
+(`rgb(var(--lotus-gray-50))`), so that its themes apply. Masu's e2e
+suite renders Lotus Web's table, with Lotus Web's own CSS, next to a
+grid with these tokens, and compares them pixel for pixel, light and
+dark, at rest and with a cell under the pointer (`e2e/specs/look.spec.ts`;
+the dev server's `/look`).
 
 ## The Sumi theme
 
@@ -73,6 +171,8 @@ the active cell a line of it.
 | Class | Is |
 | --- | --- |
 | `.masu` | the grid's element |
+| `.masu-density-compact`, `.masu-density-comfortable` | a grid's `density` |
+| `.masu-row-even` | every second row (the second, the fourth), by its place in the query |
 | `.masu-toolbar`, `.masu-search` | the search box |
 | `.masu-toolbar-actions`, `.masu-toolbar-button`, `.masu-columns-button`, `.masu-views-button` | the toolbar's buttons (see [Layout and views](views.md)) |
 | `.masu-pinned`, `.masu-pinned-start`, `.masu-pinned-end`, `.masu-pinned-edge` | a cell of a pinned column, and of the last (or first) one, which draws the edge; it sticks at `--masu-pin-<n>` |

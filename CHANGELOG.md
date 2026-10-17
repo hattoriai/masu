@@ -74,6 +74,15 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_select`. An Ecto source reads the next block by key, not by
   `OFFSET`. `Masu.Test.export/4`, `export_url/3`, `select/4`, `select_all/3` and
   `selection/2`.
+- Theming to match an app's own look: tokens for the grid's box
+  (`--masu-grid-border`, `-radius`, `-shadow`), the header (its height,
+  type, padding, border or shadow, hover), the rows (background, every
+  second row's, the line under each) and a cell's hover; `.masu-row-even`
+  on every second row; a row's hover over its own background; `density`
+  (`:compact`, `:normal`, `:comfortable`); a dark palette under a `dark`
+  class or `data-theme="dark"`; Tailwind in the Theming guide, and Lotus
+  Web's results table as its worked example, compared pixel for pixel in
+  e2e.
 - Row ids: `row_id={:position}` knows rows by their place in the query,
   for a read-only grid of rows with no id; a grid that needs no ids does
   so for a row without one. A grid whose features need ids that stay

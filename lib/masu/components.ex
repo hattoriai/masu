@@ -222,7 +222,17 @@ defmodule Masu.Components do
   attr :searchable, :boolean, default: false, doc: "when `true`, a search box above the grid"
   attr :label, :string, default: nil, doc: "the name of the grid for a screen reader"
   attr :label_id, :string, default: nil, doc: "the id of an element that names the grid"
-  attr :row_height, :integer, default: 36, doc: "the height of a row, in pixels"
+
+  attr :density, :atom,
+    default: :normal,
+    values: [:compact, :normal, :comfortable],
+    doc:
+      "the room around a cell's text: rows of 28, 36 or 48 pixels and their padding, unless `row_height` is given"
+
+  attr :row_height, :integer,
+    default: nil,
+    doc: "the height of a row, in pixels; of the `density` unless given"
+
   attr :height, :string, default: "32rem", doc: "the height of the grid, as CSS"
 
   attr :locale, :string,
@@ -328,7 +338,8 @@ defmodule Masu.Components do
       searchable={@searchable}
       label={@label}
       label_id={@label_id}
-      row_height={@row_height}
+      row_height={@row_height || density_height(@density)}
+      density={@density}
       height={@height}
       locale={@locale}
       messages={@messages}
@@ -384,4 +395,8 @@ defmodule Masu.Components do
          )
 
   defp check_row_id!(_assigns), do: :ok
+
+  defp density_height(:compact), do: 28
+  defp density_height(:comfortable), do: 48
+  defp density_height(_normal), do: 36
 end

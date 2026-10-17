@@ -6,7 +6,8 @@
  * masu-sumi.css to map them to the Sumi tokens. The defaults below have
  * no specificity, so a value set on :root, on an ancestor or on .masu
  * itself wins. They are Kotoba's and Koyomi's own defaults, so that a page
- * with all three looks like one thing.
+ * with all three looks like one thing. See the Theming guide for each
+ * token, and for matching the tables of an app.
  */
 
 :where(:root) {
@@ -24,7 +25,29 @@
   --masu-accent-text: #ffffff;
   --masu-header-background: var(--masu-surface);
   --masu-header-text: var(--masu-text);
+  /* The header: its type, the line or shadow under it, and its cell on
+     hover. --masu-header-height (the rows' height unless set) and
+     --masu-header-padding (the cells' unless set) have no default here:
+     they follow the grid's own. */
+  --masu-header-font-size: inherit;
+  --masu-header-font-weight: 600;
+  --masu-header-text-transform: none;
+  --masu-header-letter-spacing: normal;
+  --masu-header-border: 1px solid var(--masu-border);
+  --masu-header-shadow: none;
+  --masu-header-hover: transparent;
+  /* The box of the grid. */
+  --masu-grid-border: 1px solid var(--masu-border);
+  --masu-grid-radius: var(--masu-radius);
+  --masu-grid-shadow: none;
+  /* The rows: their background, every second one's (zebra), and the
+     hover of a row and of a cell. */
+  --masu-row-background: transparent;
+  /* The line under each row (--masu-row-border, a 1px line of --masu-rule
+     unless set): `none` gives the row its whole height. */
+  --masu-row-alt-background: transparent;
   --masu-row-hover: rgba(31, 31, 35, 0.035);
+  --masu-cell-hover: transparent;
   --masu-selection: rgba(47, 91, 211, 0.12);
   --masu-active: var(--masu-accent);
   --masu-loading: color-mix(in oklab, var(--masu-border) 55%, transparent);
@@ -37,6 +60,36 @@
   --masu-indent: 1.25rem;
   --masu-focus-ring: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent);
   --masu-transition: 120ms ease-out;
+}
+
+/*
+ * Dark: under the app's own switch, a `dark` class or data-theme="dark"
+ * on an ancestor (the <html> of Tailwind's and Phoenix's apps). A page
+ * that follows the system's setting maps its own media query to one of
+ * them; Masu does not, so that a light app stays light. Tokens an app
+ * sets itself win, as above.
+ */
+:where(.dark, [data-theme="dark"]) {
+  --masu-text: #ececf0;
+  --masu-muted: #9a9aa6;
+  --masu-background: #17171a;
+  --masu-surface: #1f1f23;
+  --masu-border: #34343b;
+  --masu-rule: #27272c;
+  --masu-accent: #7b9cff;
+  --masu-accent-text: #0f0f12;
+  --masu-row-hover: rgba(255, 255, 255, 0.04);
+  --masu-selection: rgba(123, 156, 255, 0.22);
+  --masu-loading: color-mix(in oklab, var(--masu-border) 70%, transparent);
+  --masu-invalid: #f87171;
+  /* Tokens made of others, made again of the dark ones (a custom
+     property takes its value where it is set). */
+  --masu-header-background: var(--masu-surface);
+  --masu-header-text: var(--masu-text);
+  --masu-header-border: 1px solid var(--masu-border);
+  --masu-grid-border: 1px solid var(--masu-border);
+  --masu-active: var(--masu-accent);
+  --masu-focus-ring: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent);
 }
 
 .masu {
@@ -89,8 +142,9 @@
 .masu-grid {
   position: relative;
   overflow: auto;
-  border: 1px solid var(--masu-border);
-  border-radius: var(--masu-radius);
+  border: var(--masu-grid-border);
+  border-radius: var(--masu-grid-radius);
+  box-shadow: var(--masu-grid-shadow);
   background: var(--masu-background);
   overscroll-behavior: contain;
   contain: strict;
@@ -117,10 +171,12 @@
   width: var(--masu-width, max-content);
   min-width: 100%;
   background: var(--masu-header-background);
+  box-shadow: var(--masu-header-shadow);
 }
 
 .masu-header {
-  border-bottom: 1px solid var(--masu-border);
+  height: var(--masu-header-height, var(--masu-row-height, 36px));
+  border-bottom: var(--masu-header-border);
 }
 
 .masu-hcell {
@@ -129,11 +185,18 @@
   align-items: center;
   gap: 0.375rem;
   min-width: 0;
-  padding: var(--masu-cell-padding);
+  padding: var(--masu-header-padding, var(--masu-cell-padding));
   color: var(--masu-header-text);
-  font-weight: 600;
+  font-size: var(--masu-header-font-size);
+  font-weight: var(--masu-header-font-weight);
+  letter-spacing: var(--masu-header-letter-spacing);
+  text-transform: var(--masu-header-text-transform);
   white-space: nowrap;
   user-select: none;
+}
+
+.masu-hcell:hover {
+  background-color: var(--masu-header-hover);
 }
 
 .masu-hcell.masu-align-end {
@@ -226,6 +289,15 @@
   user-select: none;
 }
 
+/* Density (`density`): the room around a cell's text. */
+.masu-density-compact {
+  --masu-cell-padding: 0 0.5rem;
+}
+
+.masu-density-comfortable {
+  --masu-cell-padding: 0 1rem;
+}
+
 /* The rows: placed by the grid, each at its own height. */
 
 .masu-body {
@@ -238,11 +310,24 @@
   position: absolute;
   top: 0;
   inset-inline-start: 0;
-  border-bottom: 1px solid var(--masu-rule);
+  border-bottom: var(--masu-row-border, 1px solid var(--masu-rule));
+  background: var(--masu-row-background);
 }
 
+/* Every second row (the second, the fourth: as :nth-child(even) counts),
+   by its place in the query: the rows' elements are reused as the grid
+   scrolls, so :nth-child would not. */
+.masu-body > .masu-row.masu-row-even {
+  background: var(--masu-row-alt-background);
+}
+
+/* A hover over the row's own background (every second row's too). */
 .masu-body > .masu-row:hover {
-  background: var(--masu-row-hover);
+  background-image: linear-gradient(var(--masu-row-hover), var(--masu-row-hover));
+}
+
+.masu-body > .masu-row > .masu-cell:hover {
+  background-color: var(--masu-cell-hover);
 }
 
 .masu-cell {
@@ -854,6 +939,10 @@ button.masu-person:focus-visible {
 
 .masu-head .masu-pinned.masu-col-selected {
   background-color: color-mix(in oklab, var(--masu-selection) 60%, var(--masu-header-background));
+}
+
+.masu-body > .masu-row.masu-row-even > .masu-pinned {
+  background-image: linear-gradient(var(--masu-row-alt-background), var(--masu-row-alt-background));
 }
 
 .masu-body > .masu-row:hover > .masu-pinned {

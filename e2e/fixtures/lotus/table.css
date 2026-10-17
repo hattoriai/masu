@@ -1,0 +1,1761 @@
+/*
+ * Lotus Web's CSS for its results table (e2e/fixtures/lotus/table.html):
+ * built with lotus_web's own Tailwind config (assets/tailwind.config.js),
+ * its content limited to table.html, and its fonts left out (both tables
+ * fall back to the same face). Lotus Web is MIT licensed.
+ * To build it again, see e2e/fixtures/lotus/README.md.
+ */
+/* The command palette (Jumon), the date pickers (Koyomi) and the rich text
+   editor (Kotoba). Their Sumi mappings apply in the Sumi theme; in the
+   Lotus theme the rules below restyle them from the Lotus tokens. */
+
+
+
+/* The type of the Sumi theme: Outfit for the interface, Cormorant Garamond
+   for titles. SIL Open Font License 1.1, Latin subset. */
+
+
+
+
+
+/* ── Themes ─────────────────────────────────────────────────
+   A theme is a set of --lotus-* custom properties. Tailwind reads them
+   (tailwind.config.js), so every utility class follows the theme picked
+   by data-lotus-theme on <html>. Colours are space-separated RGB channels,
+   so that Tailwind can add an opacity.
+
+   "lotus" is the default. "sumi" is the design system of Hattori AI. A host
+   can override any colour with the :theme_colors option of
+   lotus_dashboard/2; see guides/theming.md.
+   ──────────────────────────────────────────────────────────── */
+
+:root {
+  --lotus-gray-50: 249 250 251;
+  --lotus-gray-100: 243 244 246;
+  --lotus-gray-200: 229 231 235;
+  --lotus-gray-300: 209 213 219;
+  --lotus-gray-400: 156 163 175;
+  --lotus-gray-500: 107 114 128;
+  --lotus-gray-600: 75 85 99;
+  --lotus-gray-700: 55 65 81;
+  --lotus-gray-800: 23 23 23;
+  --lotus-gray-900: 9 9 11;
+  --lotus-gray-950: 3 7 18;
+  --lotus-pink-50: 253 242 248;
+  --lotus-pink-100: 252 231 243;
+  --lotus-pink-200: 251 207 232;
+  --lotus-pink-300: 249 168 212;
+  --lotus-pink-400: 244 114 182;
+  --lotus-pink-500: 236 72 153;
+  --lotus-pink-600: 219 39 119;
+  --lotus-pink-700: 190 24 93;
+  --lotus-pink-800: 157 23 77;
+  --lotus-pink-900: 131 24 67;
+  --lotus-pink-950: 80 7 36;
+  --lotus-zinc-50: 250 250 250;
+  --lotus-zinc-100: 244 244 245;
+  --lotus-zinc-200: 228 228 231;
+  --lotus-zinc-300: 212 212 216;
+  --lotus-zinc-400: 161 161 170;
+  --lotus-zinc-500: 113 113 122;
+  --lotus-zinc-600: 82 82 91;
+  --lotus-zinc-700: 63 63 70;
+  --lotus-zinc-800: 39 39 42;
+  --lotus-zinc-900: 24 24 27;
+  --lotus-zinc-950: 9 9 11;
+  --lotus-indigo-50: 238 242 255;
+  --lotus-indigo-100: 224 231 255;
+  --lotus-indigo-200: 199 210 254;
+  --lotus-indigo-300: 165 180 252;
+  --lotus-indigo-400: 129 140 248;
+  --lotus-indigo-500: 99 102 241;
+  --lotus-indigo-600: 79 70 229;
+  --lotus-indigo-700: 67 56 202;
+  --lotus-indigo-800: 55 48 163;
+  --lotus-indigo-900: 49 46 129;
+  --lotus-indigo-950: 30 27 75;
+  --lotus-rose-50: 255 241 242;
+  --lotus-rose-100: 255 228 230;
+  --lotus-rose-200: 254 205 211;
+  --lotus-rose-300: 253 164 175;
+  --lotus-rose-400: 251 113 133;
+  --lotus-rose-500: 244 63 94;
+  --lotus-rose-600: 225 29 72;
+  --lotus-rose-700: 190 18 60;
+  --lotus-rose-800: 159 18 57;
+  --lotus-rose-900: 136 19 55;
+  --lotus-rose-950: 76 5 25;
+  --lotus-white: 255 255 255;
+  --lotus-black: 9 9 11;
+  --lotus-canvas: 254 242 242;
+  --lotus-canvas-dark: 9 9 11;
+  --lotus-editor-light: 242 245 249;
+  --lotus-editor-dark: 39 39 42;
+  --lotus-input-dark: 23 23 23;
+  --lotus-text-light: 39 39 42;
+  --lotus-text-dark: 244 244 245;
+  --lotus-logo-ink: 24 24 27;
+  --lotus-logo-ink-dark: 244 244 245;
+  --lotus-logo-petal: 255 128 134;
+  --lotus-font-sans: "Inter var", sans-serif;
+  --lotus-radius-sm: 0.125rem;
+  --lotus-radius: 0.25rem;
+  --lotus-radius-md: 0.375rem;
+  --lotus-radius-lg: 0.5rem;
+  --lotus-radius-xl: 0.75rem;
+  --lotus-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --lotus-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --lotus-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --lotus-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/* Sumi: ink on paper, one blade orange, hairlines instead of shadows and
+   nearly square corners. */
+
+[data-lotus-theme="sumi"] {
+  --lotus-gray-50: 240 235 226;
+  --lotus-gray-100: 235 230 220;
+  --lotus-gray-200: 224 218 209;
+  --lotus-gray-300: 207 200 189;
+  --lotus-gray-400: 168 164 158;
+  --lotus-gray-500: 127 124 120;
+  --lotus-gray-600: 92 90 88;
+  --lotus-gray-700: 42 42 46;
+  --lotus-gray-800: 20 20 22;
+  --lotus-gray-900: 15 15 17;
+  --lotus-gray-950: 10 10 11;
+  --lotus-zinc-50: 240 235 226;
+  --lotus-zinc-100: 235 230 220;
+  --lotus-zinc-200: 224 218 209;
+  --lotus-zinc-300: 207 200 189;
+  --lotus-zinc-400: 168 164 158;
+  --lotus-zinc-500: 127 124 120;
+  --lotus-zinc-600: 92 90 88;
+  --lotus-zinc-700: 42 42 46;
+  --lotus-zinc-800: 20 20 22;
+  --lotus-zinc-900: 15 15 17;
+  --lotus-zinc-950: 10 10 11;
+  --lotus-pink-50: 246 228 218;
+  --lotus-pink-100: 251 213 198;
+  --lotus-pink-200: 247 180 155;
+  --lotus-pink-300: 255 143 106;
+  --lotus-pink-400: 255 107 61;
+  --lotus-pink-500: 232 74 28;
+  --lotus-pink-600: 232 74 28;
+  --lotus-pink-700: 196 59 16;
+  --lotus-pink-800: 157 48 15;
+  --lotus-pink-900: 88 29 14;
+  --lotus-pink-950: 49 14 5;
+  --lotus-indigo-50: 246 228 218;
+  --lotus-indigo-100: 251 213 198;
+  --lotus-indigo-200: 247 180 155;
+  --lotus-indigo-300: 255 143 106;
+  --lotus-indigo-400: 255 107 61;
+  --lotus-indigo-500: 232 74 28;
+  --lotus-indigo-600: 232 74 28;
+  --lotus-indigo-700: 196 59 16;
+  --lotus-indigo-800: 157 48 15;
+  --lotus-indigo-900: 88 29 14;
+  --lotus-indigo-950: 49 14 5;
+  --lotus-rose-50: 246 228 218;
+  --lotus-rose-100: 251 213 198;
+  --lotus-rose-200: 247 180 155;
+  --lotus-rose-300: 255 143 106;
+  --lotus-rose-400: 255 107 61;
+  --lotus-rose-500: 232 74 28;
+  --lotus-rose-600: 232 74 28;
+  --lotus-rose-700: 196 59 16;
+  --lotus-rose-800: 157 48 15;
+  --lotus-rose-900: 88 29 14;
+  --lotus-rose-950: 49 14 5;
+  --lotus-white: 245 240 232;
+  --lotus-black: 10 10 11;
+  --lotus-canvas: 244 228 218;
+  --lotus-canvas-dark: 10 10 11;
+  --lotus-editor-light: 235 230 220;
+  --lotus-editor-dark: 29 29 32;
+  --lotus-input-dark: 15 15 17;
+  --lotus-text-light: 10 10 11;
+  --lotus-text-dark: 245 240 232;
+  --lotus-logo-ink: 10 10 11;
+  --lotus-logo-ink-dark: 245 240 232;
+  --lotus-logo-petal: 232 74 28;
+  --lotus-font-sans: "Outfit", system-ui, sans-serif;
+  --lotus-radius-sm: 0.125rem;
+  --lotus-radius: 0.125rem;
+  --lotus-radius-md: 0.125rem;
+  --lotus-radius-lg: 0.25rem;
+  --lotus-radius-xl: 0.25rem;
+  --lotus-shadow-sm: 0 0 0 1px rgb(10 10 11 / 0.08);
+  --lotus-shadow: 0 0 0 1px rgb(10 10 11 / 0.12);
+  --lotus-shadow-md: 0 0 0 1px rgb(10 10 11 / 0.12);
+  --lotus-shadow-lg: 0 0 0 1px rgb(10 10 11 / 0.16);
+  --lotus-stats-bar: #e84a1c;
+  --lotus-editor-focus: #e84a1c;
+  --lotus-editor-gutter-line-dark: #2a2a2e;
+  --lotus-syntax-keyword: #b8401c;
+  --lotus-syntax-string: #3f7a52;
+  --lotus-syntax-number: #b25a14;
+  --lotus-syntax-function: #2f6690;
+  --lotus-syntax-type: #6b4f8a;
+  --lotus-syntax-comment: #7f7c78;
+  --lotus-syntax-punctuation: #5c5a58;
+}
+
+[data-lotus-theme="sumi"].dark {
+  --lotus-shadow-sm: 0 0 0 1px rgb(245 240 232 / 0.08);
+  --lotus-shadow: 0 0 0 1px rgb(245 240 232 / 0.1);
+  --lotus-shadow-md: 0 0 0 1px rgb(245 240 232 / 0.1);
+  --lotus-shadow-lg: 0 0 0 1px rgb(245 240 232 / 0.14);
+  --lotus-syntax-keyword: #ff6b3d;
+  --lotus-syntax-string: #7fbf8f;
+  --lotus-syntax-number: #ffa187;
+  --lotus-syntax-function: #7fb0d9;
+  --lotus-syntax-type: #b39ddb;
+  --lotus-syntax-comment: #7f7c78;
+  --lotus-syntax-punctuation: #a8a49e;
+}
+
+[data-lotus-theme="sumi"] body {
+  font-weight: 300;
+}
+
+/* ── The command palette ────────────────────────────────────
+   jumon-sumi.css maps the palette to Sumi on :root. In the Lotus theme the
+   palette and its button take every property from the Lotus tokens
+   instead, set on their own elements so that they win over what they
+   inherit (and follow :theme_colors). In the Sumi theme, the short --sumi-*
+   names give Jumon's Sumi mapping the light or dark of the dashboard, which
+   is the class "dark", not data-theme. */
+
+[data-lotus-theme="lotus"] :is(.jumon, .jumon-button) {
+  --jumon-font: var(--lotus-font-sans);
+  --jumon-font-size: 0.9375rem;
+  --jumon-input-size: 1.0625rem;
+  --jumon-small: 0.8125rem;
+  --jumon-text: rgb(var(--lotus-gray-900));
+  --jumon-muted: rgb(var(--lotus-gray-500));
+  --jumon-background: rgb(var(--lotus-white));
+  --jumon-surface: rgb(var(--lotus-gray-50));
+  --jumon-border: rgb(var(--lotus-gray-200));
+  --jumon-accent: rgb(var(--lotus-pink-600));
+  --jumon-accent-text: rgb(var(--lotus-white));
+  --jumon-active: rgb(var(--lotus-pink-50));
+  --jumon-active-text: rgb(var(--lotus-gray-900));
+  --jumon-active-bar: rgb(var(--lotus-pink-500));
+  --jumon-match: rgb(var(--lotus-pink-600));
+  --jumon-danger: #dc2626;
+  --jumon-key-background: rgb(var(--lotus-gray-100));
+  --jumon-key-border: rgb(var(--lotus-gray-200));
+  --jumon-key-text: rgb(var(--lotus-gray-600));
+  --jumon-focus-ring: 0 0 0 2px rgb(var(--lotus-white)), 0 0 0 4px rgb(var(--lotus-pink-500));
+  --jumon-radius: var(--lotus-radius-lg);
+  --jumon-inner-radius: var(--lotus-radius-md);
+  --jumon-shadow: 0 24px 64px -12px rgb(0 0 0 / 0.28), 0 0 0 1px rgb(0 0 0 / 0.06);
+  --jumon-backdrop: rgb(17 24 39 / 0.32);
+  --jumon-space: 0.5rem;
+  --jumon-icon-size: 16px;
+}
+
+[data-lotus-theme="lotus"].dark :is(.jumon, .jumon-button) {
+  --jumon-text: rgb(var(--lotus-gray-100));
+  --jumon-muted: rgb(var(--lotus-gray-400));
+  --jumon-background: rgb(var(--lotus-gray-800));
+  --jumon-surface: rgb(var(--lotus-editor-dark));
+  --jumon-border: rgb(var(--lotus-gray-700));
+  --jumon-accent-text: rgb(var(--lotus-white));
+  --jumon-active: rgb(var(--lotus-pink-500) / 0.15);
+  --jumon-active-text: rgb(var(--lotus-white));
+  --jumon-active-bar: rgb(var(--lotus-pink-400));
+  --jumon-match: rgb(var(--lotus-pink-400));
+  --jumon-danger: #f87171;
+  --jumon-key-background: rgb(var(--lotus-gray-700));
+  --jumon-key-border: rgb(var(--lotus-gray-600));
+  --jumon-key-text: rgb(var(--lotus-gray-300));
+  --jumon-focus-ring: 0 0 0 2px rgb(var(--lotus-gray-800)), 0 0 0 4px rgb(var(--lotus-pink-400));
+  --jumon-shadow: 0 24px 64px -12px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.08);
+  --jumon-backdrop: rgb(0 0 0 / 0.5);
+}
+
+/* @tailwindcss/forms styles every text input, and comes later than
+   jumon.css: give the palette's box back its own look. */
+
+.jumon .jumon-input,
+.jumon .jumon-input:focus {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+  font-size: var(--jumon-input-size);
+  line-height: inherit;
+}
+
+/* ── The date pickers ───────────────────────────────────────
+   As the palette: koyomi-sumi.css maps the pickers to Sumi on :root, and
+   in the Lotus theme they take every property from the Lotus tokens, on
+   their own elements. The short --sumi-* names below serve both. The size
+   of the field is the size of the other inputs of the filter bar. */
+
+.koyomi {
+  --koyomi-font-size: 0.875rem;
+  --koyomi-small: 0.8125rem;
+  --koyomi-field-height: 2.375rem;
+  --koyomi-field-padding: 0 0.5rem 0 0.75rem;
+}
+
+/* Tailwind's preflight makes every button transparent, and comes later
+   than koyomi.css: give the Done button back its fill. */
+
+.koyomi .koyomi-done {
+  background-color: var(--koyomi-accent);
+}
+
+.koyomi .koyomi-done:hover {
+  background-color: color-mix(in oklab, var(--koyomi-accent) 88%, black);
+}
+
+/* In the query toolbar the fieldset is the field: the picker inside has no
+   frame of its own. */
+
+.lotus-date-field .koyomi-control {
+  --koyomi-field-height: 2rem;
+  width: 100%;
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* @tailwindcss/forms styles every text input, as for the palette: give the
+   box for typing a date its own look. */
+
+.koyomi .koyomi-type,
+.koyomi .koyomi-type:focus {
+  padding: 0 0.625rem;
+  border-color: var(--koyomi-border);
+  border-radius: var(--koyomi-radius);
+  background-color: var(--koyomi-background);
+  box-shadow: none;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.koyomi .koyomi-type:focus-visible {
+  border-color: var(--koyomi-accent);
+  box-shadow: var(--koyomi-focus-ring);
+}
+
+[data-lotus-theme="lotus"] .koyomi {
+  --koyomi-font: var(--lotus-font-sans);
+  --koyomi-line-height: 1.4;
+  --koyomi-text: rgb(var(--lotus-gray-900));
+  --koyomi-muted: rgb(var(--lotus-gray-500));
+  --koyomi-background: rgb(var(--lotus-white));
+  --koyomi-surface: rgb(var(--lotus-gray-50));
+  --koyomi-border: rgb(var(--lotus-gray-300));
+  --koyomi-accent: rgb(var(--lotus-pink-600));
+  --koyomi-accent-text: rgb(var(--lotus-white));
+  --koyomi-range: rgb(var(--lotus-pink-500) / 0.12);
+  --koyomi-range-preview: rgb(var(--lotus-pink-500) / 0.07);
+  --koyomi-today: rgb(var(--lotus-pink-600));
+  --koyomi-holiday: #b91c1c;
+  --koyomi-weekend: rgb(var(--lotus-gray-500));
+  --koyomi-disabled: rgb(var(--lotus-gray-400) / 0.7);
+  --koyomi-invalid: #b91c1c;
+  --koyomi-tone-accent: rgb(var(--lotus-pink-600));
+  --koyomi-tone-success: #15803d;
+  --koyomi-tone-warning: #b45309;
+  --koyomi-tone-danger: #b91c1c;
+  --koyomi-tone-muted: rgb(var(--lotus-gray-500));
+  --koyomi-focus-ring: 0 0 0 2px rgb(var(--lotus-white)), 0 0 0 4px rgb(var(--lotus-pink-500));
+  --koyomi-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --koyomi-floating-background: rgb(var(--lotus-white));
+  --koyomi-floating-text: rgb(var(--lotus-gray-900));
+  --koyomi-floating-border: rgb(var(--lotus-gray-200));
+  --koyomi-floating-shadow: var(--koyomi-shadow);
+  --koyomi-floating-radius: var(--lotus-radius-lg);
+  --koyomi-backdrop: rgb(17 24 39 / 0.32);
+  --koyomi-radius: var(--lotus-radius-lg);
+  --koyomi-space: 0.5rem;
+  --koyomi-icon-size: 16px;
+}
+
+[data-lotus-theme="lotus"].dark .koyomi {
+  --koyomi-text: rgb(var(--lotus-white));
+  --koyomi-muted: rgb(var(--lotus-gray-400));
+  --koyomi-background: rgb(var(--lotus-gray-700));
+  --koyomi-surface: rgb(var(--lotus-gray-700));
+  --koyomi-border: rgb(var(--lotus-gray-600));
+  --koyomi-accent: rgb(var(--lotus-pink-500));
+  --koyomi-range: rgb(var(--lotus-pink-500) / 0.2);
+  --koyomi-range-preview: rgb(var(--lotus-pink-500) / 0.12);
+  --koyomi-today: rgb(var(--lotus-pink-400));
+  --koyomi-holiday: #f87171;
+  --koyomi-weekend: rgb(var(--lotus-gray-400));
+  --koyomi-disabled: rgb(var(--lotus-gray-500) / 0.7);
+  --koyomi-invalid: #f87171;
+  --koyomi-tone-accent: rgb(var(--lotus-pink-400));
+  --koyomi-tone-success: #4ade80;
+  --koyomi-tone-warning: #fbbf24;
+  --koyomi-tone-danger: #f87171;
+  --koyomi-tone-muted: rgb(var(--lotus-gray-400));
+  --koyomi-focus-ring: 0 0 0 2px rgb(var(--lotus-gray-800)), 0 0 0 4px rgb(var(--lotus-pink-400));
+  --koyomi-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --koyomi-floating-background: rgb(var(--lotus-gray-800));
+  --koyomi-floating-text: rgb(var(--lotus-gray-100));
+  --koyomi-floating-border: rgb(var(--lotus-gray-700));
+  --koyomi-backdrop: rgb(0 0 0 / 0.5);
+}
+
+/* ── The rich text editor ───────────────────────────────────
+   As the palette and the pickers: kotoba-sumi.css maps the editor to Sumi
+   on :root, and in the Lotus theme it takes the Lotus tokens, on its own
+   elements. */
+
+.kotoba-field {
+  --kotoba-font-size: 0.875rem;
+  --kotoba-min-height: 6rem;
+  --kotoba-padding: 0.625rem 0.75rem;
+}
+
+/* In the narrow card drawer the toolbar's buttons flow as one row that
+   wraps, rather than a row for each group. */
+
+.lotus-card-text .kotoba-toolbar {
+  gap: 2px;
+}
+
+.lotus-card-text .kotoba-toolbar-group:not([hidden]) {
+  display: contents;
+}
+
+[data-lotus-theme="lotus"] .kotoba-field {
+  --kotoba-font: var(--lotus-font-sans);
+  --kotoba-heading-font: var(--lotus-font-sans);
+  --kotoba-text: rgb(var(--lotus-gray-900));
+  --kotoba-muted: rgb(var(--lotus-gray-500));
+  --kotoba-background: rgb(var(--lotus-white));
+  --kotoba-surface: rgb(var(--lotus-gray-50));
+  --kotoba-border: rgb(var(--lotus-gray-300));
+  --kotoba-accent: rgb(var(--lotus-pink-600));
+  --kotoba-accent-text: rgb(var(--lotus-white));
+  --kotoba-selection: rgb(var(--lotus-pink-500) / 0.16);
+  --kotoba-focus-ring: 0 0 0 1px rgb(var(--lotus-pink-500));
+  --kotoba-radius: var(--lotus-radius-lg);
+  --kotoba-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+[data-lotus-theme="lotus"].dark .kotoba-field {
+  --kotoba-text: rgb(var(--lotus-gray-100));
+  --kotoba-muted: rgb(var(--lotus-gray-400));
+  --kotoba-background: rgb(var(--lotus-input-dark));
+  --kotoba-surface: rgb(var(--lotus-gray-900));
+  --kotoba-border: rgb(var(--lotus-gray-600));
+  --kotoba-accent: rgb(var(--lotus-pink-400));
+  --kotoba-selection: rgb(var(--lotus-pink-500) / 0.3);
+  --kotoba-focus-ring: 0 0 0 1px rgb(var(--lotus-pink-400));
+  --kotoba-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+
+[data-lotus-theme="sumi"] {
+  --sumi-font: "Outfit", system-ui, sans-serif;
+  --sumi-ink: rgb(var(--lotus-black));
+  --sumi-paper: rgb(var(--lotus-white));
+  --sumi-surface: rgb(var(--lotus-gray-100));
+  --sumi-line: rgb(var(--lotus-gray-200));
+  --sumi-muted: rgb(var(--lotus-black) / 0.62);
+  --sumi-accent: rgb(var(--lotus-pink-500));
+  --sumi-accent-ink: rgb(var(--lotus-black));
+  --sumi-radius: 0.25rem;
+  --color-error: oklch(55% 0.22 25);
+}
+
+[data-lotus-theme="sumi"].dark {
+  --sumi-ink: rgb(var(--lotus-white));
+  --sumi-paper: rgb(var(--lotus-gray-800));
+  --sumi-surface: rgb(var(--lotus-gray-700));
+  --sumi-line: rgb(var(--lotus-gray-700));
+  --sumi-muted: rgb(var(--lotus-white) / 0.55);
+  --color-error: oklch(62% 0.2 25);
+}
+
+/* Titles in Cormorant Garamond, light. */
+
+[data-lotus-theme="sumi"] .lotus-title {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.875rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* Text on a blade fill is ink: paper on blade is 3.7:1, ink about 5:1. */
+
+[data-lotus-theme="sumi"] :is(.bg-pink-500, .bg-pink-600, .bg-pink-700).text-white {
+  color: rgb(var(--lotus-black));
+}
+
+/* Small blade text on paper: the darker accent text passes AA. */
+
+[data-lotus-theme="sumi"]:not(.dark) :is(.text-pink-500, .text-pink-600, .text-indigo-600) {
+  color: #b8401c;
+}
+
+/* The wordmark next to the mark, LO in ink and TUS in the petal colour:
+   lotus pink in the Lotus theme, blade in Sumi. */
+
+.lotus-wordmark {
+  font-family: var(--lotus-font-sans);
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1;
+}
+
+.lotus-wordmark span {
+  color: rgb(var(--lotus-logo-petal));
+}
+
+[data-lotus-theme="sumi"] .lotus-wordmark {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+}
+
+.tippy-box[data-theme~="lotus"] {
+  pointer-events: none;
+  z-index: 9999;
+  border-radius: var(--lotus-radius-md);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  --tw-shadow: var(--lotus-shadow-md);
+  --tw-shadow-colored: var(--lotus-shadow-md);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+  --tw-bg-opacity: 1;
+  background-color: rgb(var(--lotus-white) / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(var(--lotus-zinc-800) / var(--tw-text-opacity, 1));
+  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+  --tw-ring-color: rgb(var(--lotus-zinc-950) / 0.1);
+}
+
+.tippy-box[data-theme~="lotus"]:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(var(--lotus-zinc-800) / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(var(--lotus-zinc-200) / var(--tw-text-opacity, 1));
+  --tw-ring-inset: inset;
+  --tw-ring-color: rgb(var(--lotus-white) / 0.1);
+}
+
+.tippy-box[data-theme~="lotus"] .tippy-content {
+  min-width: -moz-max-content;
+  min-width: max-content;
+  max-width: 20rem;
+  white-space: nowrap;
+  overflow-wrap: break-word;
+  padding-left: 0.625rem;
+  padding-right: 0.625rem;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+
+.tippy-box[data-theme~="lotus"] {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, -webkit-backdrop-filter;
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter, -webkit-backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 100ms;
+  transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+}
+
+.tippy-box[data-theme~="lotus"][data-state="hidden"] {
+  --tw-scale-x: .95;
+  --tw-scale-y: .95;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  opacity: 0;
+}
+
+.tippy-box[data-theme~="lotus"][data-state="visible"] {
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  opacity: 1;
+}
+
+*, ::before, ::after {
+  --tw-border-spacing-x: 0;
+  --tw-border-spacing-y: 0;
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-pan-x:  ;
+  --tw-pan-y:  ;
+  --tw-pinch-zoom:  ;
+  --tw-scroll-snap-strictness: proximity;
+  --tw-gradient-from-position:  ;
+  --tw-gradient-via-position:  ;
+  --tw-gradient-to-position:  ;
+  --tw-ordinal:  ;
+  --tw-slashed-zero:  ;
+  --tw-numeric-figure:  ;
+  --tw-numeric-spacing:  ;
+  --tw-numeric-fraction:  ;
+  --tw-ring-inset:  ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --tw-blur:  ;
+  --tw-brightness:  ;
+  --tw-contrast:  ;
+  --tw-grayscale:  ;
+  --tw-hue-rotate:  ;
+  --tw-invert:  ;
+  --tw-saturate:  ;
+  --tw-sepia:  ;
+  --tw-drop-shadow:  ;
+  --tw-backdrop-blur:  ;
+  --tw-backdrop-brightness:  ;
+  --tw-backdrop-contrast:  ;
+  --tw-backdrop-grayscale:  ;
+  --tw-backdrop-hue-rotate:  ;
+  --tw-backdrop-invert:  ;
+  --tw-backdrop-opacity:  ;
+  --tw-backdrop-saturate:  ;
+  --tw-backdrop-sepia:  ;
+  --tw-contain-size:  ;
+  --tw-contain-layout:  ;
+  --tw-contain-paint:  ;
+  --tw-contain-style:  ;
+}
+
+::backdrop {
+  --tw-border-spacing-x: 0;
+  --tw-border-spacing-y: 0;
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-pan-x:  ;
+  --tw-pan-y:  ;
+  --tw-pinch-zoom:  ;
+  --tw-scroll-snap-strictness: proximity;
+  --tw-gradient-from-position:  ;
+  --tw-gradient-via-position:  ;
+  --tw-gradient-to-position:  ;
+  --tw-ordinal:  ;
+  --tw-slashed-zero:  ;
+  --tw-numeric-figure:  ;
+  --tw-numeric-spacing:  ;
+  --tw-numeric-fraction:  ;
+  --tw-ring-inset:  ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --tw-blur:  ;
+  --tw-brightness:  ;
+  --tw-contrast:  ;
+  --tw-grayscale:  ;
+  --tw-hue-rotate:  ;
+  --tw-invert:  ;
+  --tw-saturate:  ;
+  --tw-sepia:  ;
+  --tw-drop-shadow:  ;
+  --tw-backdrop-blur:  ;
+  --tw-backdrop-brightness:  ;
+  --tw-backdrop-contrast:  ;
+  --tw-backdrop-grayscale:  ;
+  --tw-backdrop-hue-rotate:  ;
+  --tw-backdrop-invert:  ;
+  --tw-backdrop-opacity:  ;
+  --tw-backdrop-saturate:  ;
+  --tw-backdrop-sepia:  ;
+  --tw-contain-size:  ;
+  --tw-contain-layout:  ;
+  --tw-contain-paint:  ;
+  --tw-contain-style:  ;
+}
+
+/* ! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com */
+
+/*
+1. Prevent padding and border from affecting element width. (https://github.com/mozdevs/cssremedy/issues/4)
+2. Allow adding a border to an element by just adding a border-width. (https://github.com/tailwindcss/tailwindcss/pull/116)
+*/
+
+*,
+::before,
+::after {
+  box-sizing: border-box;
+  /* 1 */
+  border-width: 0;
+  /* 2 */
+  border-style: solid;
+  /* 2 */
+  border-color: rgb(var(--lotus-gray-200) / 1);
+  /* 2 */
+}
+
+::before,
+::after {
+  --tw-content: '';
+}
+
+/*
+1. Use a consistent sensible line-height in all browsers.
+2. Prevent adjustments of font size after orientation changes in iOS.
+3. Use a more readable tab size.
+4. Use the user's configured `sans` font-family by default.
+5. Use the user's configured `sans` font-feature-settings by default.
+6. Use the user's configured `sans` font-variation-settings by default.
+7. Disable tap highlights on iOS
+*/
+
+html,
+:host {
+  line-height: 1.5;
+  /* 1 */
+  -webkit-text-size-adjust: 100%;
+  /* 2 */
+  -moz-tab-size: 4;
+  /* 3 */
+  -o-tab-size: 4;
+     tab-size: 4;
+  /* 3 */
+  font-family: var(--lotus-font-sans);
+  /* 4 */
+  font-feature-settings: normal;
+  /* 5 */
+  font-variation-settings: normal;
+  /* 6 */
+  -webkit-tap-highlight-color: transparent;
+  /* 7 */
+}
+
+/*
+1. Remove the margin in all browsers.
+2. Inherit line-height from `html` so users can set them as a class directly on the `html` element.
+*/
+
+body {
+  margin: 0;
+  /* 1 */
+  line-height: inherit;
+  /* 2 */
+}
+
+/*
+1. Add the correct height in Firefox.
+2. Correct the inheritance of border color in Firefox. (https://bugzilla.mozilla.org/show_bug.cgi?id=190655)
+3. Ensure horizontal rules are visible by default.
+*/
+
+hr {
+  height: 0;
+  /* 1 */
+  color: inherit;
+  /* 2 */
+  border-top-width: 1px;
+  /* 3 */
+}
+
+/*
+Add the correct text decoration in Chrome, Edge, and Safari.
+*/
+
+abbr:where([title]) {
+  -webkit-text-decoration: underline dotted;
+          text-decoration: underline dotted;
+}
+
+/*
+Remove the default font size and weight for headings.
+*/
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/*
+Reset links to optimize for opt-in styling instead of opt-out.
+*/
+
+a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+/*
+Add the correct font weight in Edge and Safari.
+*/
+
+b,
+strong {
+  font-weight: bolder;
+}
+
+/*
+1. Use the user's configured `mono` font-family by default.
+2. Use the user's configured `mono` font-feature-settings by default.
+3. Use the user's configured `mono` font-variation-settings by default.
+4. Correct the odd `em` font sizing in all browsers.
+*/
+
+code,
+kbd,
+samp,
+pre {
+  font-family: Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
+  /* 1 */
+  font-feature-settings: normal;
+  /* 2 */
+  font-variation-settings: normal;
+  /* 3 */
+  font-size: 1em;
+  /* 4 */
+}
+
+/*
+Add the correct font size in all browsers.
+*/
+
+small {
+  font-size: 80%;
+}
+
+/*
+Prevent `sub` and `sup` elements from affecting the line height in all browsers.
+*/
+
+sub,
+sup {
+  font-size: 75%;
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+}
+
+sub {
+  bottom: -0.25em;
+}
+
+sup {
+  top: -0.5em;
+}
+
+/*
+1. Remove text indentation from table contents in Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=999088, https://bugs.webkit.org/show_bug.cgi?id=201297)
+2. Correct table border color inheritance in all Chrome and Safari. (https://bugs.chromium.org/p/chromium/issues/detail?id=935729, https://bugs.webkit.org/show_bug.cgi?id=195016)
+3. Remove gaps between table borders by default.
+*/
+
+table {
+  text-indent: 0;
+  /* 1 */
+  border-color: inherit;
+  /* 2 */
+  border-collapse: collapse;
+  /* 3 */
+}
+
+/*
+1. Change the font styles in all browsers.
+2. Remove the margin in Firefox and Safari.
+3. Remove default padding in all browsers.
+*/
+
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: inherit;
+  /* 1 */
+  font-feature-settings: inherit;
+  /* 1 */
+  font-variation-settings: inherit;
+  /* 1 */
+  font-size: 100%;
+  /* 1 */
+  font-weight: inherit;
+  /* 1 */
+  line-height: inherit;
+  /* 1 */
+  letter-spacing: inherit;
+  /* 1 */
+  color: inherit;
+  /* 1 */
+  margin: 0;
+  /* 2 */
+  padding: 0;
+  /* 3 */
+}
+
+/*
+Remove the inheritance of text transform in Edge and Firefox.
+*/
+
+button,
+select {
+  text-transform: none;
+}
+
+/*
+1. Correct the inability to style clickable types in iOS and Safari.
+2. Remove default button styles.
+*/
+
+button,
+input:where([type='button']),
+input:where([type='reset']),
+input:where([type='submit']) {
+  -webkit-appearance: button;
+  /* 1 */
+  background-color: transparent;
+  /* 2 */
+  background-image: none;
+  /* 2 */
+}
+
+/*
+Use the modern Firefox focus style for all focusable elements.
+*/
+
+:-moz-focusring {
+  outline: auto;
+}
+
+/*
+Remove the additional `:invalid` styles in Firefox. (https://github.com/mozilla/gecko-dev/blob/2f9eacd9d3d995c937b4251a5557d95d494c9be1/layout/style/res/forms.css#L728-L737)
+*/
+
+:-moz-ui-invalid {
+  box-shadow: none;
+}
+
+/*
+Add the correct vertical alignment in Chrome and Firefox.
+*/
+
+progress {
+  vertical-align: baseline;
+}
+
+/*
+Correct the cursor style of increment and decrement buttons in Safari.
+*/
+
+::-webkit-inner-spin-button,
+::-webkit-outer-spin-button {
+  height: auto;
+}
+
+/*
+1. Correct the odd appearance in Chrome and Safari.
+2. Correct the outline style in Safari.
+*/
+
+[type='search'] {
+  -webkit-appearance: textfield;
+  /* 1 */
+  outline-offset: -2px;
+  /* 2 */
+}
+
+/*
+Remove the inner padding in Chrome and Safari on macOS.
+*/
+
+::-webkit-search-decoration {
+  -webkit-appearance: none;
+}
+
+/*
+1. Correct the inability to style clickable types in iOS and Safari.
+2. Change font properties to `inherit` in Safari.
+*/
+
+::-webkit-file-upload-button {
+  -webkit-appearance: button;
+  /* 1 */
+  font: inherit;
+  /* 2 */
+}
+
+/*
+Add the correct display in Chrome and Safari.
+*/
+
+summary {
+  display: list-item;
+}
+
+/*
+Removes the default spacing and border for appropriate elements.
+*/
+
+blockquote,
+dl,
+dd,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+hr,
+figure,
+p,
+pre {
+  margin: 0;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+}
+
+legend {
+  padding: 0;
+}
+
+ol,
+ul,
+menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+Reset default styling for dialogs.
+*/
+
+dialog {
+  padding: 0;
+}
+
+/*
+Prevent resizing textareas horizontally by default.
+*/
+
+textarea {
+  resize: vertical;
+}
+
+/*
+1. Reset the default placeholder opacity in Firefox. (https://github.com/tailwindlabs/tailwindcss/issues/3300)
+2. Set the default placeholder color to the user's configured gray 400 color.
+*/
+
+input::-moz-placeholder, textarea::-moz-placeholder {
+  opacity: 1;
+  /* 1 */
+  color: rgb(var(--lotus-gray-400) / 1);
+  /* 2 */
+}
+
+input::placeholder,
+textarea::placeholder {
+  opacity: 1;
+  /* 1 */
+  color: rgb(var(--lotus-gray-400) / 1);
+  /* 2 */
+}
+
+/*
+Set the default cursor for buttons.
+*/
+
+button,
+[role="button"] {
+  cursor: pointer;
+}
+
+/*
+Make sure disabled buttons don't get the pointer cursor.
+*/
+
+:disabled {
+  cursor: default;
+}
+
+/*
+1. Make replaced elements `display: block` by default. (https://github.com/mozdevs/cssremedy/issues/14)
+2. Add `vertical-align: middle` to align replaced elements more sensibly by default. (https://github.com/jensimmons/cssremedy/issues/14#issuecomment-634934210)
+   This can trigger a poorly considered lint error in some tools but is included by design.
+*/
+
+img,
+svg,
+video,
+canvas,
+audio,
+iframe,
+embed,
+object {
+  display: block;
+  /* 1 */
+  vertical-align: middle;
+  /* 2 */
+}
+
+/*
+Constrain images and videos to the parent width and preserve their intrinsic aspect ratio. (https://github.com/mozdevs/cssremedy/issues/14)
+*/
+
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Make elements with the HTML hidden attribute stay hidden by default */
+
+[hidden]:where(:not([hidden="until-found"])) {
+  display: none;
+}
+
+[type='text'],input:where(:not([type])),[type='email'],[type='url'],[type='password'],[type='number'],[type='date'],[type='datetime-local'],[type='month'],[type='search'],[type='tel'],[type='time'],[type='week'],[multiple],textarea,select {
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+  background-color: #fff;
+  border-color: rgb(var(--lotus-gray-500) / var(--tw-border-opacity, 1));
+  border-width: 1px;
+  border-radius: 0px;
+  padding-top: 0.5rem;
+  padding-right: 0.75rem;
+  padding-bottom: 0.5rem;
+  padding-left: 0.75rem;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  --tw-shadow: 0 0 #0000;
+}
+
+[type='text']:focus, input:where(:not([type])):focus, [type='email']:focus, [type='url']:focus, [type='password']:focus, [type='number']:focus, [type='date']:focus, [type='datetime-local']:focus, [type='month']:focus, [type='search']:focus, [type='tel']:focus, [type='time']:focus, [type='week']:focus, [multiple]:focus, textarea:focus, select:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  --tw-ring-inset: var(--tw-empty,/*!*/ /*!*/);
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: #2563eb;
+  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  border-color: #2563eb;
+}
+
+input::-moz-placeholder, textarea::-moz-placeholder {
+  color: rgb(var(--lotus-gray-500) / var(--tw-text-opacity, 1));
+  opacity: 1;
+}
+
+input::placeholder,textarea::placeholder {
+  color: rgb(var(--lotus-gray-500) / var(--tw-text-opacity, 1));
+  opacity: 1;
+}
+
+::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
+::-webkit-date-and-time-value {
+  min-height: 1.5em;
+  text-align: inherit;
+}
+
+::-webkit-datetime-edit {
+  display: inline-flex;
+}
+
+::-webkit-datetime-edit,::-webkit-datetime-edit-year-field,::-webkit-datetime-edit-month-field,::-webkit-datetime-edit-day-field,::-webkit-datetime-edit-hour-field,::-webkit-datetime-edit-minute-field,::-webkit-datetime-edit-second-field,::-webkit-datetime-edit-millisecond-field,::-webkit-datetime-edit-meridiem-field {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
+  -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+}
+
+[multiple],[size]:where(select:not([size="1"])) {
+  background-image: initial;
+  background-position: initial;
+  background-repeat: unset;
+  background-size: initial;
+  padding-right: 0.75rem;
+  -webkit-print-color-adjust: unset;
+          print-color-adjust: unset;
+}
+
+[type='checkbox'],[type='radio'] {
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+  padding: 0;
+  -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+  display: inline-block;
+  vertical-align: middle;
+  background-origin: border-box;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+  flex-shrink: 0;
+  height: 1rem;
+  width: 1rem;
+  color: #2563eb;
+  background-color: #fff;
+  border-color: rgb(var(--lotus-gray-500) / var(--tw-border-opacity, 1));
+  border-width: 1px;
+  --tw-shadow: 0 0 #0000;
+}
+
+[type='checkbox'] {
+  border-radius: 0px;
+}
+
+[type='radio'] {
+  border-radius: 100%;
+}
+
+[type='checkbox']:focus,[type='radio']:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  --tw-ring-inset: var(--tw-empty,/*!*/ /*!*/);
+  --tw-ring-offset-width: 2px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: #2563eb;
+  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+}
+
+[type='checkbox']:checked,[type='radio']:checked {
+  border-color: transparent;
+  background-color: currentColor;
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+[type='checkbox']:checked {
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+}
+
+@media (forced-colors: active)  {
+  [type='checkbox']:checked {
+    -webkit-appearance: auto;
+       -moz-appearance: auto;
+            appearance: auto;
+  }
+}
+
+[type='radio']:checked {
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='8' cy='8' r='3'/%3e%3c/svg%3e");
+}
+
+@media (forced-colors: active)  {
+  [type='radio']:checked {
+    -webkit-appearance: auto;
+       -moz-appearance: auto;
+            appearance: auto;
+  }
+}
+
+[type='checkbox']:checked:hover,[type='checkbox']:checked:focus,[type='radio']:checked:hover,[type='radio']:checked:focus {
+  border-color: transparent;
+  background-color: currentColor;
+}
+
+[type='checkbox']:indeterminate {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 16 16'%3e%3cpath stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 8h8'/%3e%3c/svg%3e");
+  border-color: transparent;
+  background-color: currentColor;
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+@media (forced-colors: active)  {
+  [type='checkbox']:indeterminate {
+    -webkit-appearance: auto;
+       -moz-appearance: auto;
+            appearance: auto;
+  }
+}
+
+[type='checkbox']:indeterminate:hover,[type='checkbox']:indeterminate:focus {
+  border-color: transparent;
+  background-color: currentColor;
+}
+
+[type='file'] {
+  background: unset;
+  border-color: inherit;
+  border-width: 0;
+  border-radius: 0;
+  padding: 0;
+  font-size: unset;
+  line-height: inherit;
+}
+
+[type='file']:focus {
+  outline: 1px solid ButtonText;
+  outline: 1px auto -webkit-focus-ring-color;
+}
+
+.fixed {
+  position: fixed;
+}
+
+.relative {
+  position: relative;
+}
+
+.sticky {
+  position: sticky;
+}
+
+.top-0 {
+  top: 0px;
+}
+
+.z-10 {
+  z-index: 10;
+}
+
+.inline-flex {
+  display: inline-flex;
+}
+
+.table {
+  display: table;
+}
+
+.grid {
+  display: grid;
+}
+
+.min-w-full {
+  min-width: 100%;
+}
+
+.cursor-context-menu {
+  cursor: context-menu;
+}
+
+.select-none {
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.gap-1 {
+  gap: 0.25rem;
+}
+
+.whitespace-nowrap {
+  white-space: nowrap;
+}
+
+.bg-white {
+  --tw-bg-opacity: 1;
+  background-color: rgb(var(--lotus-white) / var(--tw-bg-opacity, 1));
+}
+
+.py-3\.5 {
+  padding-top: 0.875rem;
+  padding-bottom: 0.875rem;
+}
+
+.py-4 {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.pl-4 {
+  padding-left: 1rem;
+}
+
+.pr-3 {
+  padding-right: 0.75rem;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.text-text-light {
+  --tw-text-opacity: 1;
+  color: rgb(var(--lotus-text-light) / var(--tw-text-opacity, 1));
+}
+
+.shadow-\[0_1px_0_0\] {
+  --tw-shadow: 0 1px 0 0;
+  --tw-shadow-colored: 0 1px 0 0 var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.shadow-gray-300 {
+  --tw-shadow-color: rgb(var(--lotus-gray-300) / 1);
+  --tw-shadow: var(--tw-shadow-colored);
+}
+
+.transition-colors {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Hide scrollbar while keeping scroll functionality */
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Column Statistics Popover */
+
+.tippy-box[data-theme~="lotus-stats"] {
+  pointer-events: auto;
+  z-index: 9999;
+  border-radius: var(--lotus-radius-lg);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  --tw-shadow: var(--lotus-shadow-lg);
+  --tw-shadow-colored: var(--lotus-shadow-lg);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+  --tw-bg-opacity: 1;
+  background-color: rgb(var(--lotus-white) / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(var(--lotus-zinc-700) / var(--tw-text-opacity, 1));
+  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(var(--lotus-zinc-200) / var(--tw-ring-opacity, 1));
+}
+
+.tippy-box[data-theme~="lotus-stats"]:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(var(--lotus-zinc-800) / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(var(--lotus-zinc-300) / var(--tw-text-opacity, 1));
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(var(--lotus-zinc-700) / var(--tw-ring-opacity, 1));
+}
+
+.tippy-box[data-theme~="lotus-stats"] {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, -webkit-backdrop-filter;
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter, -webkit-backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 100ms;
+  transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+}
+
+.tippy-box[data-theme~="lotus-stats"] .tippy-content {
+  padding: 0px;
+}
+
+.tippy-box[data-theme~="lotus-stats"][data-state="hidden"] {
+  --tw-scale-x: .95;
+  --tw-scale-y: .95;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  opacity: 0;
+}
+
+.tippy-box[data-theme~="lotus-stats"][data-state="visible"] {
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  opacity: 1;
+}
+
+.tippy-box[data-theme~="lotus-stats"] .tippy-arrow {
+  color: white;
+}
+
+.dark .tippy-box[data-theme~="lotus-stats"] .tippy-arrow {
+  color: #27272a;
+}
+
+.lotus-stats-popover {
+  padding: 12px;
+  min-width: 220px;
+  max-width: 300px;
+}
+
+.lotus-stats-header {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lotus-stats-type-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.lotus-stats-type-badge--numeric {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.dark .lotus-stats-type-badge--numeric {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.lotus-stats-type-badge--string {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.dark .lotus-stats-type-badge--string {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.lotus-stats-type-badge--temporal {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.dark .lotus-stats-type-badge--temporal {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.lotus-stats-type-badge--unknown {
+  background: #f9fafb;
+  color: #6b7280;
+}
+
+.dark .lotus-stats-type-badge--unknown {
+  background: #374151;
+  color: #9ca3af;
+}
+
+.lotus-stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.lotus-stats-label {
+  color: #71717a;
+  font-size: 11px;
+}
+
+.dark .lotus-stats-label {
+  color: #a1a1aa;
+}
+
+.lotus-stats-value {
+  font-weight: 500;
+  font-size: 11px;
+  color: #27272a;
+  font-variant-numeric: tabular-nums;
+}
+
+.dark .lotus-stats-value {
+  color: #e4e4e7;
+}
+
+.lotus-stats-divider {
+  margin: 6px 0;
+  border-top: 1px solid #f4f4f5;
+}
+
+.dark .lotus-stats-divider {
+  border-color: #3f3f46;
+}
+
+.lotus-stats-section-title {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a1a1aa;
+}
+
+.dark .lotus-stats-section-title {
+  color: #71717a;
+}
+
+.lotus-stats-histogram {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lotus-stats-hist-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lotus-stats-hist-label {
+  width: 60px;
+  font-size: 10px;
+  color: #71717a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.dark .lotus-stats-hist-label {
+  color: #a1a1aa;
+}
+
+.lotus-stats-hist-bar-bg {
+  flex: 1;
+  height: 12px;
+  background: #f4f4f5;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.dark .lotus-stats-hist-bar-bg {
+  background: #3f3f46;
+}
+
+.lotus-stats-hist-bar {
+  height: 100%;
+  background: var(--lotus-stats-bar, #60a5fa);
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
+.dark .lotus-stats-hist-bar {
+  background: var(--lotus-stats-bar, #3b82f6);
+}
+
+.lotus-stats-hist-bar--string {
+  background: #34d399;
+}
+
+.dark .lotus-stats-hist-bar--string {
+  background: #10b981;
+}
+
+.lotus-stats-hist-bar--temporal {
+  background: #fbbf24;
+}
+
+.dark .lotus-stats-hist-bar--temporal {
+  background: #f59e0b;
+}
+
+.lotus-stats-hist-count {
+  width: 24px;
+  font-size: 10px;
+  color: #71717a;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.dark .lotus-stats-hist-count {
+  color: #a1a1aa;
+}
+
+.even\:bg-gray-50:nth-child(even) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(var(--lotus-gray-50) / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-blue-50:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(239 246 255 / var(--tw-bg-opacity, 1));
+}
+
+.dark\:bg-gray-800:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(var(--lotus-gray-800) / var(--tw-bg-opacity, 1));
+}
+
+.dark\:text-text-dark:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(var(--lotus-text-dark) / var(--tw-text-opacity, 1));
+}
+
+.dark\:shadow-gray-600:is(.dark *) {
+  --tw-shadow-color: rgb(var(--lotus-gray-600) / 1);
+  --tw-shadow: var(--tw-shadow-colored);
+}
+
+.dark\:even\:bg-gray-700:nth-child(even):is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(var(--lotus-gray-700) / var(--tw-bg-opacity, 1));
+}
+
+.dark\:hover\:bg-blue-900\/20:hover:is(.dark *) {
+  background-color: rgb(30 58 138 / 0.2);
+}
+
+@media (min-width: 640px) {
+  .sm\:pl-3 {
+    padding-left: 0.75rem;
+  }
+}
