@@ -120,6 +120,17 @@ if Code.ensure_loaded?(Ecto.Query) do
       end
     end
 
+    # The rows by their primary key, through the grid's own query: a row
+    # outside it is not found.
+    @impl true
+    def fetch(%{primary_key: [key]} = state, ids, _row_id) do
+      state.base
+      |> where([r], field(r, ^key) in ^ids)
+      |> state.repo.all(state.repo_opts)
+    end
+
+    def fetch(_state, _ids, _row_id), do: []
+
     defp where_value_search(query, _f, nil), do: query
     defp where_value_search(query, _f, ""), do: query
 

@@ -55,6 +55,7 @@ defmodule Masu.Test do
       keys
       |> Enum.zip(cells)
       |> Map.new(fn
+        {{key, true}, [html, _value]} -> {key, text(html)}
         {{key, true}, html} -> {key, text(html)}
         {{key, false}, value} -> {key, value}
       end)
@@ -91,6 +92,29 @@ defmodule Masu.Test do
     |> event(id, "masu:values", %{"key" => to_string(key), "search" => Keyword.get(opts, :search)})
     |> Map.fetch!("values")
     |> Enum.map(fn [value, count] -> {value, count} end)
+  end
+
+  @doc """
+  Edits cells of the grid `id`, as a person typing in them, pasting or
+  undoing does: `edits` is a list of `{row_id, key, value}`, the value as
+  the browser sends it (a string, or `nil` to empty the cell). The grid
+  saves the edits of each row together.
+
+  Returns `:ok` when every edit was saved, or `{:error, errors}` with
+  `{row_id, key, message}` for each cell that was not.
+  """
+  @spec edit(struct(), String.t(), [{term(), String.t() | atom(), term()}]) ::
+          :ok | {:error, [{term(), String.t(), String.t()}]}
+  def edit(view, id, edits) do
+    edits =
+      Enum.map(edits, fn {row, key, value} ->
+        %{"id" => row, "key" => to_string(key), "value" => value}
+      end)
+
+    case event(view, id, "masu:edit", %{"edits" => edits}) do
+      %{"errors" => []} -> :ok
+      %{"errors" => errors} -> {:error, Enum.map(errors, &List.to_tuple/1)}
+    end
   end
 
   @doc "The labels of the columns of the grid `id`, in order."

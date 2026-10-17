@@ -13,6 +13,9 @@ app:
 * a `:col` slot for each column, with types that the browser formats in
   the locale (numbers, decimals to the last digit, dates and times) and
   cells of your own HEEx;
+* editing, as in a spreadsheet, saved through your changeset: type on a
+  cell, Enter and Tab, paste from a spreadsheet, fill down, undo; the
+  changeset's errors on their cells;
 * live rows: a grid that follows a PubSub topic shows the rows that
   change on it as they change, in the place of each person's order and
   filters, with a short highlight;
@@ -35,6 +38,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | --- | --- |
 | Rows | the rows on the screen and a few more are in the page; the others come from the server in blocks of a hundred as the person scrolls, once the scrolling pauses |
 | Sources | `rows={@users}` for a list; `source={query} repo={Repo}` for Ecto, where a sort is an `ORDER BY`, a filter and the search a `WHERE`, and each block a `LIMIT` and `OFFSET`; `Masu.Source` for your own |
+| Editing | `changeset={&Order.changeset/2}`: a cell edits on a key typed, Enter, F2 or a double click; the edits of a row saved together with `Repo.update`, the errors on their cells, the old values back; paste of tab-separated text, fill down, Delete, undo and redo; a row found again through the grid's own query |
 | Live rows | `live={{MyApp.PubSub, "orders"}}` and `Masu.Live.broadcast_upsert/3`: changes come into the person's query, a batch at a time, the scroll stays, the rows do not blink, the changed ones flash |
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
@@ -152,6 +156,8 @@ in the same order.
   sources of your own.
 * [Filters](guides/filters.md): the menu of each column, the values of
   an enum, and the filters of the LiveView.
+* [Editing](guides/editing.md): cells saved through your changeset,
+  paste, fill down and undo.
 * [Live rows](guides/live.md): a grid that follows a PubSub topic.
 * [Keyboard and copy](guides/keyboard.md): the keys, the selection, and
   what a copy gives.

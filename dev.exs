@@ -99,6 +99,31 @@ defmodule MasuDev.Customers do
   end
 
   defp pick(list, n), do: Enum.at(list, rem(n, length(list)))
+
+  @types %{
+    name: :string,
+    email: :string,
+    city: :string,
+    plan: :string,
+    seats: :integer,
+    revenue: :decimal,
+    active: :boolean,
+    signed_up: :date,
+    last_seen: :utc_datetime
+  }
+
+  @doc "The rules of an edit in the grid: a schemaless changeset."
+  def changeset(customer, params) do
+    import Ecto.Changeset
+
+    {customer, @types}
+    |> cast(params, Map.keys(@types))
+    |> validate_required([:name, :email, :plan, :seats])
+    |> validate_format(:email, ~r/^[^@\s]+@[^@\s]+$/, message: "is not an email")
+    |> validate_inclusion(:plan, @plans, message: "is not a plan (#{Enum.join(@plans, ", ")})")
+    |> validate_number(:seats, greater_than: 0)
+    |> validate_number(:revenue, greater_than_or_equal_to: 0)
+  end
 end
 
 defmodule MasuDev.Layouts do
@@ -213,12 +238,13 @@ defmodule MasuDev.CustomersLive do
     <.data_grid
       id="customers"
       rows={@customers}
+      changeset={&MasuDev.Customers.changeset/2}
       label_id="customers-label"
       searchable
       height="36rem"
       locale={@locale}
     >
-      <:col field={:id} type={:integer} width={90} label="ID" />
+      <:col field={:id} type={:integer} width={90} label="ID" editable={false} />
       <:col field={:name} width={190} />
       <:col field={:email} width={280} />
       <:col field={:city} />

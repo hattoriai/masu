@@ -38,6 +38,13 @@ with the same name; the focus goes to its first field, and comes back to
 the header when it closes. An enum's values are a group of checkboxes.
 Each chip has a button that takes its filter away, named for it.
 
+## Editing
+
+The editor of a cell is an input named by its column's label, with the
+focus while it is open; the focus comes back to the grid when it closes.
+A cell the server refused has `aria-invalid="true"` and the error as its
+title, and the live region says the error.
+
 ## Announcements
 
 A live region says how many rows a sort, a filter or a search gives

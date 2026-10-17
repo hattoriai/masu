@@ -12,6 +12,7 @@ const column = (key: string, type: ColumnConfig["type"], label = key): ColumnCon
   align: "start",
   sortable: true,
   filterable: true,
+  editable: false,
   html: false,
 });
 

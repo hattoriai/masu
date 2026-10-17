@@ -27,6 +27,7 @@ defaults, so that a page with all three looks like one thing.
 | `--masu-selection`, `--masu-active` | a selected range, and the line of the active cell |
 | `--masu-accent`, `--masu-accent-text`, `--masu-focus-ring` | the focus |
 | `--masu-loading` | the bars of a row that is coming |
+| `--masu-invalid` | the line of a cell the server refused |
 | `--masu-radius`, `--masu-cell-padding`, `--masu-space`, `--masu-field-height` | shape and space |
 | `--masu-transition` | the speed of the small transitions |
 
@@ -82,4 +83,5 @@ the active cell a line of it.
 | `.masu-filter-button` | the funnel of a header; `[data-active]` when its column is filtered |
 | `.masu-menu`, `.masu-menu-op`, `.masu-menu-input`, `.masu-menu-value`, `.masu-menu-count`, `.masu-menu-apply` | the filter menu |
 | `.masu-chips`, `.masu-chip`, `.masu-chip-text`, `.masu-chip-remove`, `.masu-chips-clear` | the filters above the grid |
+| `.masu-editable`, `.masu-editor`, `.masu-saving`, `.masu-invalid` | a cell that edits, its editor, a cell being saved, a cell refused |
 | `.masu-changed` | a row that changed on the grid's topic, for a moment (see [Live rows](live.md)) |

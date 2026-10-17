@@ -26,7 +26,8 @@ export interface ColumnConfig {
   align: "start" | "center" | "end";
   sortable: boolean;
   filterable: boolean;
-  /** The server renders the cell's HTML. */
+  editable: boolean;
+  /** The server renders the cell's HTML (with the value, `[html, value]`, when editable). */
   html: boolean;
 }
 

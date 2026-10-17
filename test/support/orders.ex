@@ -14,6 +14,16 @@ defmodule MasuTest.Order do
     field :total, :decimal
     field :placed_on, :date
   end
+
+  import Ecto.Changeset
+
+  def changeset(order, params) do
+    order
+    |> cast(params, [:customer, :status, :total, :placed_on])
+    |> validate_required([:customer])
+    |> validate_inclusion(:status, ~w(draft paid late void))
+    |> validate_number(:total, greater_than_or_equal_to: 0)
+  end
 end
 
 defmodule MasuTest.OrdersLive do

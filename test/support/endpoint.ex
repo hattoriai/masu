@@ -21,6 +21,9 @@ defmodule MasuTest.Router do
     live("/live/people", MasuTest.LivePeopleLive)
     live("/live/orders", MasuTest.LiveOrdersLive)
     live("/live/no-hook", MasuTest.NoHookLive)
+    live("/edit/people", MasuTest.EditPeopleLive)
+    live("/edit/orders", MasuTest.EditOrdersLive)
+    live("/edit/update", MasuTest.UpdateLive)
   end
 end
 

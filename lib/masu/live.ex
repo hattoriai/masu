@@ -64,6 +64,12 @@ defmodule Masu.Live do
   def broadcast_upsert(pubsub, topic, row),
     do: Phoenix.PubSub.broadcast(pubsub, topic, {__MODULE__, topic, {:upsert, row}})
 
+  @doc false
+  # As broadcast_upsert/3, to every process but `from`.
+  @spec broadcast_upsert_from(pid(), atom(), String.t(), term()) :: :ok | {:error, term()}
+  def broadcast_upsert_from(from, pubsub, topic, row),
+    do: Phoenix.PubSub.broadcast_from(pubsub, from, topic, {__MODULE__, topic, {:upsert, row}})
+
   @doc """
   Broadcasts a row that was deleted, given as the row or its id: a grid
   that follows the topic takes it out.

@@ -73,6 +73,7 @@
      in full, as a line. */
   --masu-selection: color-mix(in oklab, var(--color-sumi-blade, var(--sumi-accent, #e84a1c)) 12%, transparent);
   --masu-active: var(--color-sumi-blade, var(--sumi-accent, #e84a1c));
+  --masu-invalid: color-mix(in oklab, var(--color-error, oklch(55% 0.22 25)) 85%, var(--masu-text));
   --masu-focus-ring: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--color-sumi-blade, var(--sumi-accent, #e84a1c));
 
   /* Shape and space */

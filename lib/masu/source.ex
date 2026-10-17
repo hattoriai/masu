@@ -69,7 +69,15 @@ defmodule Masu.Source do
               {term(), non_neg_integer()}
             ]
 
-  @optional_callbacks supports?: 2, change: 3, values: 5
+  @doc """
+  The rows with the given ids, among the rows the source may show (its
+  query without the person's filters): the rows a person edits. A row
+  that is not there is not given, so that no one edits a row the grid
+  would not show them.
+  """
+  @callback fetch(state(), ids :: [term()], (term() -> term())) :: [term()]
+
+  @optional_callbacks supports?: 2, change: 3, values: 5, fetch: 3
 
   @type t :: %__MODULE__{module: module(), state: state()}
 
@@ -132,6 +140,14 @@ defmodule Masu.Source do
   def values(%__MODULE__{module: module, state: state}, column, query, columns, opts) do
     if function_exported?(module, :values, 5),
       do: module.values(state, column, query, columns, opts),
+      else: []
+  end
+
+  @doc false
+  @spec fetch(t(), [term()], (term() -> term())) :: [term()]
+  def fetch(%__MODULE__{module: module, state: state}, ids, row_id) do
+    if function_exported?(module, :fetch, 3),
+      do: module.fetch(state, ids, row_id),
       else: []
   end
 

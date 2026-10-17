@@ -10,6 +10,7 @@
 
 import { BlockCache } from "./blocks";
 import { describe, replaceFilter } from "./filters";
+import { fromTSV, inputText, placePaste, sendValue, shownValue } from "./parse";
 import { FilterMenu } from "./menu";
 import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
@@ -64,6 +65,15 @@ export class Grid {
   private dragging = false;
   private frame: number | null = null;
   private queries = 0;
+  /** The cell being edited. */
+  private editor: Editor | null = null;
+  /** The errors of cells the server did not save, by cellKey(). */
+  private errors = new Map<string, string>();
+  /** The cells being saved, by cellKey(). */
+  private saving = new Set<string>();
+  private undoStack: Edit[][] = [];
+  private redoStack: Edit[][] = [];
+
   /** The rows that changed (Masu.Live), each until its flash ends. */
   private flash = new Map<string, number>();
   private requestTimer: ReturnType<typeof setTimeout> | null = null;
@@ -146,6 +156,8 @@ export class Grid {
 
   destroy(): void {
     this.closeMenu(false);
+    this.editor?.input.remove();
+    this.editor = null;
     for (const cleanup of this.cleanups) cleanup();
     this.cleanups = [];
     this.observer?.disconnect();
@@ -291,11 +303,25 @@ export class Grid {
       if (row === null) {
         cell.textContent = "";
       } else if (column.html) {
-        cell.innerHTML = (row[col + 1] as string | null) ?? "";
+        const value = row[col + 1] as unknown;
+        cell.innerHTML = (Array.isArray(value) ? (value[0] as string) : (value as string | null)) ?? "";
       } else {
         const value = row[col + 1] as CellValue;
         cell.textContent = this.formatters[col](value);
         cell.classList.toggle("masu-null", value === null);
+      }
+
+      const key = row === null ? "" : cellKey(row[0], column.key);
+      const error = row === null ? undefined : this.errors.get(key);
+      cell.classList.toggle("masu-invalid", error !== undefined);
+      cell.classList.toggle("masu-saving", row !== null && this.saving.has(key));
+      cell.classList.toggle("masu-editable", column.editable === true);
+      if (error !== undefined) {
+        cell.title = error;
+        cell.setAttribute("aria-invalid", "true");
+      } else {
+        cell.removeAttribute("title");
+        cell.removeAttribute("aria-invalid");
       }
     });
   }
@@ -586,6 +612,7 @@ export class Grid {
       this.dragging = false;
     });
     this.on(document, "copy", (event) => this.onCopy(event));
+    this.on(document, "paste", (event) => this.onPaste(event));
 
     if (this.searchEl) {
       this.on(this.searchEl, "input", () => {
@@ -624,6 +651,8 @@ export class Grid {
 
   private onKeyDown(event: KeyboardEvent): void {
     const mod = event.ctrlKey || event.metaKey;
+    if (this.editor) return;
+    if (this.onEditKey(event, mod)) return;
 
     if (mod && event.key.toLowerCase() === "a") {
       event.preventDefault();
@@ -721,7 +750,12 @@ export class Grid {
 
   private onDoubleClick(event: MouseEvent): void {
     const resizer = (event.target as HTMLElement).closest<HTMLElement>(".masu-resizer");
-    if (resizer) this.autosize(Number(resizer.parentElement!.dataset.col));
+    if (resizer) {
+      this.autosize(Number(resizer.parentElement!.dataset.col));
+      return;
+    }
+    const cell = this.cellAt(event.target as HTMLElement);
+    if (cell) this.startEdit(cell);
   }
 
   private cellAt(element: HTMLElement): Cell | null {
@@ -775,6 +809,308 @@ export class Grid {
     this.setWidth(col, Math.min(Math.ceil(widest) + 4, MAX_AUTO_WIDTH));
   }
 
+
+  // Editing. A cell of an editable column takes Enter, F2, a double click
+  // or a key typed on it; its editor saves on Enter, Tab or a click away,
+  // and gives up on Escape. The cell shows the new value at once, and the
+  // old one again, with the server's error, if the server refuses it.
+
+  private onEditKey(event: KeyboardEvent, mod: boolean): boolean {
+    const { row, col } = this.active;
+    const column = this.columns[col];
+    const key = event.key;
+
+    if (mod && !event.altKey && key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) this.redo();
+      else this.undo();
+      return true;
+    }
+    if (mod && key.toLowerCase() === "y") {
+      event.preventDefault();
+      this.redo();
+      return true;
+    }
+    if (row < 0 || !column) return false;
+    if (mod && key.toLowerCase() === "d") {
+      event.preventDefault();
+      this.fillDown();
+      return true;
+    }
+    if (!column.editable) return false;
+
+    if (column.type === "boolean" && (key === " " || key === "Enter")) {
+      event.preventDefault();
+      const current = this.valueAt(row, col);
+      this.applyEdits([{ row, col, value: !(current === true) }]);
+      return true;
+    }
+    if (key === "Enter" || key === "F2") {
+      event.preventDefault();
+      this.startEdit(this.active);
+      return true;
+    }
+    if (key === "Delete" || key === "Backspace") {
+      event.preventDefault();
+      this.clearCells();
+      return true;
+    }
+    if (key.length === 1 && !mod && !event.altKey && column.type !== "boolean") {
+      event.preventDefault();
+      this.startEdit(this.active, key);
+      return true;
+    }
+    return false;
+  }
+
+  /** Opens the editor of a cell, with its value, or with `text` typed on it. */
+  startEdit(cell: Cell, text?: string): void {
+    const column = this.columns[cell.col];
+    const row = this.cache.get(cell.row) ?? this.stale?.get(cell.row);
+    if (!column?.editable || !row || cell.row < 0) return;
+    if (column.type === "boolean") return;
+
+    this.active = { ...cell };
+    this.anchor = null;
+    this.ensureVisible(cell);
+    const raw = rawValue(row[cell.col + 1]);
+
+    const input = document.createElement("input");
+    input.className = `masu-editor masu-align-${column.align}`;
+    input.type = column.type === "date" ? "date" : column.type === "datetime" ? "datetime-local" : column.type === "time" ? "time" : "text";
+    if (input.type !== "text") input.step = "1";
+    if (column.type === "integer" || column.type === "number" || column.type === "decimal") input.inputMode = "decimal";
+    input.setAttribute("aria-label", column.label);
+    input.value = text ?? inputText(column.type, raw);
+    input.style.transform = `translateY(${cell.row * this.config.rowHeight}px)`;
+    input.style.insetInlineStart = `${this.widths.slice(0, cell.col).reduce((a, b) => a + b, 0)}px`;
+    input.style.width = `${this.widths[cell.col]}px`;
+    input.style.height = `${this.config.rowHeight}px`;
+
+    this.editor = { input, row: cell.row, col: cell.col, id: row[0], original: raw, done: false };
+    input.addEventListener("keydown", (event) => this.onEditorKey(event));
+    input.addEventListener("blur", () => this.commitEdit(null));
+    this.body.appendChild(input);
+    input.focus();
+    if (text === undefined && input.type === "text") input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  private onEditorKey(event: KeyboardEvent): void {
+    event.stopPropagation();
+    switch (event.key) {
+      case "Enter":
+        event.preventDefault();
+        this.commitEdit({ row: event.shiftKey ? -1 : 1, col: 0 });
+        break;
+      case "Tab":
+        event.preventDefault();
+        this.commitEdit({ row: 0, col: event.shiftKey ? -1 : 1 });
+        break;
+      case "Escape":
+        event.preventDefault();
+        this.closeEditor();
+        break;
+    }
+  }
+
+  private commitEdit(step: { row: number; col: number } | null): void {
+    const editor = this.editor;
+    if (!editor || editor.done) return;
+    editor.done = true;
+    const column = this.columns[editor.col];
+    const changed = editor.input.value !== inputText(column.type, editor.original);
+    const value = sendValue(column.type, editor.input.value, this.config.locale ?? undefined);
+    this.closeEditor();
+    if (changed) this.applyEdits([{ row: editor.row, col: editor.col, value }]);
+    if (step) {
+      this.active = {
+        row: Math.min(Math.max(editor.row + step.row, 0), this.total - 1),
+        col: Math.min(Math.max(editor.col + step.col, 0), this.columns.length - 1),
+      };
+      this.ensureVisible(this.active);
+      this.render();
+    }
+  }
+
+  private closeEditor(): void {
+    const editor = this.editor;
+    if (!editor) return;
+    editor.done = true;
+    this.editor = null;
+    editor.input.remove();
+    this.gridEl.focus({ preventScroll: true });
+    this.render();
+  }
+
+  /**
+   * Saves values in cells (of rows the browser has): shows them at once,
+   * and asks the server to save them; a cell the server refuses shows its
+   * old value again, with the error.
+   */
+  private applyEdits(cells: { row: number; col: number; value: string | boolean | null }[], record = true): void {
+    const edits: Edit[] = [];
+    let skipped = 0;
+    for (const { row, col, value } of cells) {
+      const column = this.columns[col];
+      const data = this.cache.get(row) ?? this.stale?.get(row);
+      if (!column?.editable || !data) {
+        skipped += 1;
+        continue;
+      }
+      const before = rawValue(data[col + 1]);
+      edits.push({ id: data[0], key: column.key, col, row, before, value });
+      this.setValue(row, col, column.html ? [escapeHTML(String(value ?? "")), shownValue(column.type, value)] : shownValue(column.type, value));
+    }
+    if (skipped > 0) this.announce(this.message("not_editable", { count: skipped }));
+    this.send(edits, record ? "edit" : "redo");
+  }
+
+  private send(edits: Edit[], mode: "edit" | "undo" | "redo"): void {
+    if (edits.length === 0) return;
+    for (const edit of edits) {
+      const key = cellKey(edit.id, edit.key);
+      this.errors.delete(key);
+      this.saving.add(key);
+    }
+    this.refreshRows();
+
+    const payload = edits.map((edit) => ({ id: edit.id, key: edit.key, value: edit.value }));
+    this.transport.push("masu:edit", { edits: payload }, (reply) => {
+      const errors = (reply.errors as [unknown, string, string][]) ?? [];
+      for (const edit of edits) this.saving.delete(cellKey(edit.id, edit.key));
+      const refused = new Set<string>();
+      for (const [id, key, message] of errors) {
+        const cell = cellKey(id, key);
+        refused.add(cell);
+        this.errors.set(cell, message);
+      }
+      // A refused cell shows its old value until the rows come again.
+      for (const edit of edits) {
+        if (refused.has(cellKey(edit.id, edit.key)) && edit.row !== undefined) {
+          const column = this.columns[edit.col];
+          const shown = this.valueAt(edit.row, edit.col);
+          if (shown !== undefined) this.setValue(edit.row, edit.col, column.html ? [escapeHTML(String(edit.before ?? "")), edit.before] : edit.before);
+        }
+      }
+
+      const saved = edits.filter((edit) => !refused.has(cellKey(edit.id, edit.key)));
+      if (saved.length > 0) {
+        if (mode === "undo") this.redoStack.push(saved);
+        else {
+          this.undoStack.push(saved);
+          if (this.undoStack.length > 100) this.undoStack.shift();
+          if (mode === "edit") this.redoStack = [];
+        }
+      }
+
+      if (errors.length > 0) {
+        const [id, key, message] = errors[0];
+        const column = this.columns.find((c) => c.key === key);
+        const more = errors.length > 1 ? ` ${this.message("more_errors", { count: errors.length - 1 })}` : "";
+        this.announce(`${column?.label ?? key}: ${message}${more}`);
+        void id;
+      } else if (edits.length > 1) {
+        this.announce(this.message("saved", { count: saved.length }));
+      }
+      this.refreshRows();
+    });
+  }
+
+  private undo(): void {
+    const batch = this.undoStack.pop();
+    if (!batch) return;
+    this.send(batch.map((edit) => this.reverse(edit)), "undo");
+  }
+
+  private redo(): void {
+    const batch = this.redoStack.pop();
+    if (!batch) return;
+    this.send(batch.map((edit) => this.reverse(edit)), "redo");
+  }
+
+  /** The edit that takes `edit` back. */
+  private reverse(edit: Edit): Edit {
+    const column = this.columns[edit.col];
+    const value = edit.before === null ? null : typeof edit.before === "boolean" ? edit.before : sendValue(column.type, inputText(column.type, edit.before), undefined);
+    return { ...edit, before: shownValue(column.type, edit.value), value, row: undefined };
+  }
+
+  private clearCells(): void {
+    const selection = this.selection();
+    if (!selection) return;
+    this.withRows(selection, (cells) => this.applyEdits(cells.map(({ row, col }) => ({ row, col, value: null }))));
+  }
+
+  private fillDown(): void {
+    const selection = this.selection();
+    if (!selection || selection.bottom === selection.top) return;
+    this.withRows(selection, (cells) => {
+      const edits = cells
+        .filter(({ row }) => row !== selection.top)
+        .map(({ row, col }) => {
+          const column = this.columns[col];
+          const top = this.valueAt(selection.top, col) ?? null;
+          const value = typeof top === "boolean" || top === null ? top : sendValue(column.type, inputText(column.type, top), undefined);
+          return { row, col, value };
+        });
+      this.applyEdits(edits);
+    });
+  }
+
+  private onPaste(event: ClipboardEvent): void {
+    if (document.activeElement !== this.gridEl || this.editor) return;
+    const text = event.clipboardData?.getData("text/plain");
+    if (!text) return;
+    event.preventDefault();
+    const selection = this.selection() ?? { top: 0, left: 0, bottom: 0, right: 0 };
+    const placed = placePaste(fromTSV(text), selection, this.total, this.columns.length).slice(0, MAX_EDITS);
+    if (placed.length === 0) return;
+    const bottom = Math.max(...placed.map((p) => p.row));
+    const right = Math.max(...placed.map((p) => p.col));
+    this.anchor = { row: selection.top, col: selection.left };
+    this.active = { row: bottom, col: right };
+    this.load(selection.top, bottom, () => {
+      const locale = this.config.locale ?? undefined;
+      this.applyEdits(placed.map((p) => ({ row: p.row, col: p.col, value: sendValue(this.columns[p.col].type, p.text, locale) })));
+    });
+  }
+
+  /** The editable cells of a range, once the browser has its rows. */
+  private withRows(range: Rect, then: (cells: Cell[]) => void): void {
+    const last = Math.min(range.bottom, range.top + Math.floor(MAX_EDITS / (range.right - range.left + 1)) - 1);
+    this.load(range.top, last, () => {
+      const cells: Cell[] = [];
+      for (let row = range.top; row <= last; row++) {
+        for (let col = range.left; col <= range.right; col++) {
+          if (this.columns[col].editable) cells.push({ row, col });
+        }
+      }
+      then(cells);
+    });
+  }
+
+  private valueAt(row: number, col: number): CellValue | undefined {
+    const data = this.cache.get(row) ?? this.stale?.get(row);
+    return data ? rawValue(data[col + 1]) : undefined;
+  }
+
+  /** Puts a value in a row the browser has, in a new copy of the row. */
+  private setValue(row: number, col: number, value: unknown): void {
+    for (const cache of [this.cache, this.stale]) {
+      const data = cache?.get(row);
+      if (!cache || !data) continue;
+      const copy = [...data] as Row;
+      copy[col + 1] = value as CellValue;
+      cache.store(row, [copy]);
+    }
+  }
+
+  /** Draws the rows on the screen again, with their errors and marks. */
+  private refreshRows(): void {
+    for (const rowEl of this.rows.values()) rowEl.masuRow = undefined;
+    this.render();
+  }
+
   // Selection and copy.
 
   /** The cells a copy takes: the range, or the active cell. */
@@ -824,7 +1160,7 @@ export class Grid {
       const line: string[] = [];
       for (let col = selection.left; col <= selection.right; col++) {
         const value = row ? (row[col + 1] as CellValue) : null;
-        line.push(this.columns[col].html ? htmlText(value) : copyText(value));
+        line.push(this.columns[col].html ? htmlText(Array.isArray(value) ? (value[0] as CellValue) : value) : copyText(value));
       }
       lines.push(line);
     }
@@ -918,11 +1254,48 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   op_in: "is one of",
   op_is_nil: "is empty",
   op_not_nil: "is not empty",
+  not_editable: "{count} cells cannot be edited",
+  saved: "{count} cells saved",
+  more_errors: "({count} more)",
 };
 
 // A funnel, drawn for Masu.
 const FILTER_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.5 3h11l-4.25 5v4.25l-2.5 1.25V8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+
+interface Editor {
+  input: HTMLInputElement;
+  row: number;
+  col: number;
+  id: unknown;
+  original: CellValue;
+  done: boolean;
+}
+
+interface Edit {
+  id: unknown;
+  key: string;
+  col: number;
+  /** The row's index when the edit was made; undefined for an undo. */
+  row: number | undefined;
+  before: CellValue;
+  value: string | boolean | null;
+}
+
+const MAX_EDITS = 5_000;
+
+function cellKey(id: unknown, key: string): string {
+  return `${JSON.stringify(id)}\u0000${key}`;
+}
+
+/** The value of a cell: an editable column of HEEx sends [html, value]. */
+function rawValue(value: unknown): CellValue {
+  return Array.isArray(value) ? (value[1] as CellValue) : (value as CellValue);
+}
+
+function escapeHTML(text: string): string {
+  return text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+}
 
 function readConfig(el: HTMLElement): Config {
   return JSON.parse(el.dataset.masu ?? "{}") as Config;

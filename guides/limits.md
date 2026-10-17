@@ -64,3 +64,18 @@ A grid of a list takes a batch of changes by finding each row by its id
 and applying the query again: a fifth of a second for a hundred thousand
 rows. For a list that large that changes often, use an Ecto source,
 which asks the database instead.
+
+## Editing a large list
+
+A grid of a list saves an edit by finding its row by its id and applying
+the query again, as for a live change: a fifth of a second for a hundred
+thousand rows. An Ecto source asks the database instead.
+
+## A paste or a fill of many cells
+
+A paste, a fill or an emptied range saves at most five thousand cells at
+once, and only of rows that the browser can ask for.
+
+## A primary key of several fields
+
+An Ecto source finds a row to edit by a primary key of one field.

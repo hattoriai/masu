@@ -58,6 +58,7 @@ defmodule Masu.Column do
           sortable: boolean(),
           filterable: boolean(),
           searchable: boolean(),
+          editable: boolean() | nil,
           slot: map() | nil
         }
 
@@ -73,7 +74,8 @@ defmodule Masu.Column do
     align: :start,
     sortable: true,
     filterable: true,
-    searchable: false
+    searchable: false,
+    editable: nil
   ]
 
   @doc "The types a column can have."
@@ -111,6 +113,7 @@ defmodule Masu.Column do
       sortable: Map.get(attrs, :sortable, true) != false,
       filterable: Map.get(attrs, :filterable, true) != false,
       searchable: Map.get(attrs, :searchable, type in [:text, :enum]) == true,
+      editable: Map.get(attrs, :editable),
       slot: if(Map.get(attrs, :inner_block), do: attrs)
     }
   end
@@ -145,6 +148,14 @@ defmodule Masu.Column do
     raise ArgumentError,
           "a Masu column with a value function needs a key, got: #{inspect(attrs)}"
   end
+
+  @doc """
+  Whether a person may edit the column's cells: its grid edits (it has a
+  `changeset` or an `update`), the column names a field (not a `value`
+  function), and it does not say `editable={false}`.
+  """
+  @spec editable?(t()) :: boolean()
+  def editable?(%__MODULE__{editable: editable}), do: editable == true
 
   @doc "The value of the column for a row."
   @spec get(t(), term()) :: term()

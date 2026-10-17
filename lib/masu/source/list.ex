@@ -64,6 +64,12 @@ defmodule Masu.Source.List do
   defp value_has?(value, search),
     do: value |> Value.to_wire() |> to_string() |> String.downcase() |> String.contains?(search)
 
+  @impl true
+  def fetch(%{all: rows}, ids, row_id) do
+    wanted = MapSet.new(ids)
+    Enum.filter(rows, &MapSet.member?(wanted, Value.to_wire(row_id.(&1))))
+  end
+
   # A changed row takes the place of the row with its id, a new one goes
   # at the end, and a deleted one leaves.
   @impl true

@@ -208,3 +208,97 @@ test.describe("the filter menu", () => {
     await expect(grid(page, "customers")).toBeFocused();
   });
 });
+
+test.describe("editing", () => {
+  test.beforeEach(async ({ page }) => {
+    await openPage(page, "/");
+  });
+
+  const cell = (page: import("@playwright/test").Page, row: number, col: number) => page.locator(`#customers-r${row}-c${col}`);
+
+  test("typing on a cell edits it, Enter saves and moves down", async ({ page }) => {
+    await cell(page, 0, 1).click();
+    await page.keyboard.type("Rui Freitas");
+    await expect(page.locator("#customers .masu-editor")).toHaveValue("Rui Freitas");
+    await page.keyboard.press("Enter");
+
+    await expect(cell(page, 0, 1)).toHaveText("Rui Freitas");
+    await expect(page.locator("#customers .masu-editor")).toHaveCount(0);
+    await expect(grid(page, "customers")).toHaveAttribute("aria-activedescendant", "customers-r1-c1");
+    await expect(grid(page, "customers")).toBeFocused();
+  });
+
+  test("the changeset's error goes on the cell, with the old value", async ({ page }) => {
+    await cell(page, 1, 5).click();
+    await page.keyboard.press("Enter");
+    await page.locator("#customers .masu-editor").fill("0");
+    await page.keyboard.press("Enter");
+
+    await expect(cell(page, 1, 5)).toHaveAttribute("aria-invalid", "true");
+    await expect(cell(page, 1, 5)).toHaveAttribute("title", "must be greater than 0");
+    await expect(cell(page, 1, 5)).toHaveText("75");
+    await expect(page.locator("#customers .masu-status")).toHaveText("Seats: must be greater than 0");
+  });
+
+  test("Escape gives up, and undo and redo take an edit back and again", async ({ page }) => {
+    await cell(page, 2, 1).dblclick();
+    await page.keyboard.type(" Jr");
+    await page.keyboard.press("Escape");
+    await expect(cell(page, 2, 1)).toHaveText("Alan Matsumoto");
+
+    await cell(page, 2, 1).click();
+    await page.keyboard.type("Grace");
+    await page.keyboard.press("Tab");
+    await expect(cell(page, 2, 1)).toHaveText("Grace");
+    await expect(grid(page, "customers")).toHaveAttribute("aria-activedescendant", "customers-r2-c2");
+
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(cell(page, 2, 1)).toHaveText("Alan Matsumoto");
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    await expect(cell(page, 2, 1)).toHaveText("Grace");
+  });
+
+  test("Space turns a boolean, and Delete empties the cells of a range", async ({ page }) => {
+    await cell(page, 0, 7).click();
+    await page.keyboard.press("Space");
+    await expect(cell(page, 0, 7)).toHaveText("");
+    await page.keyboard.press("Space");
+    await expect(cell(page, 0, 7)).toHaveText("✓");
+
+    await cell(page, 0, 3).click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Delete");
+    await expect(cell(page, 0, 3)).toHaveText("");
+    await expect(cell(page, 1, 3)).toHaveText("");
+  });
+
+  test("a paste from a spreadsheet fills the cells from the active one", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "only Chromium lets a test write the clipboard");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await cell(page, 3, 3).click();
+    await page.evaluate(() => navigator.clipboard.writeText("Porto\tteam\nFaro\tnot a plan"));
+    await page.keyboard.press("ControlOrMeta+v");
+
+    await expect(cell(page, 3, 3)).toHaveText("Porto");
+    await expect(cell(page, 3, 4)).toHaveText("team");
+    await expect(cell(page, 4, 4)).toHaveAttribute("aria-invalid", "true");
+    await expect(cell(page, 4, 3)).toHaveAttribute("title", "Not saved: the row has an error.");
+    await expect(cell(page, 4, 3)).toHaveText("São Paulo");
+  });
+
+  test("Ctrl+D fills a range down with its first row", async ({ page }) => {
+    await cell(page, 5, 5).click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("ControlOrMeta+d");
+    await expect(cell(page, 6, 5)).toHaveText("223");
+    await expect(cell(page, 7, 5)).toHaveText("223");
+  });
+
+  test("a column with editable={false} does not edit", async ({ page }) => {
+    await cell(page, 0, 0).click();
+    await page.keyboard.type("9");
+    await expect(page.locator("#customers .masu-editor")).toHaveCount(0);
+    await expect(cell(page, 0, 0)).toHaveText("1");
+  });
+});

@@ -62,6 +62,16 @@ defmodule Masu.Components do
   attr :repo, :atom, default: nil, doc: "the repo of an Ecto source"
   attr :repo_opts, :list, default: [], doc: "options for each call to the repo"
 
+  attr :changeset, :any,
+    default: nil,
+    doc:
+      "a function of a row and params that gives a changeset: the person edits the cells, see the Editing guide"
+
+  attr :update, :any,
+    default: nil,
+    doc:
+      "a function of a row and params that saves them: `{:ok, row}` or `{:error, changeset_or_message}`; instead of `changeset`"
+
   attr :live, :any,
     default: nil,
     doc:
@@ -108,6 +118,7 @@ defmodule Masu.Components do
     attr :sortable, :boolean
     attr :filterable, :boolean
     attr :searchable, :boolean
+    attr :editable, :boolean
   end
 
   slot :empty, doc: "what the grid shows when it has no rows"
@@ -125,6 +136,8 @@ defmodule Masu.Components do
       repo={@repo}
       repo_opts={@repo_opts}
       live={@live}
+      changeset={@changeset}
+      update={@update}
       row_id={@row_id}
       sort={@sort}
       filters={@filters}

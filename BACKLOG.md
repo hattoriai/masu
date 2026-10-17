@@ -16,19 +16,13 @@ The date filters use the browser's own date inputs; use Koyomi's pickers
 when the app has Koyomi. Offer the values of a text column, as an enum's
 are, when it has few. Several filters on one column (a range and empty).
 
-## Editing cells
+## Editing: more editors, new rows
 
-`editable={&Order.changeset/2}`: a double click or Enter edits a cell, with
-an editor for its type (text, number, select, a date with Koyomi, rich
-text with Kotoba). The changeset of the row checks the value, and its
-error shows on the cell. The edit shows at once and goes back when the
-changeset refuses it. Undo and redo.
-
-## Paste from a spreadsheet
-
-A paste of tab-separated text into a selected range: each cell through
-its column's editor and the row's changeset, in one batch, with the
-errors on the cells that the changesets refuse.
+A select for an enum, of its values (as the filter menu has them);
+Koyomi's pickers for dates and Kotoba for rich text, when the app has
+them; an editor of your own in the `:col` slot. New rows (a row at the
+end that adds one) and deleting rows. A decimal shown with the digits of
+its column (`decimals={2}`), whatever the digits of its value.
 
 ## Grouping and totals
 

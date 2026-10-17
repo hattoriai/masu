@@ -18,6 +18,11 @@ cell, as in a spreadsheet.
 | Ctrl+A | selects every row |
 | Escape | drops the selection |
 | Ctrl+C | copies the selection, or the active cell |
+| A key typed, Enter, F2 | edits the active cell, in a grid that edits (see [Editing](editing.md)) |
+| Ctrl+V | pastes tab-separated text from the active cell |
+| Ctrl+D | fills the selection down with its first row |
+| Delete, Backspace | empties the editable cells of the selection |
+| Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y | undoes and redoes an edit |
 
 In a grid that reads right to left, ← and → swap.
 

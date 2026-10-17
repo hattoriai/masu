@@ -11,7 +11,13 @@ defmodule Masu.Grid do
     * `"masu:rows"` with `from` and `count`: the rows of the current query
       from row `from`, at most 500 of them;
     * `"masu:query"` with `sorts`, `filters` and `search`: applies a new
-      query, and answers with its count and its first rows.
+      query, and answers with its count and its first rows;
+    * `"masu:values"` with `key`: the values of a column, for its filter
+      menu;
+    * `"masu:edit"` with `edits`, a list of `id`, `key` and `value`: saves
+      the edits of each row together (see `Masu.Components.data_grid/1`'s
+      `changeset` and `update`), and answers with the errors of the cells
+      that were not saved.
 
   Each answer carries the grid's `revision`, which changes whenever its
   rows do (a new query, or new rows from the LiveView), so that the
@@ -19,7 +25,8 @@ defmodule Masu.Grid do
 
   A row goes to the browser as a list: its id, then a value for each
   column, the column's value in JSON (see `Masu.Column` for the types) or,
-  for a column with content, the HTML of its cell.
+  for a column with content, the HTML of its cell (with its value, as
+  `[html, value]`, when the column is editable).
   """
 
   use Phoenix.LiveComponent
@@ -68,7 +75,7 @@ defmodule Masu.Grid do
       cond do
         is_nil(socket.assigns.source) -> start(socket, assigns.input, columns)
         assigns.input != socket.assigns.input -> restart(socket, assigns.input, columns)
-        true -> assign(socket, columns: supported(socket.assigns.source, columns))
+        true -> assign(socket, columns: supported(socket.assigns.source, columns, socket.assigns))
       end
 
     {:ok, follow(socket)}
@@ -108,7 +115,7 @@ defmodule Masu.Grid do
 
   defp start(socket, input, columns) do
     source = Source.new(input, source_opts(socket.assigns))
-    columns = supported(source, columns)
+    columns = supported(source, columns, socket.assigns)
 
     query =
       case Query.new([sort: socket.assigns.sort, filters: socket.assigns.filters], columns) do
@@ -128,7 +135,7 @@ defmodule Masu.Grid do
   # and search stay, and the browser drops the rows it has.
   defp restart(socket, input, columns) do
     source = Source.new(input, source_opts(socket.assigns))
-    columns = supported(source, columns)
+    columns = supported(source, columns, socket.assigns)
     source = Source.prepare(source, socket.assigns.query, columns)
 
     assign(socket,
@@ -145,9 +152,19 @@ defmodule Masu.Grid do
   defp source_opts(assigns),
     do: [repo: assigns.repo, repo_opts: assigns.repo_opts, grid: assigns.id]
 
-  # A column that the source cannot sort or filter by does neither.
-  defp supported(source, columns) do
+  # A column that the source cannot sort or filter by does neither. A
+  # column is editable when the grid edits, and it names a field.
+  defp supported(source, columns, assigns) do
+    edits? = assigns.changeset != nil or assigns.update != nil
+
     Enum.map(columns, fn column ->
+      column = %{
+        column
+        | editable:
+            edits? and column.editable != false and is_nil(column.value) and
+              not is_nil(column.field)
+      }
+
       if Source.supports?(source, column),
         do: column,
         else: %{column | sortable: false, filterable: false, searchable: false}
@@ -181,6 +198,43 @@ defmodule Masu.Grid do
       _other ->
         {:reply, %{"key" => key, "values" => []}, socket}
     end
+  end
+
+  # Edits of cells: saved, then the rows of the query again, as for a
+  # live change. Other LiveViews that follow the grid's topic get the
+  # saved rows; this one has them already.
+  def handle_event("masu:edit", %{"edits" => edits}, socket) when is_list(edits) do
+    row_id = row_id(socket.assigns)
+    {saved, errors} = Masu.Edit.run(edits, socket.assigns, row_id)
+
+    socket =
+      if saved == [] do
+        socket
+      else
+        %{source: source, query: query, columns: columns, revision: revision} = socket.assigns
+
+        source =
+          source
+          |> Source.change(Enum.map(saved, &{:upsert, &1}), row_id)
+          |> Source.prepare(query, columns)
+
+        broadcast(socket.assigns.live, saved)
+
+        assign(socket,
+          source: source,
+          total: Source.count(source),
+          revision: revision + 1,
+          initial: nil,
+          changed: []
+        )
+      end
+
+    {:reply,
+     %{
+       "revision" => socket.assigns.revision,
+       "rows" => encode_rows(saved, socket.assigns),
+       "errors" => errors
+     }, socket}
   end
 
   def handle_event("masu:query", params, socket) when is_map(params) do
@@ -229,12 +283,26 @@ defmodule Masu.Grid do
     Enum.map(rows, fn row -> [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)] end)
   end
 
+  defp broadcast(nil, _rows), do: :ok
+
+  defp broadcast({pubsub, topic}, rows) do
+    for row <- rows, do: Masu.Live.broadcast_upsert_from(self(), pubsub, topic, row)
+    :ok
+  end
+
   defp row_id(assigns), do: assigns.row_id || (&default_row_id/1)
 
   defp cells(columns, row) do
     Enum.map(columns, fn
-      %Column{slot: nil} = column -> column |> Column.get(row) |> Value.to_wire()
-      %Column{slot: slot} -> slot_html(slot, row)
+      %Column{slot: nil} = column ->
+        column |> Column.get(row) |> Value.to_wire()
+
+      # An editable column of HEEx sends its value too, for the editor.
+      %Column{slot: slot, editable: true} = column ->
+        [slot_html(slot, row), column |> Column.get(row) |> Value.to_wire()]
+
+      %Column{slot: slot} ->
+        slot_html(slot, row)
     end)
   end
 
@@ -373,6 +441,7 @@ defmodule Masu.Grid do
       "align" => Atom.to_string(column.align),
       "sortable" => column.sortable,
       "filterable" => column.filterable,
+      "editable" => column.editable,
       "html" => column.slot != nil
     }
   end

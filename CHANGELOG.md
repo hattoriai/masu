@@ -24,6 +24,13 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the filters of the column's type, an enum's values with their counts
   (`c:Masu.Source.values/5`: a list in the LiveView, one `GROUP BY` for
   Ecto), and the filters as chips above the grid. `Masu.Test.values/4`.
+- Editing: `changeset` (or `update`) on the grid, `editable={false}` on a
+  column. A cell edits on a key typed, Enter, F2 or a double click, with
+  an editor for its type; the edits of a row are saved together, through
+  the changeset and the repo (or applied to a row of a list), and the
+  changeset's errors go on their cells. Paste of tab-separated text, fill
+  down, Delete, undo and redo. A row is found again through the grid's
+  own query (`c:Masu.Source.fetch/3`). `Masu.Test.edit/3`.
 - Live rows: `live={{pubsub, topic}}`, the `Masu.Live` hook, and
   `Masu.Live.broadcast_upsert/3` and `broadcast_delete/3`. A grid takes
   the changes of its topic into the person's query, a batch at a time;
