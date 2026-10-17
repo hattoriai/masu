@@ -161,6 +161,7 @@ defmodule MasuDev.Layouts do
           {"Look", "/look"},
           {"Menus", "/menus"},
           {"Some filters", "/limited"},
+          {"Results", "/results"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -1076,6 +1077,76 @@ defmodule MasuDev.LimitedLive do
   end
 end
 
+defmodule MasuDev.ResultsLive do
+  @moduledoc """
+  A query tool's results, as Lotus Web gets them: column names, and rows
+  as lists of values, of no types. The grid has no `:col` slots: its
+  `columns` are the names, and each column's type is learned from its
+  values. Another query brings other columns.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket), do: {:ok, run(socket, "customers")}
+
+  @impl true
+  def handle_event("run", %{"query" => query}, socket), do: {:noreply, run(socket, query)}
+
+  defp run(socket, "customers") do
+    rows =
+      for c <- Enum.take(MasuDev.Customers.all(), 300),
+          do: [
+            c.id,
+            c.name,
+            c.city,
+            c.plan,
+            c.seats,
+            c.revenue,
+            c.active,
+            c.signed_up,
+            c.last_seen
+          ]
+
+    assign(socket,
+      query: "customers",
+      columns: ~w(id name city plan seats revenue active signed_up last_seen),
+      rows: rows
+    )
+  end
+
+  defp run(socket, "plans") do
+    rows =
+      MasuDev.Customers.all()
+      |> Enum.group_by(& &1.plan)
+      |> Enum.map(fn {plan, cs} ->
+        [
+          plan,
+          length(cs),
+          cs |> Enum.map(& &1.revenue) |> Enum.reduce(&Decimal.add/2),
+          Enum.sum_by(cs, & &1.seats) / length(cs)
+        ]
+      end)
+
+    assign(socket, query: "plans", columns: ~w(plan customers revenue seats), rows: rows)
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="results-label">Results</h1>
+    <form id="run" phx-change="run">
+      <select name="query" aria-label="Query">
+        <option value="customers" selected={@query == "customers"}>SELECT * FROM customers</option>
+        <option value="plans" selected={@query == "plans"}>SELECT plan, count(*), sum(revenue), avg(seats) …</option>
+      </select>
+    </form>
+    <.data_grid id="results" rows={@rows} columns={@columns} row_id={:position} label_id="results-label" height="24rem" />
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -1105,6 +1176,7 @@ defmodule MasuDev.Router do
     live("/look", MasuDev.LookLive)
     live("/menus", MasuDev.MenusLive)
     live("/limited", MasuDev.LimitedLive)
+    live("/results", MasuDev.ResultsLive)
     masu_exports()
   end
 end

@@ -130,6 +130,22 @@ source can sort and filter by a column; the grid turns off the others.
 A source of a tree implements `nodes/3` and `siblings/2` too: see
 [Trees and details](trees.md).
 
+### Columns of the source
+
+A source whose columns are known when its query runs (a query tool,
+a warehouse) gives them with the optional `columns/1`, and a grid with
+no `:col` slots takes them:
+
+```elixir
+@impl true
+def columns(state), do: state.result.columns
+```
+
+Each is a key, or a keyword list or map of a `:col`'s attributes. Without
+a `field`, a column reads its place of a row that is a list; without a
+`type`, it takes the type of its values. See
+[Columns not known in advance](columns.md#columns-not-known-in-advance).
+
 ### The filters a source runs
 
 A source that Masu does not translate itself (an API, a search engine,

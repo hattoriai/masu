@@ -28,6 +28,19 @@ defmodule Masu.Column do
   row that the browser shows; the type still says how it sorts and
   filters.
 
+  `type={:auto}` is a column whose type the grid learns from its values,
+  in the first block of rows of its source: integers make an `:integer`
+  column, `Decimal`s a `:decimal` one, `Date`s a `:date` one, and so on;
+  values of several types, or of none of these, make it `:text`. The
+  grid keeps the type until its source changes. A column whose rows are
+  a query tool's results, of no types, takes it.
+
+  ## Rows as lists
+
+  `field={2}` reads the value at that place of a row that is a list (from
+  0): a query tool's rows, which come as lists of values in the order of
+  its columns. Its key is the place as a string unless given.
+
   ## Editing
 
   In a grid that edits, `values` lists the values of an `:enum` column,
@@ -66,7 +79,7 @@ defmodule Masu.Column do
 
   @type t :: %__MODULE__{
           key: String.t(),
-          field: atom() | String.t() | nil,
+          field: atom() | String.t() | non_neg_integer() | nil,
           value: (term() -> term()) | nil,
           label: String.t(),
           type: type(),
@@ -85,7 +98,8 @@ defmodule Masu.Column do
           pinned: :start | :end | nil,
           aggregate: aggregate() | nil,
           filter_ops: [Masu.Filter.op()] | nil,
-          slot: map() | nil
+          slot: map() | nil,
+          auto: map() | nil
         }
 
   @aggregates [:sum, :avg, :min, :max, :count, :count_distinct]
@@ -121,7 +135,10 @@ defmodule Masu.Column do
     aggregate: nil,
     # The operators its source filters it by (c:Masu.Source.filters/2);
     # nil: every operator of its type.
-    filter_ops: nil
+    filter_ops: nil,
+    # A column of `type={:auto}`: its attributes, to make it again of the
+    # type its values have (typed/2).
+    auto: nil
   ]
 
   @doc "The types a column can have."
@@ -147,6 +164,12 @@ defmodule Masu.Column do
     {field, value, type} = check!(attrs)
     key = to_key(Map.get(attrs, :key) || field || raise_key(attrs))
 
+    if type == :auto,
+      do: %{new(Map.put(attrs, :type, :text)) | type: :auto, auto: attrs},
+      else: build(attrs, key, field, value, type)
+  end
+
+  defp build(attrs, key, field, value, type) do
     %__MODULE__{
       key: key,
       field: field,
@@ -208,12 +231,21 @@ defmodule Masu.Column do
       raise ArgumentError, "a Masu column needs a field or a value, got: #{inspect(attrs)}"
     end
 
-    unless type in @types do
+    unless type in @types or type == :auto do
       raise ArgumentError,
-            "unknown Masu column type #{inspect(type)}; the types are #{inspect(@types)}"
+            "unknown Masu column type #{inspect(type)}; the types are #{inspect(@types)} or :auto"
     end
 
+    check_field!(field)
     {field, value, type}
+  end
+
+  defp check_field!(field) when is_atom(field) or is_binary(field), do: :ok
+  defp check_field!(place) when is_integer(place) and place >= 0, do: :ok
+
+  defp check_field!(field) do
+    raise ArgumentError,
+          "a Masu column's field is a key of a row, or a place in a row that is a list (from 0), got: #{inspect(field)}"
   end
 
   # A slot's attribute that is not given is absent; one given as nil is
@@ -250,9 +282,53 @@ defmodule Masu.Column do
   def editable?(%__MODULE__{editable: true, editable_if: fun}, row), do: fun.(row) == true
   def editable?(%__MODULE__{}, _row), do: false
 
+  @doc """
+  A column of `type={:auto}` made again with a type (`infer/1`); any
+  other column as it is.
+  """
+  @spec typed(t(), type()) :: t()
+  def typed(%__MODULE__{type: :auto, auto: attrs}, type), do: new(Map.put(attrs, :type, type))
+  def typed(%__MODULE__{} = column, _type), do: column
+
+  @doc """
+  The type of a column of these values: the type that every value which
+  is not `nil` has (an integer and a float make `:number`), else `:text`.
+  """
+  @spec infer([term()]) :: type()
+  def infer(values) do
+    values
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&type_of/1)
+    |> Enum.uniq()
+    |> case do
+      [type] ->
+        type
+
+      types when types != [] ->
+        if Enum.sort(types) == [:integer, :number], do: :number, else: :text
+
+      [] ->
+        :text
+    end
+  end
+
+  defp type_of(value) when is_integer(value), do: :integer
+  defp type_of(value) when is_float(value), do: :number
+  defp type_of(value) when is_boolean(value), do: :boolean
+  defp type_of(%Decimal{}), do: :decimal
+  defp type_of(%Date{}), do: :date
+  defp type_of(%DateTime{}), do: :datetime
+  defp type_of(%NaiveDateTime{}), do: :datetime
+  defp type_of(%Time{}), do: :time
+  defp type_of(_value), do: :text
+
   @doc "The value of the column for a row."
   @spec get(t(), term()) :: term()
   def get(%__MODULE__{value: fun}, row) when is_function(fun, 1), do: fun.(row)
+
+  def get(%__MODULE__{field: place}, row) when is_integer(place) and is_list(row),
+    do: Enum.at(row, place)
+
   def get(%__MODULE__{field: field}, %{} = row), do: Map.get(row, field)
   def get(%__MODULE__{}, _row), do: nil
 
@@ -272,6 +348,7 @@ defmodule Masu.Column do
 
   defp to_key(key) when is_atom(key), do: Atom.to_string(key)
   defp to_key(key) when is_binary(key), do: key
+  defp to_key(key) when is_integer(key), do: Integer.to_string(key)
 
   defp humanize(key) do
     key

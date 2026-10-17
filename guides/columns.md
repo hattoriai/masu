@@ -101,3 +101,41 @@ The content is a cell of a row of a fixed height: a link, a badge, an
 icon, a line of text. A cell clips what does not fit.
 
 A copy of a cell of your own gives its text, without the HTML.
+
+## Columns not known in advance
+
+A query tool knows its columns when its query runs: a result is a list
+of column names, and rows as lists of values in their order, of no
+types. A grid of it has no `:col` slots; `columns` names them:
+
+```heex
+<.data_grid id="result" rows={@result.rows} columns={@result.columns} row_id={:position} />
+```
+
+Each column is a key (a string), or a keyword list or map of a `:col`'s
+attributes (`key`, `label`, `type`, `width`, `field`...):
+
+```heex
+<.data_grid id="result" rows={@rows} columns={["name", [key: "total", type: :decimal, label: "Total"]]} />
+```
+
+A column without a `field` reads the value at its place of a row that
+is a list: the first column the first value. A column without a `type`
+is `:auto`: the grid learns its type from the values of the first block
+of rows (integers, decimals, dates, booleans...; values of several
+types, or none, are text), so that numbers align to the end, dates show
+in the locale, and each column has the filters of its type. A
+`:col` takes `type={:auto}` and `field={2}` too.
+
+A source of your own gives its columns with the optional
+`c:Masu.Source.columns/1`, for a grid with neither `:col` slots nor
+`columns` (see [Sources](sources.md)).
+
+When the rows change for a result of other columns, the grid takes the
+new columns, and learns their types again. The person's view keeps
+what is of the columns there still (a sort, a filter, a width, a hidden
+column) and names the rest, as a link to columns that are gone does;
+their order is the new result's, unless the person moved columns. Rows
+as lists have no ids: `row_id={:position}` says so, for a grid that
+reads (see [Sources](sources.md#row-ids)). A column that reads a place
+of a list does not edit.
