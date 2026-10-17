@@ -1,9 +1,11 @@
 defmodule Masu.ExportTest do
   use ExUnit.Case, async: true
 
-  alias Masu.Export.Xlsx
+  alias Masu.Column
+  alias Masu.Export.{Download, Ticket, Xlsx}
 
   import Phoenix.ConnTest
+  import Plug.Conn, only: [get_resp_header: 2]
   import Phoenix.LiveViewTest
   import Masu.Test
 
@@ -28,10 +30,76 @@ defmodule Masu.ExportTest do
                "6,\"'=HYPERLINK(\"\"x\"\")\",,,\r\n"
   end
 
-  test "the progress goes to the browser" do
+  test "the link goes through the router's scope, and is good once" do
     view = open()
-    export(view, "people", :csv)
-    assert_push_event(view, "masu:export", %{"id" => "people", "done" => 6, "total" => 6})
+    url = export_url(view, "people", :csv)
+    assert url =~ ~r{^/admin/masu/exports/[^/?]+$}
+
+    conn = get(build_conn(), url)
+    assert conn.status == 200
+    assert get_resp_header(conn, "content-type") == ["text/csv; charset=utf-8"]
+    assert get_resp_header(conn, "cache-control") == ["no-store"]
+    assert conn.resp_body =~ "ID,Name"
+
+    conn = get(build_conn(), url)
+    assert conn.status == 410
+    assert conn.resp_body =~ "used, or has expired"
+  end
+
+  test "a link of no export gives nothing; a ticket goes with its LiveView" do
+    assert get(build_conn(), "/admin/masu/exports/nonsense").status == 404
+
+    owner = spawn(fn -> Process.sleep(:infinity) end)
+    {:ok, ticket} = Ticket.start(owner, :export)
+    ref = Process.monitor(ticket)
+    Process.exit(owner, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^ticket, :normal}
+    assert Ticket.take(ticket) == :gone
+  end
+
+  test "the file's name in its header has nothing that ends the header" do
+    assert Download.disposition("a\"b\r\nX-Evil: 1", "csv") ==
+             ~s(attachment; filename="abX-Evil: 1.csv"; filename*=UTF-8''abX-Evil%3A%201.csv)
+
+    assert Download.disposition("Pedidos ação", "xlsx") ==
+             ~s(attachment; filename="Pedidos a__o.xlsx"; filename*=UTF-8''Pedidos%20a%C3%A7%C3%A3o.xlsx)
+
+    assert Download.disposition("", "csv") =~ ~s(filename="export.csv")
+  end
+
+  test "write/4 writes a file a block at a time, and says how far it got" do
+    columns = [Column.new(field: :id, type: :integer), Column.new(field: :name)]
+    rows = for id <- 1..1203, do: %{id: id, name: "row #{id}"}
+
+    export = %Masu.Export{
+      input: rows,
+      opts: [row_id: & &1.id],
+      query: %Masu.Query{},
+      columns: columns,
+      all_columns: columns,
+      name: "rows"
+    }
+
+    dir = Path.join(System.tmp_dir!(), "masu-export-test-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    on_exit(fn -> File.rm_rf(dir) end)
+    me = self()
+
+    path = Path.join(dir, "rows.csv")
+    :ok = Masu.Export.write(export, :csv, path, progress: &send(me, {:progress, &1, &2}))
+    assert path |> File.read!() |> String.split("\r\n", trim: true) |> length() == 1204
+    for done <- [500, 1000, 1203, 1203], do: assert_received({:progress, ^done, 1203})
+
+    path = Path.join(dir, "rows.xlsx")
+    :ok = Masu.Export.write(export, :xlsx, path)
+
+    {:ok, [{_name, sheet}]} =
+      :zip.unzip(String.to_charlist(path), [:memory, file_list: [~c"xl/worksheets/sheet1.xml"]])
+
+    assert sheet =~
+             ~s(<c r="B1204" t="inlineStr"><is><t xml:space="preserve">row 1203</t></is></c>)
+
+    assert sheet =~ ~r{</row></sheetData></worksheet>$}
   end
 
   test "XLSX: a workbook of one sheet, with numbers, dates and booleans as such" do

@@ -9,21 +9,62 @@
 `export` adds an Export menu to the toolbar: CSV, and Excel (XLSX). The
 file has every row of the person's query (their order, filters and
 search), with the columns that show, in their order, and their labels
-as its first row. It is written in a task, the LiveView goes on, the
-button says how far it got (with the `Masu.Live` hook), and the browser
-downloads it when it is done. `export={[:csv]}` offers CSV alone.
+as its first row. `export={[:csv]}` offers CSV alone.
 
-In CSV, values are as the browser gets them (decimals with their digits,
-dates in ISO 8601); text that a spreadsheet would run as a formula (it
-starts with `=`, `+`, `-`, `@`) starts with `'`. In XLSX, numbers,
-decimals, dates, times and booleans are cells of their type. A column of
-your own HEEx exports its value, not its HTML. Grouped rows and a tree's
-rows are exported as rows, every one of them.
+The file downloads from a route of your router, which `masu_exports`
+mounts:
+
+```elixir
+defmodule MyAppWeb.Router do
+  use MyAppWeb, :router
+  import Masu.Router
+
+  scope "/" do
+    pipe_through [:browser, :require_authenticated_user]
+
+    live "/orders", OrdersLive
+    masu_exports "/masu/exports"
+  end
+end
+```
+
+The menu asks the grid for a link, and the browser downloads the file
+from it, as a download of its own (its progress, and its cancel, are the
+browser's). The rows are read a block at a time as the file goes, from
+an Ecto source by key, and written to the response as they are read:
+the file is never whole in memory, nor on disk, nor sent over the
+LiveView's socket. A cancelled download stops the reading.
+
+**The link.** Its token is encrypted with the endpoint's
+`secret_key_base`, and names a ticket that the grid's LiveView holds,
+not the export: a link in the browser's history, or in a log, gives
+nothing. A ticket is good for one download, for five minutes, and while
+the LiveView that made it runs. Put the route in a scope that requires
+the person to be signed in, as the grid's LiveView does: the token
+proves the grid made the export, the pipeline that the person is still
+who they were. The route goes through the scopes it is in, and the
+endpoint's `script_name`. With the app on several nodes, the download
+must reach a node connected to the LiveView's (distributed Erlang, as
+`Phoenix.PubSub` has it).
+
+The file is named after the grid and the day, `orders-2026-10-17.csv`:
+in its `Content-Disposition`, with no character that could end the
+header, and in UTF-8.
+
+**Values.** In CSV (UTF-8), values are as the browser gets them
+(decimals with their digits, dates in ISO 8601); text that a spreadsheet
+would run as a formula (it starts with `=`, `+`, `-`, `@`) starts with
+`'`. In XLSX, numbers, decimals, dates, times and booleans are cells of
+their type. A column of your own HEEx exports its value, not its HTML.
+Grouped rows and a tree's rows are exported as rows, every one of them.
+An XLSX sheet has Excel's 1,048,576 rows at most; a CSV file has every
+row.
 
 An app exports a grid itself with `Masu.Live.export/1`, in the LiveView.
 It gives the export as data (`Masu.Export`), which `Masu.Export.write/4`
-writes to a file anywhere (in a task, in a background job), and
-`Masu.Export.stream/1` streams as CSV:
+writes to a file anywhere (in a task, in a background job, with
+`progress:`), and `Masu.Export.stream/2` streams, to a response of your
+own:
 
 ```elixir
 def handle_event("email_report", _params, socket) do
@@ -38,8 +79,6 @@ def handle_event("email_report", _params, socket) do
   {:noreply, socket}
 end
 ```
-
-The rows are read from the source a block at a time.
 
 ## Selecting rows
 
@@ -94,6 +133,8 @@ query with its own `order_by` (and no sort of the person's) is read by
 
 ## Testing
 
-`Masu.Test.export/3` exports a grid as its menu does and gives the file
-(`{name, binary}`). `Masu.Test.select/4`, `select_all/3` and
-`selection/2` select rows and read the selection.
+`Masu.Test.export/4` exports a grid as its menu does, downloads the file
+through your router's route, and gives it (`{name, binary}`);
+`Masu.Test.export_url/3` gives the link, to test the route's pipeline.
+`Masu.Test.select/4`, `select_all/3` and `selection/2` select rows and
+read the selection.

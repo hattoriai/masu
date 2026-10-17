@@ -156,7 +156,7 @@ defmodule Masu.MixProject do
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],
         Sources: [Masu.Source, Masu.Source.List, Masu.Source.Ecto],
-        Export: [Masu.Export],
+        Export: [Masu.Export, Masu.Router],
         Testing: [Masu.Test]
       ]
     ]

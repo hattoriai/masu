@@ -1,10 +1,11 @@
 defmodule Masu.Export.Xlsx do
   @moduledoc false
   # An XLSX file of an export, with no library: the parts of a workbook
-  # of one sheet, written as files to a directory of their own (the sheet
-  # a row at a time), then zipped.
+  # of one sheet, zipped as they are written (Masu.Export.Zip), the sheet
+  # a block of rows at a time.
 
   alias Masu.{Column, Export}
+  alias Masu.Export.Zip
 
   @xmlns ~s(xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main")
   @rels "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -16,56 +17,38 @@ defmodule Masu.Export.Xlsx do
   @time 3
   @label 4
 
-  @spec write(Export.t(), Enumerable.t(), Path.t(), (term() -> term())) :: :ok
-  def write(%Export{columns: columns}, rows, path, progress) do
-    dir = Path.join(System.tmp_dir!(), "masu-xlsx-#{System.unique_integer([:positive])}")
-
-    try do
-      for part <- ["_rels", "xl/_rels", "xl/worksheets"], do: File.mkdir_p!(Path.join(dir, part))
-      File.write!(Path.join(dir, "[Content_Types].xml"), content_types())
-      File.write!(Path.join(dir, "_rels/.rels"), root_rels())
-      File.write!(Path.join(dir, "xl/workbook.xml"), workbook())
-      File.write!(Path.join(dir, "xl/_rels/workbook.xml.rels"), workbook_rels())
-      File.write!(Path.join(dir, "xl/styles.xml"), styles())
-      write_sheet(Path.join(dir, "xl/worksheets/sheet1.xml"), columns, rows, progress)
-
-      files =
-        Enum.map(
-          ~w([Content_Types].xml _rels/.rels xl/workbook.xml xl/_rels/workbook.xml.rels xl/styles.xml xl/worksheets/sheet1.xml),
-          &String.to_charlist/1
-        )
-
-      File.rm(path)
-      {:ok, _path} = :zip.create(String.to_charlist(path), files, cwd: String.to_charlist(dir))
-      :ok
-    after
-      File.rm_rf(dir)
-    end
+  # The parts of the workbook, zipped as they are written: `blocks` are
+  # the rows, a list at a time.
+  @spec stream(Export.t(), Enumerable.t()) :: Enumerable.t()
+  def stream(%Export{columns: columns}, blocks) do
+    Zip.stream([
+      {"[Content_Types].xml", [content_types()]},
+      {"_rels/.rels", [root_rels()]},
+      {"xl/workbook.xml", [workbook()]},
+      {"xl/_rels/workbook.xml.rels", [workbook_rels()]},
+      {"xl/styles.xml", [styles()]},
+      {"xl/worksheets/sheet1.xml", sheet(columns, blocks)}
+    ])
   end
 
-  defp write_sheet(path, columns, rows, progress) do
-    File.open!(path, [:write, :binary], fn file ->
-      IO.binwrite(file, [
-        ~s(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>),
-        "<worksheet ",
-        @xmlns,
-        "><sheetData>"
-      ])
+  defp sheet(columns, blocks) do
+    head = [
+      ~s(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>),
+      "<worksheet ",
+      @xmlns,
+      "><sheetData>",
+      row(1, Enum.map(columns, &{:label, &1.label}))
+    ]
 
-      IO.binwrite(file, row(1, Enum.map(columns, &{:label, &1.label})))
+    rows =
+      Stream.transform(blocks, 2, fn block, r ->
+        {[block |> Enum.with_index(r) |> Enum.map(&data_row(columns, &1))], r + length(block)}
+      end)
 
-      rows
-      |> Stream.with_index(2)
-      |> Enum.each(&write_row(file, columns, &1, progress))
-
-      IO.binwrite(file, "</sheetData></worksheet>")
-    end)
+    Stream.concat([[head], rows, ["</sheetData></worksheet>"]])
   end
 
-  defp write_row(file, columns, {data, r}, progress) do
-    IO.binwrite(file, row(r, Enum.map(columns, &{&1, Column.get(&1, data)})))
-    if rem(r - 1, 500) == 0, do: progress.(r - 1)
-  end
+  defp data_row(columns, {data, r}), do: row(r, Enum.map(columns, &{&1, Column.get(&1, data)}))
 
   defp row(r, cells) do
     [

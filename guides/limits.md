@@ -53,10 +53,15 @@ default.
 
 ## Export
 
-An export of a hundred thousand rows is written in a task and sent to
-the browser a half megabyte at a time, base64 over the LiveView's
-socket. An XLSX file's dates before 1900 are numbers Excel does not show
-as dates.
+An export downloads from the app's export route (`Masu.Router`), not
+over the LiveView's socket, as its rows are read: a block of 500 rows at
+a time, from an Ecto source by key. Its link is good once, for five
+minutes, and from the LiveView that made it while it runs. On several
+nodes, the download must reach a node connected to the LiveView's
+(distributed Erlang). An XLSX file is zipped as it is written, with no
+ZIP64: its sheet stays under 4 GB, and it has Excel's 1,048,576 rows at
+most (a CSV export has every row). An XLSX file's dates before 1900 are
+numbers Excel does not show as dates.
 
 ## Empty values in a database
 

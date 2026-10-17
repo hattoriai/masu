@@ -252,12 +252,6 @@ defmodule Masu.Live do
   end
 
   @doc false
-  # A grid's export, writing in a task: how far it got.
-  def __handle_info__({Masu.Live.Export, grid, done, total}, socket) do
-    Phoenix.LiveView.send_update(Masu.Grid, id: grid, masu_export_progress: {done, total})
-    {:halt, socket}
-  end
-
   # A grid with `url` whose view changed.
   def __handle_info__({Masu.Live.Patch, url}, socket),
     do: {:halt, Phoenix.LiveView.push_patch(socket, to: url, replace: true)}

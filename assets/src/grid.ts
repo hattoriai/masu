@@ -1806,37 +1806,34 @@ export class Grid {
     if (focus) ({ columns: this.columnsButton, views: this.viewsButton, export: this.exportButton })[kind]?.focus();
   }
 
-  // Export (Masu.Export): the server writes the file in a task, says how
-  // far it got, then sends it a part at a time (the hook downloads it).
+  // Export (Masu.Export): the server answers with a link, good once, to
+  // the file on the router's export route (Masu.Router); the browser
+  // downloads it from there as the rows are read, with its own progress.
+  // Nothing of the file goes over the socket.
 
   private startExport(format: string): void {
-    if (!this.exportButton) return;
-    this.exportButton.dataset.busy = "true";
-    this.exportButton.setAttribute("aria-busy", "true");
-    this.setExportText(this.message("exporting", {}));
-    this.announce(this.message("exporting", {}));
+    const button = this.exportButton;
+    if (!button) return;
+    button.dataset.busy = "true";
+    button.setAttribute("aria-busy", "true");
     this.transport.push("masu:export", { format }, (reply) => {
-      if (reply?.error) this.exportProgress({ error: String(reply.error) });
+      delete button.dataset.busy;
+      button.removeAttribute("aria-busy");
+      if (typeof reply?.url !== "string") {
+        this.announce(this.message("export_failed", {}));
+        return;
+      }
+      // A link with `download` downloads where it is, with no tab to open
+      // (a pop-up blocker stops a window opened after a round trip).
+      const link = document.createElement("a");
+      link.href = reply.url;
+      link.download = "";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      this.announce(this.message("export_started", {}));
     });
-  }
-
-  /** How far an export got, its end, or its error. */
-  exportProgress(progress: { done?: number; total?: number; error?: string; finished?: boolean }): void {
-    if (!this.exportButton) return;
-    if (progress.error || progress.finished) {
-      delete this.exportButton.dataset.busy;
-      this.exportButton.removeAttribute("aria-busy");
-      this.setExportText(this.message("export_menu", {}));
-      this.announce(this.message(progress.error ? "export_failed" : "exported", {}));
-      return;
-    }
-    const percent = progress.total ? Math.floor((100 * (progress.done ?? 0)) / progress.total) : 0;
-    this.setExportText(this.message("exporting_percent", { count: percent }));
-  }
-
-  private setExportText(text: string): void {
-    const el = this.exportButton?.querySelector(".masu-toolbar-text");
-    if (el) el.textContent = text;
   }
 
   /** Says once that part of a view no longer applies (Masu.View). */
@@ -2721,9 +2718,7 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   export_menu: "Export",
   export_csv: "CSV",
   export_xlsx: "Excel (XLSX)",
-  exporting: "Exporting…",
-  exporting_percent: "Exporting {count}%",
-  exported: "Export downloaded",
+  export_started: "The export is downloading",
   export_failed: "The export failed",
   detail_hidden: "Details hidden",
   view_reset: "The grid's own view",

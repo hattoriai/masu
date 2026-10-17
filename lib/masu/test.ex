@@ -34,8 +34,6 @@ defmodule Masu.Test do
 
   import ExUnit.Assertions
 
-  require Phoenix.LiveViewTest
-
   alias Phoenix.LiveViewTest
 
   @doc """
@@ -332,22 +330,33 @@ defmodule Masu.Test do
 
   @doc """
   Exports the grid `id` as its Export menu does (`Masu.Export`), and
-  gives the file the browser would download: `{name, binary}`.
+  downloads the file from the link the browser gets, through the
+  endpoint and the router's export route (`Masu.Router`): `{name,
+  binary}`. A `conn` (`Phoenix.ConnTest.build_conn/0`, with what the
+  route's pipeline wants of it, a signed-in user) is given with `:conn`.
   """
-  @spec export(struct(), String.t(), :csv | :xlsx) :: {String.t(), binary()}
-  def export(view, id, format) do
-    reply = event(view, id, "masu:export", %{"format" => Atom.to_string(format)})
-    if error = reply["error"], do: flunk("the grid #{id} did not export: #{error}")
-    download(view, id, [])
+  @spec export(struct(), String.t(), :csv | :xlsx, keyword()) :: {String.t(), binary()}
+  def export(view, id, format, opts \\ []) do
+    url = export_url(view, id, format)
+    conn = Keyword.get_lazy(opts, :conn, &Phoenix.ConnTest.build_conn/0)
+    conn = Phoenix.ConnTest.dispatch(conn, view.endpoint, :get, url, nil)
+
+    if conn.status != 200,
+      do: flunk("the export of the grid #{id} answered #{conn.status}: #{conn.resp_body}")
+
+    [disposition] = Plug.Conn.get_resp_header(conn, "content-disposition")
+    [_all, name] = Regex.run(~r/filename="([^"]*)"/, disposition)
+    {name, conn.resp_body}
   end
 
-  defp download(view, id, parts) do
-    LiveViewTest.assert_push_event(view, "masu:download", %{"id" => ^id} = part, 5000)
-    parts = [Base.decode64!(part["data"]) | parts]
-
-    if part["last"],
-      do: {part["name"], parts |> Enum.reverse() |> IO.iodata_to_binary()},
-      else: download(view, id, parts)
+  @doc """
+  The link the Export menu of the grid `id` gives the browser, for a
+  test of the route itself: that it wants a signed-in user, say.
+  """
+  @spec export_url(struct(), String.t(), :csv | :xlsx) :: String.t()
+  def export_url(view, id, format) do
+    reply = event(view, id, "masu:export", %{"format" => Atom.to_string(format)})
+    reply["url"] || flunk("the grid #{id} did not export: #{reply["error"]}")
   end
 
   @doc """

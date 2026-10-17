@@ -35,6 +35,7 @@ defmodule Masu.Grid do
   use Phoenix.LiveComponent
 
   alias Masu.{Column, Group, Layout, Query, Source, Tree, Value, View}
+  alias Masu.Export.{Download, Ticket}
   alias Phoenix.HTML.Safe
 
   @max_block 500
@@ -79,26 +80,12 @@ defmodule Masu.Grid do
        initial_nodes: nil,
        open_details: [],
        detail_rows: [],
-       download: nil,
        selection: %{all: false, ids: MapSet.new(), except: MapSet.new()}
      )}
   end
 
   @impl true
   def update(%{masu_presence: true}, socket), do: {:ok, refresh_people(socket)}
-
-  # An export writing in a task: how far it got (Masu.Live).
-  def update(%{masu_export_progress: {done, total}}, socket) do
-    {:ok,
-     push_event(socket, "masu:export", %{
-       "id" => socket.assigns.id,
-       "done" => done,
-       "total" => total
-     })}
-  end
-
-  # The file of an export goes to the browser a part at a time.
-  def update(%{masu_download: true}, socket), do: {:ok, download(socket)}
 
   def update(%{masu_changes: true}, socket) do
     case Masu.Live.take(socket.assigns.id) do
@@ -558,36 +545,29 @@ defmodule Masu.Grid do
     end
   end
 
-  # The Export menu: the file is written in a task, and goes to the
-  # browser when it is done. How far it got goes to the browser too, when
-  # the LiveView has the Masu.Live hook to hear it.
+  # The Export menu: a link to the file, for the browser to download from
+  # the router's export route (Masu.Router), with a token of a ticket that
+  # holds the export, good once. The file is not written here, nor sent
+  # over the socket.
   def handle_event("masu:export", %{"format" => format}, socket) when format in ["csv", "xlsx"] do
     format = String.to_existing_atom(format)
+    %{id: id, export: allowed} = socket.assigns
 
-    if socket.assigns.download || format not in export_formats(socket.assigns) do
-      {:reply, %{"error" => "busy"}, socket}
-    else
-      export = export_of(socket.assigns)
-      lv = self()
-      grid = socket.assigns.id
-      hook? = Process.get(Masu.Live) != nil
-      {_type, ext} = Masu.Export.type(format)
+    cond do
+      format not in export_formats(socket.assigns) ->
+        {:reply, %{"error" => "format"}, socket}
 
-      path =
-        Path.join(System.tmp_dir!(), "masu-export-#{System.unique_integer([:positive])}.#{ext}")
+      not function_exported?(socket.router || Masu, :__masu_export_path__, 0) ->
+        raise ArgumentError,
+              "the grid #{id} has export=#{inspect(allowed)}, and its LiveView's router has no " <>
+                "export route: add `masu_exports \"/masu/exports\"` (import Masu.Router) to it"
 
-      progress =
-        if hook?, do: [progress: &send(lv, {Masu.Live.Export, grid, &1, &2})], else: []
-
-      socket =
-        socket
-        |> assign(download: %{format: format, path: path, offset: 0, ready: false})
-        |> start_async(:masu_export, fn ->
-          :ok = Masu.Export.write(export, format, path, progress)
-          path
-        end)
-
-      {:reply, %{}, socket}
+      true ->
+        export = %{export_of(socket.assigns) | name: "#{id}-#{Date.utc_today()}"}
+        {:ok, ticket} = Ticket.start(self(), %{export: export, format: format})
+        token = Download.token(socket.endpoint, ticket)
+        path = socket.endpoint.path(socket.router.__masu_export_path__() <> "/" <> token)
+        {:reply, %{"url" => path}, socket}
     end
   end
 
@@ -723,60 +703,6 @@ defmodule Masu.Grid do
     if views && user, do: :ok = views.delete(views_key(socket.assigns), user, id)
     {:reply, %{}, list_views(socket)}
   end
-
-  @impl true
-  def handle_async(:masu_export, {:ok, _path}, socket) do
-    send_update(__MODULE__, id: socket.assigns.id, masu_download: true)
-    {:noreply, update_in_download(socket, &%{&1 | ready: true})}
-  end
-
-  def handle_async(:masu_export, {:exit, reason}, socket) do
-    File.rm(socket.assigns.download.path)
-
-    {:noreply,
-     socket
-     |> assign(download: nil)
-     |> push_event("masu:export", %{"id" => socket.assigns.id, "error" => inspect(reason)})}
-  end
-
-  defp update_in_download(socket, fun),
-    do: assign(socket, download: fun.(socket.assigns.download))
-
-  @chunk 512 * 1024
-
-  defp download(%{assigns: %{download: %{ready: true} = d, id: id}} = socket) do
-    # A part from the offset; no file stays open between the parts.
-    size = File.stat!(d.path).size
-
-    part =
-      case File.open(d.path, [:read, :binary], &:file.pread(&1, d.offset, @chunk)) do
-        {:ok, {:ok, part}} -> part
-        {:ok, :eof} -> ""
-      end
-
-    last? = d.offset + byte_size(part) >= size
-    {type, ext} = Masu.Export.type(d.format)
-    name = "#{id}-#{Date.utc_today()}.#{ext}"
-
-    socket =
-      push_event(socket, "masu:download", %{
-        "id" => id,
-        "name" => name,
-        "type" => type,
-        "data" => Base.encode64(part),
-        "last" => last?
-      })
-
-    if last? do
-      File.rm(d.path)
-      assign(socket, download: nil)
-    else
-      send_update(__MODULE__, id: id, masu_download: true)
-      update_in_download(socket, &%{&1 | offset: d.offset + byte_size(part)})
-    end
-  end
-
-  defp download(socket), do: socket
 
   # How many rows are selected, and whether they are every row of the query.
   defp change_selection(_selection, %{"all" => all}) when is_boolean(all),

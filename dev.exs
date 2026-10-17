@@ -701,6 +701,7 @@ defmodule MasuDev.Router do
   use Phoenix.Router
 
   import Phoenix.LiveView.Router
+  import Masu.Router
 
   pipeline :browser do
     plug(:fetch_session)
@@ -720,6 +721,7 @@ defmodule MasuDev.Router do
     live("/tree", MasuDev.TreeLive)
     live("/details", MasuDev.DetailsLive)
     live("/groups", MasuDev.GroupsLive)
+    masu_exports()
   end
 end
 

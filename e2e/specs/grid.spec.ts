@@ -876,7 +876,7 @@ test.describe("selection and export", () => {
     expect(lines).toHaveLength(count + 1);
     // The search's rows (it reads every text column).
     expect(lines.slice(1).every((line) => line.includes("Oslo"))).toBe(true);
-    await expect(page.locator("#views > .masu-status")).toHaveText("Export downloaded");
+    await expect(page.locator("#views > .masu-status")).toHaveText("The export is downloading");
     await expect(page.getByRole("button", { name: "Export" })).not.toHaveAttribute("aria-busy");
 
     const xlsx = page.waitForEvent("download");

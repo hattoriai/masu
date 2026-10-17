@@ -36,30 +36,6 @@ export const Masu = {
     hook.handleEvent("masu:people", (payload) => {
       if (payload.id === hook.el.id) hook.grid?.setPeople(payload.people as Person[]);
     });
-    hook.handleEvent("masu:export", (payload) => {
-      if (payload.id === hook.el.id) hook.grid?.exportProgress(payload as { done?: number; total?: number; error?: string });
-    });
-    // An export's file, a part at a time: a download when the last comes.
-    const parts: Uint8Array[] = [];
-    hook.handleEvent("masu:download", (payload) => {
-      if (payload.id !== hook.el.id) return;
-      const binary = atob(payload.data as string);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      parts.push(bytes);
-      if (!payload.last) return;
-      const url = URL.createObjectURL(new Blob(parts as BlobPart[], { type: payload.type as string }));
-      parts.length = 0;
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = payload.name as string;
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      hook.grid?.exportProgress({ done: 1, total: 1, finished: true });
-    });
   },
 
   updated(this: MasuHook) {
