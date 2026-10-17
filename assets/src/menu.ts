@@ -42,7 +42,7 @@ export class FilterMenu {
   constructor(host: MenuHost, anchor: HTMLElement) {
     this.host = host;
     const { column, current, messages } = host;
-    const ops = opsFor(column.type);
+    const ops = opsFor(column.type, column.filters);
     this.op = current && ops.includes(current.op as Op) ? (current.op as Op) : ops[0];
     if (current?.op === "in" && Array.isArray(current.value)) {
       for (const value of current.value) this.checked.add(JSON.stringify(value));
@@ -184,6 +184,19 @@ export class FilterMenu {
       select.setAttribute("aria-label", column.label);
       select.append(new Option(messages.yes ?? "Yes", "true"), new Option(messages.no ?? "No", "false"));
       if (same && current.value === false) select.value = "false";
+      this.fields.appendChild(select);
+      return;
+    }
+
+    // An enum of known values, by one of them (a source without "is one of").
+    if (column.type === "enum" && column.values?.length) {
+      const select = document.createElement("select");
+      select.className = "masu-menu-input";
+      select.setAttribute("aria-label", column.label);
+      for (const value of column.values) {
+        if (value !== null) select.appendChild(new Option(this.host.format(value), String(value)));
+      }
+      if (same && current.value !== undefined && current.value !== null) select.value = String(current.value);
       this.fields.appendChild(select);
       return;
     }

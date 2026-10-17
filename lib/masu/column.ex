@@ -84,6 +84,7 @@ defmodule Masu.Column do
           hidden: boolean(),
           pinned: :start | :end | nil,
           aggregate: aggregate() | nil,
+          filter_ops: [Masu.Filter.op()] | nil,
           slot: map() | nil
         }
 
@@ -117,7 +118,10 @@ defmodule Masu.Column do
     values: nil,
     hidden: false,
     pinned: nil,
-    aggregate: nil
+    aggregate: nil,
+    # The operators its source filters it by (c:Masu.Source.filters/2);
+    # nil: every operator of its type.
+    filter_ops: nil
   ]
 
   @doc "The types a column can have."

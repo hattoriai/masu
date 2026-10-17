@@ -17,7 +17,7 @@ defmodule Masu.Source do
   `source={{MySource, opts}}`; the grid calls `init/2` with the opts.
   """
 
-  alias Masu.{Column, Query}
+  alias Masu.{Column, Filter, Query}
   alias Masu.Source.Ecto, as: EctoSource
 
   @typedoc "The state of a source; a source keeps what it needs between calls."
@@ -56,6 +56,20 @@ defmodule Masu.Source do
   such a column one that does not sort or filter.
   """
   @callback supports?(state(), Column.t()) :: boolean()
+
+  @doc """
+  The operators of `Masu.Filter` the source filters a column by. Without
+  it, every operator of the column's type. A source that is not a
+  database Masu translates itself (an API, a search engine, another
+  query tool) gives those it runs: the filter menu, the chips, the menu
+  of a cell, a view's params (a link, a saved view) and `Masu.Test`
+  offer only them, and the server refuses the others.
+
+  Masu runs `:between` as `:gte` and `:lte` for a source that has those
+  and not it. `[]` is a column the source does not filter by. See the
+  [Sources](sources.md) guide for what each operator means.
+  """
+  @callback filters(state(), Column.t()) :: [Masu.Filter.op()]
 
   @doc """
   Takes changes into the source's rows (see `Masu.Live`): `{:upsert, row}`
@@ -126,6 +140,7 @@ defmodule Masu.Source do
               {:ids, [term()]} | {:query, term()}
 
   @optional_callbacks supports?: 2,
+                      filters: 2,
                       totals: 1,
                       select_all: 5,
                       change: 3,
@@ -170,7 +185,7 @@ defmodule Masu.Source do
   @doc false
   @spec prepare(t(), Query.t(), [Column.t()]) :: t()
   def prepare(%__MODULE__{module: module, state: state} = source, query, columns),
-    do: %{source | state: module.prepare(state, query, columns)}
+    do: %{source | state: module.prepare(state, runnable(source, query, columns), columns)}
 
   @doc false
   @spec count(t()) :: non_neg_integer() | {:at_least, non_neg_integer()} | :unknown
@@ -215,9 +230,9 @@ defmodule Masu.Source do
   @spec values(t(), Column.t(), Query.t(), [Column.t()], keyword()) :: [
           {term(), non_neg_integer()}
         ]
-  def values(%__MODULE__{module: module, state: state}, column, query, columns, opts) do
+  def values(%__MODULE__{module: module, state: state} = source, column, query, columns, opts) do
     if function_exported?(module, :values, 5),
-      do: module.values(state, column, query, columns, opts),
+      do: module.values(state, column, runnable(source, query, columns), columns, opts),
       else: []
   end
 
@@ -246,9 +261,15 @@ defmodule Masu.Source do
   @doc false
   @spec select_all(t(), Query.t(), [Column.t()], [term()], (term() -> term())) ::
           {:ids, [term()]} | {:query, term()}
-  def select_all(%__MODULE__{module: module, state: state}, query, columns, except, row_id) do
+  def select_all(
+        %__MODULE__{module: module, state: state} = source,
+        query,
+        columns,
+        except,
+        row_id
+      ) do
     if function_exported?(module, :select_all, 5) do
-      module.select_all(state, query, columns, except, row_id)
+      module.select_all(state, runnable(source, query, columns), columns, except, row_id)
     else
       raise ArgumentError, "the source #{inspect(module)} cannot give every row of a query"
     end
@@ -264,6 +285,35 @@ defmodule Masu.Source do
   @spec siblings(t(), term()) :: [term()]
   def siblings(%__MODULE__{module: module, state: state}, id) do
     if function_exported?(module, :siblings, 2), do: module.siblings(state, id), else: []
+  end
+
+  @doc false
+  # The operators a column offers (Masu.Filter.offered/2), or nil: every
+  # operator of its type.
+  @spec filter_ops(t(), Column.t()) :: [Filter.op()] | nil
+  def filter_ops(%__MODULE__{} = source, column) do
+    case direct_ops(source, column) do
+      nil -> nil
+      direct -> Filter.offered(direct, column.type)
+    end
+  end
+
+  defp direct_ops(%__MODULE__{module: module, state: state}, column) do
+    if function_exported?(module, :filters, 2), do: module.filters(state, column)
+  end
+
+  # The query with its filters in the operators the source runs.
+  defp runnable(%__MODULE__{module: module} = source, %Query{filters: filters} = query, columns) do
+    if function_exported?(module, :filters, 2) and filters != [],
+      do: %{query | filters: Enum.flat_map(filters, &runnable_filter(source, &1, columns))},
+      else: query
+  end
+
+  defp runnable_filter(source, filter, columns) do
+    case Column.find(columns, filter.key) do
+      nil -> [filter]
+      column -> Filter.expand(filter, direct_ops(source, column))
+    end
   end
 
   @doc false

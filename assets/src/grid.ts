@@ -10,7 +10,7 @@
 
 import { ActionMenu, type MenuItem } from "./actions";
 import { BlockCache } from "./blocks";
-import { describe, replaceFilter } from "./filters";
+import { allows, describe, replaceFilter } from "./filters";
 import { fromTSV, inputText, invalid, matching, placePaste, sendValue, shownValue } from "./parse";
 import { FilterMenu } from "./menu";
 import { copyText, formatter, type Formatter } from "./format";
@@ -1263,20 +1263,31 @@ export class Grid {
       const value = rawValue(sent);
       const filter = (spec: FilterSpec) => () =>
         this.setQuery({ ...this.query, filters: replaceFilter(this.query.filters, column.key, spec) });
+      // Only the filters the column's source runs.
       const more: MenuItem[] = [];
       if (value !== null) {
         const shown = clip(column.type === "boolean" ? this.message(value ? "yes" : "no", {}) : this.formatters[cell.col](value));
-        const only: FilterSpec =
-          column.type === "enum" ? { key: column.key, op: "in", value: [value] } : { key: column.key, op: "eq", value };
-        more.push(
-          { name: "filter-value", label: this.message("filter_value", { label: shown }), run: filter(only) },
-          { name: "exclude-value", label: this.message("exclude_value", { label: shown }), run: filter({ key: column.key, op: "neq", value }) },
-        );
+        const only: FilterSpec | null =
+          column.type === "enum" && allows(column, "in")
+            ? { key: column.key, op: "in", value: [value] }
+            : allows(column, "eq")
+              ? { key: column.key, op: "eq", value }
+              : null;
+        if (only) more.push({ name: "filter-value", label: this.message("filter_value", { label: shown }), run: filter(only) });
+        if (allows(column, "neq")) {
+          more.push({
+            name: "exclude-value",
+            label: this.message("exclude_value", { label: shown }),
+            run: filter({ key: column.key, op: "neq", value }),
+          });
+        }
       }
-      more.push(
-        { name: "filter-empty", label: this.message("filter_empty", {}), run: filter({ key: column.key, op: "is_nil" }) },
-        { name: "filter-not-empty", label: this.message("filter_not_empty", {}), run: filter({ key: column.key, op: "not_nil" }) },
-      );
+      if (allows(column, "is_nil")) {
+        more.push({ name: "filter-empty", label: this.message("filter_empty", {}), run: filter({ key: column.key, op: "is_nil" }) });
+      }
+      if (allows(column, "not_nil")) {
+        more.push({ name: "filter-not-empty", label: this.message("filter_not_empty", {}), run: filter({ key: column.key, op: "not_nil" }) });
+      }
       group(more);
     }
 
