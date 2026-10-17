@@ -221,7 +221,11 @@ defmodule MasuDev.Layouts do
 end
 
 defmodule MasuDev.CustomersLive do
-  @moduledoc "A hundred thousand customers in one grid."
+  @moduledoc """
+  A hundred thousand customers in one grid, which edits: the rows of the
+  enterprise plan are read-only, and the revenue of a customer that is
+  not active.
+  """
   use Phoenix.LiveView
 
   import Masu.Components
@@ -239,6 +243,7 @@ defmodule MasuDev.CustomersLive do
       id="customers"
       rows={@customers}
       changeset={&MasuDev.Customers.changeset/2}
+      row_editable={&(&1.plan != "enterprise")}
       label_id="customers-label"
       searchable
       height="36rem"
@@ -252,7 +257,7 @@ defmodule MasuDev.CustomersLive do
         <span class={["badge", customer.plan]}>{customer.plan}</span>
       </:col>
       <:col field={:seats} type={:integer} />
-      <:col field={:revenue} type={:decimal} />
+      <:col field={:revenue} type={:decimal} editable={& &1.active} />
       <:col field={:active} type={:boolean} />
       <:col field={:signed_up} type={:date} label="Signed up" />
       <:col field={:last_seen} type={:datetime} label="Last seen" />

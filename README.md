@@ -38,7 +38,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | --- | --- |
 | Rows | the rows on the screen and a few more are in the page; the others come from the server in blocks of a hundred as the person scrolls, once the scrolling pauses |
 | Sources | `rows={@users}` for a list; `source={query} repo={Repo}` for Ecto, where a sort is an `ORDER BY`, a filter and the search a `WHERE`, and each block a `LIMIT` and `OFFSET`; `Masu.Source` for your own |
-| Editing | `changeset={&Order.changeset/2}`: a cell edits on a key typed, Enter, F2 or a double click; the edits of a row saved together with `Repo.update`, the errors on their cells, the old values back; paste of tab-separated text, fill down, Delete, undo and redo; a row found again through the grid's own query |
+| Editing | `changeset={&Order.changeset/2}`: a cell edits on a key typed, Enter, F2 or a double click; the edits of a row saved together with `Repo.update`, the errors on their cells, the old values back; paste of tab-separated text, fill down, Delete, undo and redo; read-only rows and cells by their state (`row_editable`, `editable={&...}`), checked on the server; `update` for your own persistence and `on_save` to hear of each save; a row found again through the grid's own query |
 | Live rows | `live={{MyApp.PubSub, "orders"}}` and `Masu.Live.broadcast_upsert/3`: changes come into the person's query, a batch at a time, the scroll stays, the rows do not blink, the changed ones flash |
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |

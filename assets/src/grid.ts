@@ -315,7 +315,10 @@ export class Grid {
       const error = row === null ? undefined : this.errors.get(key);
       cell.classList.toggle("masu-invalid", error !== undefined);
       cell.classList.toggle("masu-saving", row !== null && this.saving.has(key));
-      cell.classList.toggle("masu-editable", column.editable === true);
+      const locked = row !== null && column.editable === true && this.locked(row, col);
+      cell.classList.toggle("masu-editable", column.editable === true && !locked);
+      cell.classList.toggle("masu-locked", locked);
+      if (column.editable) cell.setAttribute("aria-readonly", locked ? "true" : "false");
       if (error !== undefined) {
         cell.title = error;
         cell.setAttribute("aria-invalid", "true");
@@ -838,6 +841,8 @@ export class Grid {
       return true;
     }
     if (!column.editable) return false;
+    const data = this.cache.get(row) ?? this.stale?.get(row);
+    if (data && this.locked(data, col)) return false;
 
     if (column.type === "boolean" && (key === " " || key === "Enter")) {
       event.preventDefault();
@@ -867,7 +872,7 @@ export class Grid {
   startEdit(cell: Cell, text?: string): void {
     const column = this.columns[cell.col];
     const row = this.cache.get(cell.row) ?? this.stale?.get(cell.row);
-    if (!column?.editable || !row || cell.row < 0) return;
+    if (!column?.editable || !row || cell.row < 0 || this.locked(row, cell.col)) return;
     if (column.type === "boolean") return;
 
     this.active = { ...cell };
@@ -953,7 +958,7 @@ export class Grid {
     for (const { row, col, value } of cells) {
       const column = this.columns[col];
       const data = this.cache.get(row) ?? this.stale?.get(row);
-      if (!column?.editable || !data) {
+      if (!column?.editable || !data || this.locked(data, col)) {
         skipped += 1;
         continue;
       }
@@ -1087,6 +1092,13 @@ export class Grid {
       }
       then(cells);
     });
+  }
+
+  /** Whether the row's state makes its cell of `col` read-only. */
+  private locked(data: Row, col: number): boolean {
+    if (!this.config.locks) return false;
+    const lock = (data as unknown[])[this.columns.length + 1];
+    return lock === true || (Array.isArray(lock) && lock.includes(col));
   }
 
   private valueAt(row: number, col: number): CellValue | undefined {

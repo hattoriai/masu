@@ -128,4 +128,38 @@ defmodule Masu.EditTest do
     assert [%{"name" => "TWO"}] = rows(view, "things")
     assert {:error, [{1, "name", "Not that name."}]} = edit(view, "things", [{1, "name", "nope"}])
   end
+
+  describe "cells and rows that the row's state makes read-only" do
+    test "a locked row refuses every cell, a column's function refuses its cell", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/edit/locked")
+
+      assert {:error, [{1, "name", "This cell cannot be edited."}]} =
+               edit(view, "people", [{1, "name", "X"}])
+
+      # Grace is 85: her age does not edit, her name does, in the same batch.
+      assert {:error, [{3, "age", "This cell cannot be edited."}]} =
+               edit(view, "people", [{3, "name", "Grace B. Hopper"}, {3, "age", "86"}])
+
+      assert %{"name" => "Grace B. Hopper", "age" => 85} = Enum.at(rows(view, "people"), 2)
+      assert :ok = edit(view, "people", [{2, "age", "42"}])
+    end
+
+    test "each row tells the browser which of its cells are read-only", %{conn: conn} do
+      {:ok, view, html} = live(conn, "/edit/locked")
+      assert html =~ "&quot;locks&quot;:true"
+
+      render_hook(element(view, "#people"), "masu:rows", %{"from" => 0, "count" => 3})
+      assert_reply(view, %{"rows" => [[1, _, _, true], [2, _, _, []], [3, _, _, [1]]]})
+    end
+  end
+
+  test "on_save gets the saved rows, in the LiveView's process", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/edit/locked")
+
+    assert :ok = edit(view, "people", [{2, "name", "Alan"}, {4, "name", "Edsger"}])
+    assert render(view) =~ ~s(<p id="saved">Alan, Edsger</p>)
+
+    assert {:error, _} = edit(view, "people", [{2, "name", ""}])
+    assert render(view) =~ ~s(<p id="saved">Alan, Edsger</p>)
+  end
 end

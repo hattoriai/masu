@@ -44,7 +44,9 @@ defmodule Masu.Components do
     * `width` and `min_width` - in pixels;
     * `align` - `:start`, `:center` or `:end` (numbers are at the end);
     * `sortable`, `filterable` and `searchable` - `false` to turn off,
-      `searchable` is on for text and enums.
+      `searchable` is on for text and enums;
+    * `editable` - in a grid that edits: `false` for a read-only column, or
+      a function of the row that says whether its cell edits.
 
   A `:col` with content renders each cell, with the row as `:let`:
 
@@ -71,6 +73,14 @@ defmodule Masu.Components do
     default: nil,
     doc:
       "a function of a row and params that saves them: `{:ok, row}` or `{:error, changeset_or_message}`; instead of `changeset`"
+
+  attr :row_editable, :any,
+    default: nil,
+    doc: "a function of a row: `false` makes every cell of the row read-only"
+
+  attr :on_save, :any,
+    default: nil,
+    doc: "a function called with the rows saved by an edit, in the LiveView's process"
 
   attr :live, :any,
     default: nil,
@@ -118,7 +128,7 @@ defmodule Masu.Components do
     attr :sortable, :boolean
     attr :filterable, :boolean
     attr :searchable, :boolean
-    attr :editable, :boolean
+    attr :editable, :any
   end
 
   slot :empty, doc: "what the grid shows when it has no rows"
@@ -138,6 +148,8 @@ defmodule Masu.Components do
       live={@live}
       changeset={@changeset}
       update={@update}
+      row_editable={@row_editable}
+      on_save={@on_save}
       row_id={@row_id}
       sort={@sort}
       filters={@filters}

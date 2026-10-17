@@ -33,6 +33,7 @@ defmodule Masu.Edit do
     Enum.reduce(ids, {[], errors}, fn id, {saved, errors} ->
       case save_row(Map.get(rows, id), id, Map.fetch!(by_id, id), assigns) do
         {:ok, row} -> {[row | saved], errors}
+        {:partial, row, row_errors} -> {[row | saved], errors ++ row_errors}
         {:error, row_errors} -> {saved, errors ++ row_errors}
       end
     end)
@@ -42,11 +43,30 @@ defmodule Masu.Edit do
   defp save_row(nil, id, edits, _assigns),
     do: {:error, Enum.map(edits, &[id, &1["key"], "This row is not in the grid."])}
 
+  # The cells that the row's state makes read-only (`row_editable`, or a
+  # column's `editable` function) are refused; the others are saved.
   defp save_row(row, id, edits, assigns) do
-    case save(row, params(edits, assigns.columns), assigns) do
-      {:ok, row} -> {:ok, row}
-      {:error, reason} -> {:error, errors_of(reason, id, edits, assigns.columns)}
+    {edits, locked} = Enum.split_with(edits, &cell_editable?(row, &1, assigns))
+    refused = Enum.map(locked, &[id, &1["key"], "This cell cannot be edited."])
+
+    case edits do
+      [] ->
+        {:error, refused}
+
+      edits ->
+        case save(row, params(edits, assigns.columns), assigns) do
+          {:ok, row} when refused == [] -> {:ok, row}
+          {:ok, row} -> {:partial, row, refused}
+          {:error, reason} -> {:error, refused ++ errors_of(reason, id, edits, assigns.columns)}
+        end
     end
+  end
+
+  defp cell_editable?(row, %{"key" => key}, assigns) do
+    row_editable = Map.get(assigns, :row_editable)
+
+    (row_editable == nil or row_editable.(row) != false) and
+      Column.editable?(Column.find(assigns.columns, key), row)
   end
 
   defp editable?(%{"id" => _id, "key" => key, "value" => value}, columns) when is_binary(key) do

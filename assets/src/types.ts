@@ -59,6 +59,8 @@ export interface Config {
   searchable: boolean;
   /** The ids of the rows that changed in this revision (Masu.Live). */
   changed: unknown[];
+  /** Rows end with their read-only cells: `true`, or column indexes. */
+  locks: boolean;
   messages: Record<string, string>;
   initial: { from: number; rows: Row[] } | null;
 }

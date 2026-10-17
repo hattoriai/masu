@@ -275,15 +275,15 @@ test.describe("editing", () => {
   test("a paste from a spreadsheet fills the cells from the active one", async ({ page, context, browserName }) => {
     test.skip(browserName !== "chromium", "only Chromium lets a test write the clipboard");
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    await cell(page, 3, 3).click();
+    await cell(page, 5, 3).click();
     await page.evaluate(() => navigator.clipboard.writeText("Porto\tteam\nFaro\tnot a plan"));
     await page.keyboard.press("ControlOrMeta+v");
 
-    await expect(cell(page, 3, 3)).toHaveText("Porto");
-    await expect(cell(page, 3, 4)).toHaveText("team");
-    await expect(cell(page, 4, 4)).toHaveAttribute("aria-invalid", "true");
-    await expect(cell(page, 4, 3)).toHaveAttribute("title", "Not saved: the row has an error.");
-    await expect(cell(page, 4, 3)).toHaveText("São Paulo");
+    await expect(cell(page, 5, 3)).toHaveText("Porto");
+    await expect(cell(page, 5, 4)).toHaveText("team");
+    await expect(cell(page, 6, 4)).toHaveAttribute("aria-invalid", "true");
+    await expect(cell(page, 6, 3)).toHaveAttribute("title", "Not saved: the row has an error.");
+    await expect(cell(page, 6, 3)).toHaveText("Porto");
   });
 
   test("Ctrl+D fills a range down with its first row", async ({ page }) => {
@@ -293,6 +293,21 @@ test.describe("editing", () => {
     await page.keyboard.press("ControlOrMeta+d");
     await expect(cell(page, 6, 5)).toHaveText("223");
     await expect(cell(page, 7, 5)).toHaveText("223");
+  });
+
+  test("a row or a cell that its state makes read-only does not edit", async ({ page }) => {
+    // Row 4 (Radia) is on the enterprise plan: the whole row is read-only.
+    await expect(cell(page, 3, 1)).toHaveClass(/masu-locked/);
+    await cell(page, 3, 1).click();
+    await page.keyboard.type("X");
+    await expect(page.locator("#customers .masu-editor")).toHaveCount(0);
+    await expect(cell(page, 3, 1)).toHaveText("Radia Berners-Lee");
+
+    // Row 5 (Dennis) is not active: his revenue is read-only, his name is not.
+    await expect(cell(page, 4, 6)).toHaveAttribute("aria-readonly", "true");
+    await expect(cell(page, 4, 1)).toHaveAttribute("aria-readonly", "false");
+    await cell(page, 4, 6).dblclick();
+    await expect(page.locator("#customers .masu-editor")).toHaveCount(0);
   });
 
   test("a column with editable={false} does not edit", async ({ page }) => {

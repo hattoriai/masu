@@ -26,7 +26,10 @@ defmodule Masu.Grid do
   A row goes to the browser as a list: its id, then a value for each
   column, the column's value in JSON (see `Masu.Column` for the types) or,
   for a column with content, the HTML of its cell (with its value, as
-  `[html, value]`, when the column is editable).
+  `[html, value]`, when the column is editable). In a grid whose cells
+  edit by the row's state (`row_editable`, or a column's `editable`
+  function), a row ends with its read-only cells: `true` for every cell,
+  or the indexes of their columns.
   """
 
   use Phoenix.LiveComponent
@@ -219,6 +222,7 @@ defmodule Masu.Grid do
           |> Source.prepare(query, columns)
 
         broadcast(socket.assigns.live, saved)
+        if is_function(socket.assigns.on_save, 1), do: socket.assigns.on_save.(saved)
 
         assign(socket,
           source: source,
@@ -280,7 +284,27 @@ defmodule Masu.Grid do
 
   defp encode_rows(rows, assigns) do
     row_id = row_id(assigns)
-    Enum.map(rows, fn row -> [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)] end)
+    locks? = locks?(assigns)
+
+    Enum.map(rows, fn row ->
+      cells = [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)]
+      if locks?, do: cells ++ [locks(assigns, row)], else: cells
+    end)
+  end
+
+  # A grid whose cells edit by row sends, after a row's cells, which are
+  # read-only: `true` for the whole row, or the indexes of its columns.
+  defp locks?(assigns),
+    do: assigns.row_editable != nil or Enum.any?(assigns.columns, &(&1.editable_if != nil))
+
+  defp locks(assigns, row) do
+    if assigns.row_editable && assigns.row_editable.(row) == false do
+      true
+    else
+      for {column, i} <- Enum.with_index(assigns.columns),
+          column.editable and not Column.editable?(column, row),
+          do: i
+    end
   end
 
   defp broadcast(nil, _rows), do: :ok
@@ -425,6 +449,7 @@ defmodule Masu.Grid do
       "locale" => assigns.locale,
       "searchable" => assigns.searchable,
       "changed" => assigns.changed,
+      "locks" => locks?(assigns),
       "messages" => assigns.messages,
       "initial" =>
         assigns.initial && %{"from" => 0, "rows" => encode_rows(assigns.initial, assigns)}

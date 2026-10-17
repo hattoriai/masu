@@ -621,3 +621,9 @@
   box-shadow: inset 0 0 0 2px var(--masu-invalid);
   background: color-mix(in oklab, var(--masu-invalid) 8%, transparent);
 }
+
+/* A cell that the row's state makes read-only, in a column that edits. */
+.masu-cell.masu-locked {
+  color: var(--masu-muted);
+  cursor: not-allowed;
+}

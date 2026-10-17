@@ -82,3 +82,36 @@ defmodule MasuTest.UpdateLive do
   defp update(_row, %{"name" => "nope"}), do: {:error, "Not that name."}
   defp update(row, %{"name" => name}), do: {:ok, %{row | name: String.upcase(name)}}
 end
+
+defmodule MasuTest.LockedLive do
+  @moduledoc "A grid with read-only rows and cells, that tells its LiveView what it saved."
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket),
+    do: {:ok, assign(socket, people: MasuTest.People.all(), saved: [])}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.data_grid
+      id="people"
+      rows={@people}
+      changeset={&MasuTest.EditPeopleLive.changeset/2}
+      row_editable={&(&1.id != 1)}
+      on_save={&send(self(), {:saved, &1})}
+      sort={[:id]}
+    >
+      <:col field={:name} />
+      <:col field={:age} type={:integer} editable={&(&1.age < 80)} />
+    </.data_grid>
+    <p id="saved">{Enum.join(@saved, ", ")}</p>
+    """
+  end
+
+  @impl true
+  def handle_info({:saved, rows}, socket),
+    do: {:noreply, update(socket, :saved, &(&1 ++ Enum.map(rows, fn row -> row.name end)))}
+end

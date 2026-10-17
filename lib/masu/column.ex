@@ -59,6 +59,7 @@ defmodule Masu.Column do
           filterable: boolean(),
           searchable: boolean(),
           editable: boolean() | nil,
+          editable_if: (term() -> boolean()) | nil,
           slot: map() | nil
         }
 
@@ -75,7 +76,8 @@ defmodule Masu.Column do
     sortable: true,
     filterable: true,
     searchable: false,
-    editable: nil
+    editable: nil,
+    editable_if: nil
   ]
 
   @doc "The types a column can have."
@@ -113,7 +115,9 @@ defmodule Masu.Column do
       sortable: Map.get(attrs, :sortable, true) != false,
       filterable: Map.get(attrs, :filterable, true) != false,
       searchable: Map.get(attrs, :searchable, type in [:text, :enum]) == true,
-      editable: Map.get(attrs, :editable),
+      editable:
+        if(is_function(Map.get(attrs, :editable), 1), do: nil, else: Map.get(attrs, :editable)),
+      editable_if: if(is_function(Map.get(attrs, :editable), 1), do: Map.get(attrs, :editable)),
       slot: if(Map.get(attrs, :inner_block), do: attrs)
     }
   end
@@ -152,10 +156,22 @@ defmodule Masu.Column do
   @doc """
   Whether a person may edit the column's cells: its grid edits (it has a
   `changeset` or an `update`), the column names a field (not a `value`
-  function), and it does not say `editable={false}`.
+  function), and it does not say `editable={false}`. A column whose
+  `editable` is a function of the row edits the cells of the rows for
+  which it gives `true` (see `editable?/2`).
   """
   @spec editable?(t()) :: boolean()
   def editable?(%__MODULE__{editable: editable}), do: editable == true
+
+  @doc """
+  Whether a person may edit the column's cell of a row: the column edits
+  (`editable?/1`), and its `editable` function, if it has one, says so for
+  the row.
+  """
+  @spec editable?(t(), term()) :: boolean()
+  def editable?(%__MODULE__{editable: true, editable_if: nil}, _row), do: true
+  def editable?(%__MODULE__{editable: true, editable_if: fun}, row), do: fun.(row) == true
+  def editable?(%__MODULE__{}, _row), do: false
 
   @doc "The value of the column for a row."
   @spec get(t(), term()) :: term()

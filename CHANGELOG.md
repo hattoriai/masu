@@ -31,6 +31,13 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   changeset's errors go on their cells. Paste of tab-separated text, fill
   down, Delete, undo and redo. A row is found again through the grid's
   own query (`c:Masu.Source.fetch/3`). `Masu.Test.edit/3`.
+- Read-only rows and cells by their state: `row_editable` on the grid,
+  and `editable` as a function of the row on a column. The server
+  refuses an edit of a read-only cell (with the row it finds again) and
+  saves the row's other edits; the browser gets each row's read-only
+  cells, which open no editor and have `aria-readonly`.
+- `on_save`: a function called with the saved rows, in the LiveView's
+  process, for an audit, a flash or the LiveView's own assigns.
 - Live rows: `live={{pubsub, topic}}`, the `Masu.Live` hook, and
   `Masu.Live.broadcast_upsert/3` and `broadcast_delete/3`. A grid takes
   the changes of its topic into the person's query, a batch at a time;

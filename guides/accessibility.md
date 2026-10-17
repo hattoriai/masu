@@ -43,7 +43,8 @@ Each chip has a button that takes its filter away, named for it.
 The editor of a cell is an input named by its column's label, with the
 focus while it is open; the focus comes back to the grid when it closes.
 A cell the server refused has `aria-invalid="true"` and the error as its
-title, and the live region says the error.
+title, and the live region says the error. In a column that edits, a cell
+has `aria-readonly`: `"true"` when the row's state makes it read-only.
 
 ## Announcements
 

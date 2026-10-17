@@ -84,4 +84,5 @@ the active cell a line of it.
 | `.masu-menu`, `.masu-menu-op`, `.masu-menu-input`, `.masu-menu-value`, `.masu-menu-count`, `.masu-menu-apply` | the filter menu |
 | `.masu-chips`, `.masu-chip`, `.masu-chip-text`, `.masu-chip-remove`, `.masu-chips-clear` | the filters above the grid |
 | `.masu-editable`, `.masu-editor`, `.masu-saving`, `.masu-invalid` | a cell that edits, its editor, a cell being saved, a cell refused |
+| `.masu-locked` | a cell that the row's state makes read-only, in a column that edits |
 | `.masu-changed` | a row that changed on the grid's topic, for a moment (see [Live rows](live.md)) |
