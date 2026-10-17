@@ -48,6 +48,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Layout and views | `pinned={:start}` and `hidden` columns; headers that move by dragging; a columns menu to show, hide, pin and move them; the person's view (order, filters, search, columns) in the URL (`url`) and kept per person, with named views to save and share (`views`, with an Ecto store and `mix masu.gen.views`) |
 | Trees and details | `tree={:parent_id}`: rows in a tree, opened with →, ← and `*`, virtualized as a list of the open rows (a list or an Ecto source, children read as they open), siblings sorted among themselves, filters that keep the ancestors of a match; a `:detail` slot that opens a row on any HEEx under it, another grid too |
 | Groups and totals | `group_by` and "Group by" in the header menu: groups with their counts and totals, opened as a tree, sorted by value or by a total; `aggregate={:sum}` and a row of totals at the bottom; counted and totalled by the database, a `GROUP BY` a level |
+| Export and selection | an Export menu of CSV and XLSX of the whole query, written in a task with progress; `Masu.Live.export/1` for an app's own export; `selectable` rows, ranges, and every row of the query as an `Ecto.Query` (`Masu.Live.selected/1`); blocks of an Ecto source read by key, not `OFFSET` |
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
 | Sorting | a click on a header; with Shift, by several columns, numbered in the headers; text without case, empty values last |
@@ -175,6 +176,8 @@ in the same order.
   open on a detail of their own.
 * [Groups and totals](guides/groups.md): rows grouped by columns, with
   their counts and totals, and a row of totals.
+* [Export, selection and large tables](guides/export.md): CSV and XLSX,
+  selecting rows and every row of a query, paging by key.
 * [Keyboard and copy](guides/keyboard.md): the keys, the selection, and
   what a copy gives.
 * [Testing](guides/testing.md): `Masu.Test` with `Phoenix.LiveViewTest`.

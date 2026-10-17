@@ -306,6 +306,8 @@ defmodule MasuDev.ViewsLive do
       searchable
       columns_menu
       url
+      selectable
+      export
       views={Masu.Views.Memory}
       user={@user}
       height="34rem"

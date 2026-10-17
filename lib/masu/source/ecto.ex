@@ -80,7 +80,8 @@ if Code.ensure_loaded?(Ecto.Query) do
         filtered: false,
         segments: nil,
         group_columns: [],
-        totals: %{}
+        totals: %{},
+        cursors: nil
       }
     end
 
@@ -186,12 +187,27 @@ if Code.ensure_loaded?(Ecto.Query) do
           count: count,
           order: order,
           segments: nil,
-          totals: totals_of(state, query, columns)
+          totals: totals_of(state, query, columns),
+          cursors: make_ref()
       }
     end
 
     @impl true
     def totals(%{totals: totals}), do: totals
+
+    # Every row of the query but some: a query of them (the person's
+    # filters and search, without order), for an update_all or a job.
+    @impl true
+    def select_all(%{primary_key: [key]} = state, query, columns, except, _row_id) do
+      ecto =
+        state.base
+        |> where_filters(query.filters, columns)
+        |> where_search(query.search, columns)
+        |> exclude(:order_by)
+        |> exclude(:preload)
+
+      {:query, if(except == [], do: ecto, else: where(ecto, [r], field(r, ^key) not in ^except))}
+    end
 
     # The groups of a column under a path, with their counts and totals.
     defp groups_of(state, filtered, path, %Column{key: key, field: f} = column, columns, sorts) do
@@ -378,12 +394,83 @@ if Code.ensure_loaded?(Ecto.Query) do
       state |> nodes(offset, limit) |> Enum.map(&elem(&1, 0))
     end
 
+    # A block after a block the source read is read by the sort values of
+    # that block's last row (`WHERE (a, b, id) > (...)`, as it were), not by
+    # an OFFSET, which the database counts row by row: the last block of a
+    # million rows is as fast as the first. A jump (the scrollbar dragged)
+    # is an OFFSET, and the blocks after it are read by key again.
     def rows(state, offset, limit) do
-      state.query
-      |> offset(^offset)
-      |> limit(^limit)
-      |> state.repo.all(state.repo_opts)
+      rows =
+        case cursor(state, offset) do
+          nil when offset > 0 -> state.query |> offset(^offset) |> limit(^limit)
+          nil -> limit(state.query, ^limit)
+          values -> state.query |> where(^after_row(state, values)) |> limit(^limit)
+        end
+        |> state.repo.all(state.repo_opts)
+
+      remember(state, offset + length(rows), List.last(rows))
+      rows
     end
+
+    # The cursors of a prepared query (`cursors`, a reference made when it
+    # is prepared): the sort values of the row before each block read,
+    # by the block's offset. A source's rows/3 gives rows, not a state, so
+    # they are kept in the process that has the grid: the LiveView's.
+    @max_cursors 512
+
+    defp cursor(%{cursors: nil}, _offset), do: nil
+
+    defp cursor(%{cursors: ref}, offset),
+      do: Process.get({__MODULE__, ref}, %{}) |> Map.get(offset)
+
+    defp remember(%{cursors: nil}, _offset, _row), do: :ok
+    defp remember(_state, _offset, nil), do: :ok
+    defp remember(%{order: order}, _offset, _row) when not is_list(order), do: :ok
+
+    defp remember(%{cursors: ref, order: order}, offset, row) do
+      values = Enum.map(order, fn {_direction, f} -> Map.fetch(row, f) end)
+
+      if Enum.all?(values, &match?({:ok, _}, &1)) do
+        cursors = Process.get({__MODULE__, ref}, %{})
+        cursors = if map_size(cursors) >= @max_cursors, do: %{}, else: cursors
+        Process.put({__MODULE__, ref}, Map.put(cursors, offset, Enum.map(values, &elem(&1, 1))))
+      end
+
+      :ok
+    end
+
+    # The rows after a row in the order: for the sorts (a, b, id), those
+    # with a beyond the row's, or a the same and b beyond, or a and b the
+    # same and id beyond. NULL sorts after every value in PostgreSQL, and
+    # before them in SQLite and MySQL.
+    defp after_row(%{order: order, repo: repo}, values) do
+      nulls_last? = repo.__adapter__() == Ecto.Adapters.Postgres
+
+      {condition, _same} =
+        order
+        |> Enum.zip(values)
+        |> Enum.reduce({dynamic([r], false), dynamic([r], true)}, fn {{direction, f}, value},
+                                                                     {acc, same} ->
+          beyond = beyond(direction, f, value, nulls_last?)
+
+          {dynamic([r], ^acc or (^same and ^beyond)),
+           dynamic([r], ^same and ^same_value(f, value))}
+        end)
+
+      condition
+    end
+
+    defp same_value(f, nil), do: dynamic([r], is_nil(field(r, ^f)))
+    defp same_value(f, value), do: dynamic([r], field(r, ^f) == ^value)
+
+    defp beyond(:asc, _f, nil, true), do: dynamic([r], false)
+    defp beyond(:asc, f, nil, false), do: dynamic([r], not is_nil(field(r, ^f)))
+    defp beyond(:asc, f, v, true), do: dynamic([r], field(r, ^f) > ^v or is_nil(field(r, ^f)))
+    defp beyond(:asc, f, v, false), do: dynamic([r], field(r, ^f) > ^v)
+    defp beyond(:desc, f, nil, true), do: dynamic([r], not is_nil(field(r, ^f)))
+    defp beyond(:desc, _f, nil, false), do: dynamic([r], false)
+    defp beyond(:desc, f, v, true), do: dynamic([r], field(r, ^f) < ^v)
+    defp beyond(:desc, f, v, false), do: dynamic([r], field(r, ^f) < ^v or is_nil(field(r, ^f)))
 
     # The rows of a block of the tree, by their ids, with their places. A
     # row the source has not opened may have children: one query tells.

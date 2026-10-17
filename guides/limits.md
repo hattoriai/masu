@@ -43,10 +43,20 @@ are open at most.
 
 ## A deep OFFSET
 
-An Ecto source reads a block with `LIMIT` and `OFFSET`. Deep in a table
-of millions of rows, the database reads every row before the offset, and
-a block takes longer. Paging by key (after the last row's sort values)
-is in the backlog.
+An Ecto source reads the block after a block it read by key (see
+[Export, selection and large tables](export.md)), but a jump into the
+middle of a table of millions of rows (the scrollbar dragged) is an
+`OFFSET`, which the database counts row by row. A grouped Ecto grid
+reads an open group's rows by `OFFSET`. Paging by key is tested on
+SQLite; the order of `NULL`s it assumes for PostgreSQL is PostgreSQL's
+default.
+
+## Export
+
+An export of a hundred thousand rows is written in a task and sent to
+the browser a half megabyte at a time, base64 over the LiveView's
+socket. An XLSX file's dates before 1900 are numbers Excel does not show
+as dates.
 
 ## Empty values in a database
 

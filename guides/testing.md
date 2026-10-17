@@ -82,6 +82,13 @@ grid's reason.
   `:value`, `:count`, `:level`, `:expanded` and `:totals`.
 * `totals(view, id)`: the row of totals, by column key.
 
+## Export and selection
+
+* `export(view, id, format)`: exports as the Export menu does, and gives
+  the file the browser would download, `{name, binary}`.
+* `select(view, id, ids, on \\ true)`, `select_all(view, id, on \\ true)`
+  and `selection(view, id)`.
+
 ## Trees and details
 
 * `nodes(view, id, opts)`: the rows of a tree, as maps of `:id`,

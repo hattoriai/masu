@@ -89,6 +89,11 @@ defmodule MasuTest.Orders do
 
       :ok = MasuTest.Accounts.setup!(Repo)
 
+      # Items with empty values and repeated ones, for paging by key.
+      Repo.query!("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, score INTEGER)")
+
+      for id <- 1..237, do: Repo.insert!(item(id))
+
       for {number, customer, status, total, day} <- [
             {"A-1", "Acme", "paid", "10.00", 1},
             {"A-2", "Bob's", "late", "250.50", 2},
@@ -108,5 +113,21 @@ defmodule MasuTest.Orders do
 
       :ok
     end
+  end
+
+  defp item(id) do
+    name = if rem(id, 7) == 0, do: nil, else: "item #{rem(id * 31, 40)}"
+    score = if rem(id, 5) == 0, do: nil, else: rem(id * 13, 9)
+    struct(MasuTest.Item, id: id, name: name, score: score)
+  end
+end
+
+defmodule MasuTest.Item do
+  @moduledoc "An item with empty and repeated values: paging by key."
+  use Ecto.Schema
+
+  schema "items" do
+    field(:name, :string)
+    field(:score, :integer)
   end
 end

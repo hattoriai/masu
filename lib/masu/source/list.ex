@@ -119,6 +119,19 @@ defmodule Masu.Source.List do
   def totals(%{totals: totals}), do: totals
 
   @impl true
+  def select_all(%{all: rows}, query, columns, except, row_id) do
+    except = MapSet.new(except)
+
+    ids =
+      for row <- rows |> filter(query.filters, columns) |> search(query.search, columns),
+          id = Value.to_wire(row_id.(row)),
+          not MapSet.member?(except, id),
+          do: id
+
+    {:ids, ids}
+  end
+
+  @impl true
   def count(%{segments: [_ | _] = segments}), do: Group.count(segments)
   def count(%{segments: []}), do: 0
   def count(%{view: view}), do: tuple_size(view)

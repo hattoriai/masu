@@ -31,6 +31,8 @@ defmodule MasuTest.Router do
     live("/tree", MasuTest.TreeLive)
     live("/details", MasuTest.DetailsLive)
     live("/groups", MasuTest.GroupsLive)
+    live("/export", MasuTest.ExportLive)
+    live("/select", MasuTest.SelectLive)
   end
 end
 

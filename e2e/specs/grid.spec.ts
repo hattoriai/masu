@@ -818,3 +818,74 @@ test.describe("groups", () => {
     await expect(page.locator("#groups-r0-c0 .masu-group-label")).not.toHaveText(ascending!);
   });
 });
+
+test.describe("selection and export", () => {
+  const person = () => `sel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const box = (page: import("@playwright/test").Page, row: number) => page.locator(`#views-r${row}-c0 .masu-select`);
+
+  test("boxes select rows, Shift a range, Space and Ctrl too; the header's box every row of the query", async ({ page }) => {
+    await openPage(page, `/views?as=${person()}`);
+    const bar = page.locator("#views .masu-selection-bar");
+    const all = page.locator("#views .masu-select-all");
+
+    await box(page, 1).click();
+    await box(page, 4).click({ modifiers: ["Shift"] });
+    await expect(bar).toContainText("4 selected");
+    await expect(box(page, 2)).toBeChecked();
+    await expect(page.locator("#views .masu-body .masu-row-chosen")).toHaveCount(4);
+    await expect(all).toHaveJSProperty("indeterminate", true);
+
+    // Space on the first column, and Ctrl and a click, take a row out.
+    await page.locator("#views-r2-c1").click();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Space");
+    await expect(box(page, 2)).not.toBeChecked();
+    await page.locator("#views-r3-c2").click({ modifiers: ["ControlOrMeta"] });
+    await expect(bar).toContainText("2 selected");
+
+    // Every row of the query: a search, then the header's box.
+    await page.locator(".masu-search").fill("Oslo");
+    await expect(grid(page, "views")).not.toHaveAttribute("aria-rowcount", "10001");
+    await all.click();
+    await expect(bar).toContainText(/^All [\d,]+ selected/);
+    await expect(all).toBeChecked();
+    await expect(box(page, 0)).toBeChecked();
+    await box(page, 0).click();
+    await expect(bar).not.toContainText("All");
+
+    await bar.getByRole("button", { name: "Clear" }).click();
+    await expect(bar).toHaveCount(0);
+    await expect(box(page, 1)).not.toBeChecked();
+  });
+
+  test("the Export menu downloads the rows of the query, as CSV and as XLSX", async ({ page }) => {
+    await openPage(page, `/views?as=${person()}`);
+    await page.locator(".masu-search").fill("Oslo");
+    // The search applies after a pause in the typing.
+    await expect(grid(page, "views")).not.toHaveAttribute("aria-rowcount", "10001");
+    const count = Number((await grid(page, "views").getAttribute("aria-rowcount"))!) - 1;
+
+    const csv = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export" }).click();
+    await page.getByRole("dialog", { name: "Export" }).getByRole("button", { name: "CSV" }).click();
+    const file = await csv;
+    expect(file.suggestedFilename()).toMatch(/^views-\d{4}-\d{2}-\d{2}\.csv$/);
+    const text = require("fs").readFileSync(await file.path(), "utf8") as string;
+    const lines = text.trim().split("\r\n");
+    expect(lines[0]).toBe("ID,Name,City,Plan,Seats,Active,Signed up,Last seen,Revenue");
+    expect(lines).toHaveLength(count + 1);
+    // The search's rows (it reads every text column).
+    expect(lines.slice(1).every((line) => line.includes("Oslo"))).toBe(true);
+    await expect(page.locator("#views > .masu-status")).toHaveText("Export downloaded");
+    await expect(page.getByRole("button", { name: "Export" })).not.toHaveAttribute("aria-busy");
+
+    const xlsx = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export" }).click();
+    await page.getByRole("button", { name: "Excel (XLSX)" }).click();
+    const workbook = await xlsx;
+    expect(workbook.suggestedFilename()).toMatch(/\.xlsx$/);
+    const bytes = require("fs").readFileSync(await workbook.path()) as Buffer;
+    // A zip: "PK" first.
+    expect(bytes.subarray(0, 2).toString()).toBe("PK");
+  });
+});

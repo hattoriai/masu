@@ -34,6 +34,8 @@ defmodule Masu.Test do
 
   import ExUnit.Assertions
 
+  require Phoenix.LiveViewTest
+
   alias Phoenix.LiveViewTest
 
   @doc """
@@ -293,6 +295,59 @@ defmodule Masu.Test do
   def detail(view, id, row_id, open \\ true) do
     event(view, id, "masu:detail", %{"id" => row_id, "open" => open})
     view
+  end
+
+  @doc """
+  Selects rows of the grid `id` (`selectable`) by their ids, as their
+  boxes do, or, with `false`, takes them out. Returns the view.
+  """
+  @spec select(struct(), String.t(), [term()], boolean()) :: struct()
+  def select(view, id, ids, on \\ true) do
+    event(view, id, "masu:select", %{"ids" => ids, "on" => on})
+    view
+  end
+
+  @doc "Selects every row of the query of the grid `id` (or, with `false`, none). Returns the view."
+  @spec select_all(struct(), String.t(), boolean()) :: struct()
+  def select_all(view, id, on \\ true) do
+    event(view, id, "masu:select", %{"all" => on})
+    view
+  end
+
+  @doc """
+  The selection of the grid `id`: `%{all: boolean, ids: [...], except:
+  [...], count: n}`.
+  """
+  @spec selection(struct(), String.t()) :: map()
+  def selection(view, id) do
+    selection = view |> config(id) |> Map.fetch!("selection")
+
+    %{
+      all: selection["all"],
+      ids: selection["ids"],
+      except: selection["except"],
+      count: selection["count"]
+    }
+  end
+
+  @doc """
+  Exports the grid `id` as its Export menu does (`Masu.Export`), and
+  gives the file the browser would download: `{name, binary}`.
+  """
+  @spec export(struct(), String.t(), :csv | :xlsx) :: {String.t(), binary()}
+  def export(view, id, format) do
+    reply = event(view, id, "masu:export", %{"format" => Atom.to_string(format)})
+    if error = reply["error"], do: flunk("the grid #{id} did not export: #{error}")
+    download(view, id, [])
+  end
+
+  defp download(view, id, parts) do
+    LiveViewTest.assert_push_event(view, "masu:download", %{"id" => ^id} = part, 5000)
+    parts = [Base.decode64!(part["data"]) | parts]
+
+    if part["last"],
+      do: {part["name"], parts |> Enum.reverse() |> IO.iodata_to_binary()},
+      else: download(view, id, parts)
   end
 
   @doc """

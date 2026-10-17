@@ -62,6 +62,15 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Masu.Test.place/3`).
   Each person's selected range shows to the others in their color. A
   refused edit names who changed the cell: "Changed by Ada meanwhile."
+- Export (`Masu.Export`): `export` adds an Export menu, CSV and XLSX
+  (written with no library) of every row of the query, written in a task
+  with progress and downloaded by the browser; `Masu.Live.export/1`
+  gives an app the export to write anywhere. Selection: `selectable`
+  boxes, Shift ranges, Ctrl and Space, and every row of the query at
+  once, which `Masu.Live.selected/1` gives as an `Ecto.Query`;
+  `on_select`. An Ecto source reads the next block by key, not by
+  `OFFSET`. `Masu.Test.export/3`, `select/4`, `select_all/3` and
+  `selection/2`.
 - Groups and totals (`Masu.Group`): `aggregate` on a column (`:sum`,
   `:avg`, `:min`, `:max`, `:count`, `:count_distinct`, or a function of
   a list's rows) and a row of totals at the bottom; `group_by` and

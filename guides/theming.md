@@ -101,4 +101,6 @@ the active cell a line of it.
 | `.masu-group-row`, `.masu-group-label`, `.masu-group-count` | a group's row, its label, its count |
 | `.masu-foot`, `.masu-totals` | the row of totals at the bottom |
 | `.masu-chip-group`, `.masu-menu-group` | the chip of a grouped column, the Group by button of the header menu |
+| `.masu-select`, `.masu-select-all`, `.masu-row-chosen`, `.masu-selection-bar`, `.masu-selection-clear` | a row's box, the header's box, a row selected, the bar of how many |
+| `.masu-export-button`, `.masu-export-panel`, `.masu-export-format` | the Export menu (`aria-busy` on its button while it exports) |
 | `.masu-changed` | a row that changed on the grid's topic, for a moment (see [Live rows](live.md)) |
