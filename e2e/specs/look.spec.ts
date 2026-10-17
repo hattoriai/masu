@@ -23,7 +23,7 @@ async function withFont(page: Page) {
 }
 
 /** The share of pixels that differ by more than a few levels in a channel, except on the lines `skip`. */
-async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = []): Promise<{ ratio: number; diff: string; lines: string[] }> {
+async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = []): Promise<{ ratio: number; diff: string; lines: string[]; profile: string }> {
   return page.evaluate(
     async ([a, b, skip]) => {
       const load = (data: string) =>
@@ -93,7 +93,20 @@ async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = [])
         }
       }
       octx.putImageData(diff, 0, 0);
-      return { ratio: different / (width * height), diff: out.toDataURL(), lines };
+      // Where the colour changes, down the middle of each image.
+      const changes = (p: Uint8ClampedArray) => {
+        const x = Math.floor(width / 2);
+        const out: string[] = [];
+        let last = "";
+        for (let y = 0; y < height; y++) {
+          const c = rgb(p, x, y);
+          if (c !== last) out.push(`${y}:${c}`);
+          last = c;
+        }
+        return out.join(" ");
+      };
+      const profile = `reference ${changes(pa)}\ngrid ${changes(pb)}`;
+      return { ratio: different / (width * height), diff: out.toDataURL(), lines, profile };
     },
     [a.toString("base64"), b.toString("base64"), skip] as const,
   );
@@ -125,7 +138,14 @@ for (const mode of ["light", "dark"] as const) {
     expect([gridBox.width, gridBox.height]).toEqual([referenceBox.width, referenceBox.height]);
     const b = await grid.screenshot();
 
-    const { ratio, diff, lines } = await difference(page, a, b, skip);
+    const { ratio, diff, lines, profile } = await difference(page, a, b, skip);
+    const boxes = await page.evaluate(() =>
+      [".masu-grid", ".masu-head", ".masu-header", ".masu-body", ".masu-body > .masu-row"].map((s) => {
+        const r = document.querySelector(`#look ${s}`)!.getBoundingClientRect();
+        return `${s} ${r.top}..${r.bottom}`;
+      }),
+    );
+    console.log(`${mode} (${info.project.name}): ${boxes.join(", ")}\n${profile}`);
     await info.attach(`lotus-${mode}.png`, { body: a, contentType: "image/png" });
     await info.attach(`masu-${mode}.png`, { body: b, contentType: "image/png" });
     await info.attach(`diff-${mode}.png`, { body: Buffer.from(diff.split(",")[1], "base64"), contentType: "image/png" });
