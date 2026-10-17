@@ -20,6 +20,7 @@ defmodule Masu.Edit do
   # value now.
 
   alias Masu.{Column, Source, Value}
+  alias Masu.Source.Ecto, as: EctoSource
 
   @max_edits 5_000
 
@@ -49,9 +50,9 @@ defmodule Masu.Edit do
 
   # An Ecto source reads, compares and saves each row in a transaction
   # that locks it; another source finds the rows of the batch at once.
-  defp saver(_ids, %{source: %{module: Masu.Source.Ecto} = source} = assigns, _row_id) do
+  defp saver(_ids, %{source: %{module: EctoSource} = source} = assigns, _row_id) do
     fn id, edits ->
-      Masu.Source.Ecto.locked(source.state, id, &save_row(&1, id, edits, assigns))
+      EctoSource.locked(source.state, id, &save_row(&1, id, edits, assigns))
     end
   end
 
@@ -158,7 +159,7 @@ defmodule Masu.Edit do
   defp save(row, params, %{changeset: changeset} = assigns) when is_function(changeset, 2) do
     changeset = changeset.(row, params)
 
-    if assigns.source.module == Masu.Source.Ecto,
+    if assigns.source.module == EctoSource,
       do: repo_update(changeset, assigns),
       else: Ecto.Changeset.apply_action(changeset, :update)
   end
