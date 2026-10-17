@@ -23,7 +23,7 @@ async function withFont(page: Page) {
 }
 
 /** The share of pixels that differ by more than a few levels in a channel, except on the lines `skip`. */
-async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = []): Promise<{ ratio: number; diff: string; lines: number[] }> {
+async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = []): Promise<{ ratio: number; diff: string; lines: string[] }> {
   return page.evaluate(
     async ([a, b, skip]) => {
       const load = (data: string) =>
@@ -70,7 +70,11 @@ async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = [])
       };
       let different = 0;
       // The lines that differ over most of their width, to name in a failure.
-      const lines: number[] = [];
+      const lines: string[] = [];
+      const rgb = (p: Uint8ClampedArray, x: number, y: number) => {
+        const i = (y * width + x) * 4;
+        return `rgb(${p[i]} ${p[i + 1]} ${p[i + 2]})`;
+      };
       for (let y = 0; y < height; y++) {
         if (skip.includes(y)) continue;
         const before = different;
@@ -83,7 +87,10 @@ async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = [])
           diff.data[i + 2] = off ? 0 : pa[i + 2] * 0.2;
           diff.data[i + 3] = 255;
         }
-        if (different - before > width / 2) lines.push(y);
+        if (different - before > width / 2) {
+          const x = Math.floor(width / 2);
+          lines.push(`${y} (reference ${rgb(pa, x, y)}, grid ${rgb(pb, x, y)})`);
+        }
       }
       octx.putImageData(diff, 0, 0);
       return { ratio: different / (width * height), diff: out.toDataURL(), lines };
