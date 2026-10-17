@@ -74,6 +74,19 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_select`. An Ecto source reads the next block by key, not by
   `OFFSET`. `Masu.Test.export/4`, `export_url/3`, `select/4`, `select_all/3` and
   `selection/2`.
+- New and deleted rows: `create` (or `changeset` with `struct`) adds a
+  "+ New row" row, Ctrl+Enter and Insert; a new row is a draft until the
+  person leaves it, with its errors on its cells; a paste past the last
+  row offers to add the rest. `deletable` (`Repo.delete`, or out of a
+  list; a function of the row says which) or `delete` deletes rows with
+  Ctrl+Delete or from the selection bar, after a question; Ctrl+Z brings
+  them back (`restore` for a grid with `delete`). New and deleted rows go
+  to the grid's topic; `on_delete`. `Masu.Test.add_rows/3`,
+  `delete_rows/3`, `restore_rows/3`.
+- Editors: an enum edits with a list of its values (`values`, or a
+  schema's `Ecto.Enum` field's), which narrows as the person types;
+  `decimals` on a number column; a value the server would refuse (text
+  in a number, a day that is not one) is caught in the browser.
 - Groups and totals (`Masu.Group`): `aggregate` on a column (`:sum`,
   `:avg`, `:min`, `:max`, `:count`, `:count_distinct`, or a function of
   a list's rows) and a row of totals at the bottom; `group_by` and

@@ -36,6 +36,8 @@ defmodule Masu.Grid do
 
   alias Masu.{Column, Group, Layout, Query, Source, Tree, Value, View}
   alias Masu.Export.{Download, Ticket}
+  alias Masu.Source.Ecto, as: EctoSource
+  alias Masu.Source.List, as: ListSource
   alias Phoenix.HTML.Safe
 
   @max_block 500
@@ -421,10 +423,10 @@ defmodule Masu.Grid do
   end
 
   defp enum_values(
-         %Source{module: Masu.Source.Ecto, state: state},
+         %Source{module: EctoSource, state: state},
          %Column{type: :enum} = column
        ),
-       do: Masu.Source.Ecto.enum_values(state, column.field)
+       do: EctoSource.enum_values(state, column.field)
 
   defp enum_values(_source, _column), do: nil
 
@@ -1022,7 +1024,7 @@ defmodule Masu.Grid do
     ids =
       case selected(assigns) do
         {:ids, ids} -> ids
-        {:query, query} -> Masu.Source.Ecto.ids_of(assigns.source.state, query, max + 1)
+        {:query, query} -> EctoSource.ids_of(assigns.source.state, query, max + 1)
       end
 
     if length(ids) > max,
@@ -1066,13 +1068,13 @@ defmodule Masu.Grid do
 
   # The places of rows in a list, so that an undo puts them back there
   # (an upsert of a row a list does not have puts it at its end).
-  defp places(%Source{module: Masu.Source.List, state: state}, ids, row_id),
-    do: Masu.Source.List.places(state, ids, row_id)
+  defp places(%Source{module: ListSource, state: state}, ids, row_id),
+    do: ListSource.places(state, ids, row_id)
 
   defp places(_source, _ids, _row_id), do: %{}
 
   defp reinsert(
-         %{assigns: %{source: %Source{module: Masu.Source.List} = source}} = socket,
+         %{assigns: %{source: %Source{module: ListSource} = source}} = socket,
          rows,
          places,
          row_id
@@ -1080,7 +1082,7 @@ defmodule Masu.Grid do
     placed =
       for row <- rows, index = Map.get(places, Value.to_wire(row_id.(row))), do: {index, row}
 
-    assign(socket, source: %{source | state: Masu.Source.List.reinsert(source.state, placed)})
+    assign(socket, source: %{source | state: ListSource.reinsert(source.state, placed)})
   end
 
   defp reinsert(socket, _rows, _places, _row_id), do: socket

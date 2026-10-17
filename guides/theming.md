@@ -91,6 +91,9 @@ the active cell a line of it.
 | `.masu-menu`, `.masu-menu-op`, `.masu-menu-input`, `.masu-menu-value`, `.masu-menu-count`, `.masu-menu-apply` | the filter menu |
 | `.masu-chips`, `.masu-chip`, `.masu-chip-text`, `.masu-chip-remove`, `.masu-chips-clear` | the filters above the grid |
 | `.masu-editable`, `.masu-editor`, `.masu-saving`, `.masu-invalid` | a cell that edits, its editor, a cell being saved, a cell refused |
+| `.masu-choices`, `.masu-choice` | an enum's editor: the list of its values, and each |
+| `.masu-add-row`, `.masu-draft` | the row "+ New row", and a new row not saved yet |
+| `.masu-confirm`, `.masu-confirm-ok`, `.masu-confirm-cancel`, `.masu-danger` | a question above the grid (delete rows, add the rest of a paste), and an answer that deletes |
 | `.masu-locked` | a cell that the row's state makes read-only, in a column that edits |
 | `.masu-people`, `.masu-person`, `.masu-initials`, `.masu-people-more` | the avatars of the others; each has `--masu-peer-color` |
 | `.masu-peer`, `.masu-peer-label`, `.masu-peer-editing`, `.masu-peer-top` | another person's cell, their name, while they type, on the first row; with `--masu-peer-color` |
@@ -101,6 +104,6 @@ the active cell a line of it.
 | `.masu-group-row`, `.masu-group-label`, `.masu-group-count` | a group's row, its label, its count |
 | `.masu-foot`, `.masu-totals` | the row of totals at the bottom |
 | `.masu-chip-group`, `.masu-menu-group` | the chip of a grouped column, the Group by button of the header menu |
-| `.masu-select`, `.masu-select-all`, `.masu-row-chosen`, `.masu-selection-bar`, `.masu-selection-clear` | a row's box, the header's box, a row selected, the bar of how many |
+| `.masu-select`, `.masu-select-all`, `.masu-row-chosen`, `.masu-selection-bar`, `.masu-selection-clear`, `.masu-selection-delete` | a row's box, the header's box, a row selected, the bar of how many, and its Delete |
 | `.masu-export-button`, `.masu-export-panel`, `.masu-export-format` | the Export menu (`aria-busy` on its button while it asks for the link) |
 | `.masu-changed` | a row that changed on the grid's topic, for a moment (see [Live rows](live.md)) |

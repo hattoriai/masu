@@ -160,11 +160,77 @@ It gets the row and the params, and gives `{:ok, row}`, or
 `{:error, changeset}` (its errors go on the cells), or
 `{:error, message}` (the message goes on every edited cell of the row).
 
+## New rows
+
+A grid adds rows with `create`, a function of the params, or with its
+`changeset` and a `struct`, the row a new one starts from:
+
+```heex
+<.data_grid
+  id="tasks"
+  source={Task}
+  repo={Repo}
+  changeset={&Task.changeset/2}
+  struct={%Task{status: :todo}}
+>
+```
+
+The changeset casts the new row's params into the struct, and the repo
+inserts it (for a list, `apply_action(changeset, :insert)`, and the row
+must have an id: `struct={fn -> %{id: next_id(), ...} end}`). `create`
+takes the place of both, as `update` does for edits:
+
+```heex
+<.data_grid id="tasks" source={Task} repo={Repo} create={&Tasks.create_task/1}>
+```
+
+It gives `{:ok, row}`, `{:error, changeset}` or `{:error, message}`.
+
+Below the last row of the grid, a row says "+ New row": a click, Enter
+on it, or Ctrl+Enter (or Insert) anywhere adds a new row there, a draft
+that the person fills as any row. A draft is the person's own: it is
+not saved, nor shown to others, until they leave it (another row, or out
+of the grid), or press Ctrl+Enter for the next one. Then it saves; its
+errors go on its cells, and it stays a draft until they are right.
+Escape lets a draft go. A saved row takes its place in the person's
+order, with a flash; a row that the filters leave out says so.
+
+A new row takes values in the columns that edit (`editable={false}` and
+columns of a `value` function do not). `on_save` hears of new rows too.
+
+A paste of more lines than there are rows below asks to add the rest as
+new rows, saved at once: those the server refuses stay as drafts, with
+their errors, and the grid goes to the first of them.
+
+## Deleting rows
+
+`deletable` deletes rows with the repo of an Ecto source (`Repo.delete`,
+in a transaction that locks the row), or from a list; a function of the
+row says which rows delete. `delete` takes the place of the repo:
+
+```heex
+<.data_grid id="tasks" source={Task} repo={Repo} deletable={&(&1.status != :done)}>
+<.data_grid id="tasks" source={Task} repo={Repo} delete={&Tasks.delete_task/1}>
+```
+
+`delete` gives `:ok`, `{:ok, row}` or `{:error, reason}`. A row is found
+through the grid's own query, so a person deletes only the rows they
+may see.
+
+Ctrl+Delete (⌘⌫) deletes the rows of the selection, or of the active
+cell, or, with `selectable`, the rows selected (Delete in the bar above
+the grid), after a question: "Delete 3 rows?". Ctrl+Z brings them back:
+the grid keeps the last deletes' rows, and inserts them again (for a
+list, in their places). A grid with `delete` brings them back with
+`restore`, a function of a deleted row; without it, a delete is not
+undone. `on_delete` hears of the rows deleted. At most 1,000 rows are
+added or deleted at once.
+
 ## Live rows
 
-With `live`, a saved row is broadcast on the grid's topic: the other
-people who have the grid open see it, with a flash (see
-[Live rows](live.md)).
+With `live`, a saved row is broadcast on the grid's topic, and a new or
+deleted one too: the other people who have the grid open see it, with a
+flash (see [Live rows](live.md)).
 
 ## What the person does
 
@@ -178,6 +244,9 @@ people who have the grid open see it, with a flash (see
 | Fill down | Ctrl+D (⌘D) gives the selection's rows the values of its first |
 | Paste | Ctrl+V (⌘V) puts tab-separated text, as a spreadsheet copies it, from the top left of the selection; one value fills the whole selection |
 | Undo, redo | Ctrl+Z (⌘Z), and Ctrl+Shift+Z or Ctrl+Y |
+| New row | Ctrl+Enter or Insert, or Enter on "+ New row" |
+| Let a new row go | Escape on it |
+| Delete rows | Ctrl+Delete (⌘⌫), after a question |
 
 A cell shows its new value at once, and the old one again if the server
 refuses it. A paste, a fill or an emptied range is one batch, saved row by
@@ -185,11 +254,30 @@ row, with the errors on their cells, and one undo.
 
 The editors follow the column's type: text, numbers read in the grid's
 locale ("1.234,5" in German), the browser's date, datetime and time
-inputs.
+inputs, and for an enum a list of its values, which narrows as the
+person types (↑ and ↓ pick, Enter takes). An enum's values are its
+`values`, a schema's `Ecto.Enum` field's, or else those its rows have
+(and then any value goes):
+
+```heex
+<:col field={:status} type={:enum} values={~w(todo doing done)} />
+```
+
+A value that the server would refuse does not go to it: text in a
+number, a day that is not one, an enum's value that it does not have.
+The editor stays, and says what is wrong; a paste puts the error on its
+cell. Empty values are the changeset's to judge.
+
+`decimals` shows a `:decimal` or `:number` column with that many digits,
+whatever the value has: `decimals={2}` shows `3` as `3.00`.
 
 ## Testing
 
 ```elixir
 assert :ok = edit(view, "orders", [{1, "total", "11.50"}])
 assert {:error, [{1, "status", "is invalid"}]} = edit(view, "orders", [{1, "status", "lost"}])
+
+assert {:ok, [id]} = add_rows(view, "tasks", %{title: "Write docs"})
+assert {:ok, undo} = delete_rows(view, "tasks", [id])
+assert {:ok, [^id]} = restore_rows(view, "tasks", undo)
 ```

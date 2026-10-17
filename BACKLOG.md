@@ -11,6 +11,10 @@ issues:
 - [#6](https://github.com/hattoriai/masu/issues/6) Sources without an exact count, and an optional pager
 - [#7](https://github.com/hattoriai/masu/issues/7) Change history: who changed a cell, when, and restoring a value
 - [#8](https://github.com/hattoriai/masu/issues/8) Following a person shows their view, not only their cell
+- [#14](https://github.com/hattoriai/masu/issues/14) Custom actions on selected rows and on each row
+- [#15](https://github.com/hattoriai/masu/issues/15) Koyomi pickers for date and time cells and filters
+- [#16](https://github.com/hattoriai/masu/issues/16) Kotoba for rich text cells, kept minimal
+- [#17](https://github.com/hattoriai/masu/issues/17) Editors of your own: an app's input for a column's cells
 
 The rest, below, is not planned yet.
 
@@ -29,8 +33,8 @@ place instead (by its id), as a feed does.
 
 ## Filters: pickers and more values
 
-The date filters use the browser's own date inputs; use Koyomi's pickers
-when the app has Koyomi. Offer the values of a text column, as an enum's
+The date filters use the browser's own date inputs; Koyomi's pickers
+are #15. Offer the values of a text column, as an enum's
 are, when it has few. Several filters on one column (a range and empty).
 
 ## Column stats
