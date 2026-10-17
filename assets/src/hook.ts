@@ -3,7 +3,7 @@
 // and gives the grid the server's later renders (`updated`).
 
 import { Grid } from "./grid";
-import type { Person, Transport } from "./types";
+import type { BlockReply, Person, Transport } from "./types";
 
 interface HookContext {
   el: HTMLElement;
@@ -39,6 +39,10 @@ export const Masu = {
     hook.grid = new Grid(hook.el, transport);
     hook.handleEvent("masu:people", (payload) => {
       if (payload.id === hook.el.id) hook.grid?.setPeople(payload.people as Person[]);
+    });
+    // A block of rows read in a task (`load={:async}`).
+    hook.handleEvent("masu:block", (payload) => {
+      if (payload.id === hook.el.id) hook.grid?.receiveBlock(payload.block as BlockReply);
     });
   },
 

@@ -45,10 +45,12 @@ defmodule Masu.Source do
   @doc """
   The rows from `offset` (from 0), at most `limit` of them; or
   `{rows, count}`, when the source learned the count of the query with
-  them (a `total_count` of the same request), which the grid takes.
+  them (a `total_count` of the same request), which the grid takes; or
+  `{:error, reason}`, which a grid with `load={:async}` shows (see
+  `Masu.Source.Error`).
   """
   @callback rows(state(), offset :: non_neg_integer(), limit :: pos_integer()) ::
-              [term()] | {[term()], non_neg_integer()}
+              [term()] | {[term()], non_neg_integer()} | {:error, term()}
 
   @doc """
   Whether the source can sort and filter by a column. A database can sort
@@ -162,6 +164,18 @@ defmodule Masu.Source do
                       nodes: 3,
                       siblings: 2
 
+  defmodule Error do
+    @moduledoc """
+    A source's read failed: `c:Masu.Source.rows/3` gave `{:error, reason}`.
+    A grid with `load={:async}` shows it; one that reads inline raises it.
+    """
+    defexception [:reason]
+
+    @impl true
+    def message(%{reason: reason}) when is_binary(reason), do: reason
+    def message(%{reason: reason}), do: inspect(reason)
+  end
+
   @type t :: %__MODULE__{module: module(), state: state()}
 
   defstruct [:module, :state]
@@ -227,6 +241,7 @@ defmodule Masu.Source do
     case module.rows(state, offset, limit) do
       {rows, count} when is_list(rows) and is_integer(count) -> {rows, count}
       rows when is_list(rows) -> {rows, nil}
+      {:error, reason} -> raise Error, reason: reason
     end
   end
 

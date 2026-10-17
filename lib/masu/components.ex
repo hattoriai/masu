@@ -227,6 +227,35 @@ defmodule Masu.Components do
     doc:
       "the most rows of one read from the source: higher for a source where a read is costly and rows are small; see the Export, selection and large tables guide"
 
+  attr :load, :atom,
+    default: :inline,
+    values: [:inline, :async],
+    doc:
+      "how the grid reads its source: `:inline` (the default) in the event, `:async` in a task, for a slow source: the LiveView answers meanwhile, the grid says it runs, with Stop; see the Sources guide"
+
+  attr :timeout, :integer,
+    default: nil,
+    doc:
+      "with `load={:async}`: the milliseconds a read may take, then it stops and the grid says so"
+
+  attr :on_query, :any,
+    default: nil,
+    doc:
+      "a controlled grid: the LiveView runs the query. The grid shows `rows` as they are, and calls this function with `%{query: %Masu.Query{}, page: n, offset: n, limit: n}` when the person sorts, filters, searches or goes to a page; see the Sources guide"
+
+  attr :total, :integer,
+    default: nil,
+    doc: "with `on_query`: how many rows the LiveView's query has (its rows are a page of them)"
+
+  attr :loading, :boolean,
+    default: false,
+    doc:
+      "with `on_query`: the LiveView runs its query; the grid says so, and keeps its rows until the new ones come"
+
+  attr :multi_sort, :boolean,
+    default: true,
+    doc: "`false` sorts by one column at a time: Shift adds none"
+
   attr :row_id, :any,
     default: nil,
     doc:
@@ -328,6 +357,7 @@ defmodule Masu.Components do
 
     check_blocks!(assigns)
     check_row_id!(assigns)
+    check_controlled!(assigns)
 
     if assigns.views && is_nil(assigns.user) do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with views needs user"
@@ -362,6 +392,12 @@ defmodule Masu.Components do
       tree={@tree}
       group_by={@group_by}
       export={@export}
+      load={@load}
+      timeout={@timeout}
+      on_query={@on_query}
+      given_total={@total}
+      given_loading={@loading}
+      multi_sort={@multi_sort}
       cell_menu={cell_menu!(@id, @cell_menu)}
       header_action={@header_action}
       cell_action={@cell_action}
@@ -443,6 +479,40 @@ defmodule Masu.Components do
          )
 
   defp check_row_id!(_assigns), do: :ok
+
+  # A controlled grid's rows are the LiveView's page: what reads the
+  # source's rows beyond them, or writes them, is not for it.
+  @not_controlled [
+    changeset: "changeset",
+    update: "update",
+    create: "create",
+    struct: "struct",
+    delete: "delete",
+    deletable: "deletable",
+    selectable: "selectable",
+    export: "export",
+    live: "live",
+    tree: "tree"
+  ]
+
+  defp check_controlled!(%{on_query: nil}), do: :ok
+
+  defp check_controlled!(%{on_query: on_query, id: id} = assigns) do
+    unless is_function(on_query, 1) do
+      raise ArgumentError, "<.data_grid id=#{inspect(id)}> on_query is a function of one argument"
+    end
+
+    on =
+      for {key, name} <- @not_controlled, assigns[key] not in [nil, false, []], do: name
+
+    on = if assigns.group_by != [], do: on ++ ["group_by"], else: on
+
+    if on != [] do
+      raise ArgumentError,
+            "<.data_grid id=#{inspect(id)}> has on_query (the LiveView runs its query) and #{Enum.join(on, ", ")}, " <>
+              "which reads or writes the rows beyond those the LiveView gives: a controlled grid does not take them"
+    end
+  end
 
   @cell_menu [:copy, :filter, :sort]
 

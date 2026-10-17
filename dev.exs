@@ -162,6 +162,8 @@ defmodule MasuDev.Layouts do
           {"Menus", "/menus"},
           {"Some filters", "/limited"},
           {"Results", "/results"},
+          {"Slow", "/slow"},
+          {"Controlled", "/controlled"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -1147,6 +1149,151 @@ defmodule MasuDev.ResultsLive do
   end
 end
 
+defmodule MasuDev.SlowSource do
+  @moduledoc "A slow source: customers that take `delay` milliseconds to sort, filter and read, as a warehouse would."
+  @behaviour Masu.Source
+
+  alias Masu.Source.List, as: ListSource
+
+  @impl true
+  def init(opts, grid_opts),
+    do: %{
+      list: ListSource.init(MasuDev.Customers.all(), grid_opts),
+      delay: Keyword.fetch!(opts, :delay)
+    }
+
+  @impl true
+  def prepare(state, query, columns) do
+    Process.sleep(state.delay)
+    %{state | list: ListSource.prepare(state.list, query, columns)}
+  end
+
+  @impl true
+  def count(state), do: ListSource.count(state.list)
+
+  @impl true
+  def rows(state, offset, limit) do
+    Process.sleep(div(state.delay, 2))
+    ListSource.rows(state.list, offset, limit)
+  end
+end
+
+defmodule MasuDev.SlowLive do
+  @moduledoc "A slow source read in a task (`load={:async}`): the page answers while it runs, with Stop, and a timeout."
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(params, _session, socket),
+    do: {:ok, assign(socket, delay: String.to_integer(params["delay"] || "800"))}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="slow-label">Slow source</h1>
+    <.data_grid
+      id="slow"
+      source={{MasuDev.SlowSource, delay: @delay}}
+      load={:async}
+      timeout={5000}
+      label_id="slow-label"
+      height="24rem"
+    >
+      <:col field={:name} />
+      <:col field={:city} />
+      <:col field={:seats} type={:integer} />
+      <:col field={:revenue} type={:decimal} />
+    </.data_grid>
+    """
+  end
+end
+
+defmodule MasuDev.ControlledLive do
+  @moduledoc """
+  A controlled grid (`on_query`), as Lotus Web would have it: the
+  LiveView runs its query in `start_async`, a page of a thousand rows at
+  a time, with the count, and one sort; the grid shows its rows.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @page 1000
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, socket |> assign(rows: [], total: 0, running: false, runs: 0) |> run(%Masu.Query{}, 0)}
+  end
+
+  @impl true
+  def handle_info({:query, %{query: query, offset: offset}}, socket),
+    do: {:noreply, run(socket, query, offset)}
+
+  defp run(socket, query, offset) do
+    socket = assign(socket, running: true, runs: socket.assigns.runs + 1)
+
+    start_async(socket, :run, fn ->
+      Process.sleep(400)
+      keys = Map.new(~w(name city plan seats revenue), &{&1, String.to_existing_atom(&1)})
+
+      rows =
+        MasuDev.Customers.all()
+        |> Enum.filter(fn row ->
+          Enum.all?(query.filters, &Masu.Filter.match?(&1, Map.get(row, keys[&1.key])))
+        end)
+
+      rows =
+        case query.sorts do
+          [%Masu.Sort{key: key, direction: dir}] ->
+            Enum.sort_by(rows, &Map.get(&1, keys[key]), sorter(dir))
+
+          [] ->
+            rows
+        end
+
+      {Enum.slice(rows, offset, @page), length(rows)}
+    end)
+  end
+
+  defp sorter(:asc), do: &(Masu.Value.compare(&1, &2) != :gt)
+  defp sorter(:desc), do: &(Masu.Value.compare(&1, &2) != :lt)
+
+  @impl true
+  def handle_async(:run, {:ok, {rows, total}}, socket),
+    do: {:noreply, assign(socket, rows: rows, total: total, running: false)}
+
+  @impl true
+  def render(assigns) do
+    pid = self()
+    assigns = assign(assigns, on_query: &send(pid, {:query, &1}))
+
+    ~H"""
+    <h1 id="controlled-label">Controlled</h1>
+    <p>The LiveView ran its query <span id="runs">{@runs}</span> times.</p>
+    <.data_grid
+      id="controlled"
+      rows={@rows}
+      total={@total}
+      loading={@running}
+      on_query={@on_query}
+      paging={:pages}
+      page_size={1000}
+      max_block={1000}
+      multi_sort={false}
+      label_id="controlled-label"
+      height="24rem"
+    >
+      <:col field={:name} />
+      <:col field={:city} />
+      <:col field={:plan} />
+      <:col field={:seats} type={:integer} />
+      <:col field={:revenue} type={:decimal} />
+    </.data_grid>
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -1177,6 +1324,8 @@ defmodule MasuDev.Router do
     live("/menus", MasuDev.MenusLive)
     live("/limited", MasuDev.LimitedLive)
     live("/results", MasuDev.ResultsLive)
+    live("/slow", MasuDev.SlowLive)
+    live("/controlled", MasuDev.ControlledLive)
     masu_exports()
   end
 end

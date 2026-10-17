@@ -37,6 +37,7 @@ defmodule Masu.Grid do
   alias Masu.{Action, Column, Group, Layout, Query, Source, Tree, Value, View}
   alias Masu.Export.{Download, Ticket}
   alias Masu.Source.Ecto, as: EctoSource
+  alias Masu.Source.Given
   alias Masu.Source.List, as: ListSource
   alias Phoenix.HTML.Safe
 
@@ -60,7 +61,12 @@ defmodule Masu.Grid do
     "of_pages" => "of {count}",
     "previous" => "Previous",
     "next" => "Next",
-    "range" => "{first}–{last} of {count}"
+    "range" => "{first}–{last} of {count}",
+    "running" => "Running…",
+    "stop" => "Stop",
+    "retry" => "Run again",
+    "timeout" => "The query took too long",
+    "failed" => "The query failed: {label}"
   }
 
   @impl true
@@ -99,12 +105,30 @@ defmodule Masu.Grid do
        cell_menu: [],
        action_panel: nil,
        column_specs: nil,
-       types: %{}
+       types: %{},
+       load: :inline,
+       timeout: nil,
+       running: nil,
+       read: nil,
+       error: nil,
+       on_query: nil,
+       given_total: nil,
+       given_loading: false,
+       awaiting: false,
+       multi_sort: true
      )}
   end
 
   @impl true
   def update(%{masu_presence: true}, socket), do: {:ok, refresh_people(socket)}
+
+  # A read in a task (`load={:async}`) that took longer than `timeout`.
+  def update(%{masu_timeout: name}, %{assigns: %{running: name}} = socket) do
+    timeout = Map.get(stringify(socket.assigns.messages), "timeout", @messages["timeout"])
+    {:ok, socket |> cancel_async(name) |> assign(running: nil, error: timeout)}
+  end
+
+  def update(%{masu_timeout: _name}, socket), do: {:ok, socket}
 
   def update(%{masu_changes: true}, socket) do
     case Masu.Live.take(socket.assigns.id) do
@@ -145,7 +169,8 @@ defmodule Masu.Grid do
         is_nil(socket.assigns.source) ->
           start(socket, assigns.input, slots)
 
-        assigns.input != socket.assigns.input ->
+        # New rows, or a controlled grid's answer to what the person did.
+        assigns.input != socket.assigns.input or answered?(socket.assigns) ->
           restart(socket, assigns.input, slots)
 
         true ->
@@ -253,7 +278,7 @@ defmodule Masu.Grid do
   # The grid's first view: of the URL (`url`), else the person's last
   # (`views`), else the grid's own, of its attributes.
   defp start(socket, input, slots) do
-    source = Source.new(input, source_opts(socket.assigns))
+    source = new_source(socket.assigns, input)
     {columns, types} = columns_for(socket.assigns, slots, source, %{})
     socket = assign(socket, types: types)
     all = supported(source, columns, socket.assigns)
@@ -276,14 +301,23 @@ defmodule Masu.Grid do
     {view, dropped, uri} = first_view(socket.assigns, all, default)
     expanded = MapSet.new(socket.assigns.expanded || [], &Value.to_wire/1)
     view = %{view | query: %{view.query | expanded: expanded}}
-    source = Source.prepare(source, view.query, all)
 
-    socket
-    |> assign(input: input, source: source, uri: uri, notice: notice(dropped, 1))
-    |> put_view(view)
-    |> recount()
-    |> put_initial()
-    |> list_views()
+    socket =
+      socket
+      |> assign(input: input, uri: uri, notice: notice(dropped, 1))
+      |> put_view(view)
+      |> list_views()
+
+    if async?(socket.assigns) do
+      socket
+      |> assign(source: source, total: 0, exact: false, initial: [])
+      |> read_async(source, view.query, socket.assigns.page, false)
+    else
+      socket
+      |> assign(source: Source.prepare(source, view.query, all))
+      |> recount()
+      |> put_initial()
+    end
   end
 
   # The first rows, which the server renders and the browser starts with
@@ -335,29 +369,196 @@ defmodule Masu.Grid do
   # columns (a query tool's): the view keeps what is of the columns that
   # are there still, and names the others.
   defp restart(socket, input, slots) do
-    source = Source.new(input, source_opts(socket.assigns))
+    socket = assign(socket, awaiting: false)
+    source = new_source(socket.assigns, input)
     {columns, types} = columns_for(socket.assigns, slots, source, %{})
     socket = assign(socket, types: types)
     all = supported(source, columns, socket.assigns)
     {query, dropped} = Query.fit(socket.assigns.query, all)
     {default_query, _dropped} = Query.fit(socket.assigns.default_view.query, all)
-    source = Source.prepare(source, query, all)
     revision = socket.assigns.revision + 1
 
-    socket
-    |> assign(default_view: %{socket.assigns.default_view | query: default_query})
-    |> relayout(all)
-    |> assign(
-      input: input,
+    socket =
+      socket
+      |> assign(default_view: %{socket.assigns.default_view | query: default_query})
+      |> relayout(all)
+      |> assign(input: input, query: query, revision: revision, initial: nil, changed: [])
+      |> fitted(dropped, revision)
+
+    if async?(socket.assigns) do
+      socket |> assign(source: source) |> read_async(source, query, socket.assigns.page, false)
+    else
+      socket
+      |> assign(source: Source.prepare(source, query, all))
+      |> recount(keep: true)
+      |> refresh_details()
+    end
+  end
+
+  # The rows' source: the LiveView's own rows, as they are, for a
+  # controlled grid (`on_query`), from its page; else a list, a query or
+  # a source of the app's.
+  defp new_source(%{on_query: on_query} = assigns, rows) when is_function(on_query, 1) do
+    offset = if assigns.paging == :pages, do: assigns.page * assigns.page_size, else: 0
+    state = Given.init(rows, offset: offset, total: assigns.given_total)
+    %Source{module: Given, state: state}
+  end
+
+  defp new_source(assigns, input), do: Source.new(input, source_opts(assigns))
+
+  # A controlled grid's LiveView rendered it again after the person's
+  # change, done (not `loading`): its rows are the answer, the same as
+  # before or not.
+  defp answered?(%{awaiting: true, given_loading: loading}), do: loading != true
+  defp answered?(_assigns), do: false
+
+  defp controlled?(assigns), do: is_function(assigns.on_query, 1)
+
+  # Rows to come: the LiveView of a controlled grid runs its query, or a
+  # read in a task runs.
+  defp running?(assigns) do
+    if controlled?(assigns),
+      do: assigns.awaiting or assigns.given_loading == true,
+      else: match?({:masu_read, _id}, assigns.running) or assigns.running == :connecting
+  end
+
+  # The grid reads its source in a task (`load={:async}`).
+  defp async?(assigns), do: assigns.load == :async and not controlled?(assigns)
+
+  # The person's view, to the LiveView of a controlled grid, which runs
+  # its query: `page` from 1, and its rows' `offset` and `limit`.
+  defp report(socket) do
+    %{query: query, page: page, page_size: size, paging: paging} = socket.assigns
+
+    {offset, limit} =
+      if paging == :pages, do: {page * size, size}, else: {0, nil}
+
+    socket.assigns.on_query.(%{query: query, page: page + 1, offset: offset, limit: limit})
+    assign(socket, awaiting: true)
+  end
+
+  # The first rows of a query (of the page `page`), its count, and its
+  # source prepared, read in a task. The answer is taken if no other
+  # read came after it (`running`); `changed?` puts the view in the
+  # URL and the store.
+  defp read_async(socket, source, query, page, changed?) do
+    socket = stop_read(socket)
+    %{all_columns: columns, count: count} = socket.assigns
+    {from, limit} = first_rows(%{socket.assigns | page: page})
+
+    read = %{
       source: source,
       query: query,
-      revision: revision,
-      initial: nil,
-      changed: []
-    )
-    |> fitted(dropped, revision)
-    |> recount(keep: true)
-    |> refresh_details()
+      page: page,
+      from: from,
+      limit: limit,
+      changed?: changed?
+    }
+
+    socket = assign(socket, read: read, error: nil)
+    run = fn -> read_first(source, query, columns, count, from, limit) end
+
+    if connected?(socket),
+      do: start_read(socket, run),
+      else: assign(socket, running: :connecting)
+  end
+
+  defp start_read(socket, run) do
+    name = {:masu_read, System.unique_integer([:positive])}
+
+    socket
+    |> assign(running: name)
+    |> start_async(name, fn -> guarded(run) end)
+    |> time_out(name)
+  end
+
+  # What a read in a task does: the query prepared, its count (`:exact`)
+  # and its first rows.
+  defp read_first(source, query, columns, count, from, limit) do
+    prepared = Source.prepare(source, query, columns)
+    counted = if count == :exact, do: Source.counted(prepared)
+    %{source: prepared, counted: counted, window: read_window(prepared, from, limit)}
+  end
+
+  # Rows from `from`, with their places in a tree.
+  defp read_window(source, from, count) do
+    case Source.nodes(source, from, count) do
+      nil -> {:rows, Source.window(source, from, count)}
+      nodes -> {:nodes, nodes}
+    end
+  end
+
+  defp stop_read(%{assigns: %{running: {:masu_read, _id} = name}} = socket),
+    do: socket |> cancel_async(name) |> assign(running: nil)
+
+  defp stop_read(socket), do: socket
+
+  defp time_out(%{assigns: %{timeout: timeout, id: id}} = socket, name)
+       when is_integer(timeout) do
+    Phoenix.LiveView.send_update_after(self(), __MODULE__, %{id: id, masu_timeout: name}, timeout)
+    socket
+  end
+
+  defp time_out(socket, _name), do: socket
+
+  # A source's error, or its raise, as the grid shows it: in the task,
+  # not in the LiveView.
+  defp guarded(fun) do
+    {:ok, fun.()}
+  rescue
+    error -> {:error, Exception.message(error)}
+  catch
+    kind, reason -> {:error, Exception.format_banner(kind, reason)}
+  end
+
+  # The answer of a read in a task: the query, its rows and its count.
+  defp take_read(socket, data) do
+    %{read: read, revision: revision, count_ref: ref} = socket.assigns
+    ref = ref + 1
+
+    socket =
+      assign(socket,
+        source: data.source,
+        query: read.query,
+        page: read.page,
+        revision: revision + 1,
+        changed: [],
+        count_ref: ref,
+        read: nil
+      )
+
+    socket =
+      case socket.assigns.count do
+        :none -> assign(socket, total: 0, exact: false)
+        :deferred -> socket |> assign(total: 0, exact: false) |> count_later(ref, data.source)
+        _exact -> socket |> assign(total: 0) |> put_count(data.counted)
+      end
+
+    socket =
+      case data.window do
+        {:nodes, nodes} ->
+          assign(socket,
+            initial: Enum.map(nodes, &elem(&1, 0)),
+            initial_nodes: Enum.map(nodes, &elem(&1, 1)),
+            initial_from: read.from
+          )
+
+        {:rows, {rows, known}} ->
+          socket = if known, do: put_count(socket, {known, true}), else: socket
+          assign(socket, initial: rows, initial_nodes: nil, initial_from: read.from)
+      end
+
+    socket =
+      socket
+      |> learn(read.from, length(socket.assigns.initial), read.limit)
+      |> refresh_details()
+
+    if read.changed?, do: view_changed(socket), else: socket
+  end
+
+  defp failure(socket, message) do
+    template = Map.get(stringify(socket.assigns.messages), "failed", @messages["failed"])
+    assign(socket, running: nil, error: String.replace(template, "{label}", message))
   end
 
   defp fitted(socket, [], _revision), do: socket
@@ -460,6 +661,30 @@ defmodule Masu.Grid do
   defp apply_view(socket, %View{} = view, dropped, opts \\ []) do
     %{source: source, all_columns: all, revision: revision, query: current} = socket.assigns
     view = %{view | query: %{view.query | expanded: current.expanded}}
+
+    cond do
+      # The LiveView of a controlled grid runs the view's query.
+      controlled?(socket.assigns) ->
+        socket
+        |> assign(notice: notice(dropped, revision + 1), page: view.page)
+        |> put_view(view)
+        |> report()
+        |> view_changed(opts)
+
+      async?(socket.assigns) ->
+        page = if socket.assigns.paging == :pages, do: view.page, else: 0
+
+        socket
+        |> assign(notice: notice(dropped, revision + 1))
+        |> put_view(%{view | query: current})
+        |> read_async(source, view.query, page, true)
+
+      true ->
+        apply_view_now(socket, view, dropped, opts, source, all, revision)
+    end
+  end
+
+  defp apply_view_now(socket, view, dropped, opts, source, all, revision) do
     source = Source.prepare(source, view.query, all)
 
     socket
@@ -578,26 +803,111 @@ defmodule Masu.Grid do
 
   def handle_async(:masu_count, {:exit, _reason}, socket), do: {:noreply, socket}
 
+  # A read in a task (`load={:async}`), if it is the last one asked for.
+  def handle_async({:masu_read, _id} = name, result, %{assigns: %{running: name}} = socket) do
+    socket = assign(socket, running: nil)
+
+    case result do
+      {:ok, {:ok, data}} -> {:noreply, take_read(socket, data)}
+      {:ok, {:error, message}} -> {:noreply, failure(socket, message)}
+      {:exit, reason} -> {:noreply, failure(socket, Exception.format_exit(reason))}
+    end
+  end
+
+  def handle_async({:masu_read, _id}, _result, socket), do: {:noreply, socket}
+
+  # A block of rows read in a task, to the browser, with the revision it
+  # was read for: the browser drops it if its rows changed meanwhile.
+  def handle_async({:masu_block, from, count, revision}, result, socket) do
+    socket =
+      if socket.assigns.running == {:block, from}, do: assign(socket, running: nil), else: socket
+
+    case result do
+      {:ok, {:ok, window}} when revision == socket.assigns.revision ->
+        {reply, socket} = take_block(socket, window, from, count)
+
+        {:noreply,
+         push_event(socket, "masu:block", %{"id" => socket.assigns.id, "block" => reply})}
+
+      {:ok, {:ok, _window}} ->
+        stale = %{"from" => from, "rows" => [], "revision" => revision}
+
+        {:noreply,
+         push_event(socket, "masu:block", %{"id" => socket.assigns.id, "block" => stale})}
+
+      {:ok, {:error, message}} ->
+        {:noreply, push_failed_block(failure(socket, message), from, revision)}
+
+      {:exit, reason} ->
+        {:noreply,
+         push_failed_block(failure(socket, Exception.format_exit(reason)), from, revision)}
+    end
+  end
+
+  defp push_failed_block(socket, from, revision) do
+    block = %{"from" => from, "rows" => [], "revision" => revision, "failed" => true}
+    push_event(socket, "masu:block", %{"id" => socket.assigns.id, "block" => block})
+  end
+
   @impl true
   def handle_event("masu:rows", %{"from" => from, "count" => count}, socket)
       when is_integer(from) and is_integer(count) do
     from = max(from, 0)
     count = count |> max(0) |> min(socket.assigns.max_block)
-    {reply, socket} = block(socket, from, count)
-    {:reply, reply, socket}
+    assigns = socket.assigns
+
+    cond do
+      # A controlled grid whose LiveView runs its query: its rows come.
+      controlled?(assigns) and (assigns.awaiting or assigns.given_loading) ->
+        {:reply, %{"pending" => true, "from" => from, "revision" => assigns.revision}, socket}
+
+      # A read in a task: the rows come in a `masu:block` event.
+      async?(assigns) and count > 0 and connected?(socket) ->
+        {:reply, %{"pending" => true, "from" => from, "revision" => assigns.revision},
+         read_block(socket, from, count)}
+
+      true ->
+        {reply, socket} = block(socket, from, count)
+        {:reply, reply, socket}
+    end
+  end
+
+  # Stops the read in a task, and keeps the rows the grid has (Stop).
+  def handle_event("masu:cancel", _params, socket),
+    do: {:noreply, socket |> stop_read() |> assign(running: nil, read: nil)}
+
+  # Reads again what failed (Run again): the read in a task that failed,
+  # or the query.
+  def handle_event("masu:retry", _params, socket) do
+    %{read: read, source: source, query: query, page: page} = socket.assigns
+    socket = assign(socket, error: nil)
+
+    socket =
+      if read,
+        do: read_async(socket, read.source, read.query, read.page, read.changed?),
+        else: read_async(socket, source, query, page, false)
+
+    {:noreply, socket}
   end
 
   # The count of a grid that does not know it (`count={:none}`, or a
   # source that does not): asked for once, as the person goes to the end.
   def handle_event("masu:count", _params, socket) do
-    socket = put_count(socket, Source.counted(socket.assigns.source))
+    %{source: source, count_ref: ref, revision: revision} = socket.assigns
 
-    {:reply,
-     %{
-       "total" => socket.assigns.total,
-       "exact" => socket.assigns.exact,
-       "revision" => socket.assigns.revision
-     }, socket}
+    # In a task: the count comes with the render after it.
+    if async?(socket.assigns) and connected?(socket) do
+      {:reply, %{"pending" => true, "revision" => revision}, count_later(socket, ref, source)}
+    else
+      socket = put_count(socket, Source.counted(source))
+
+      {:reply,
+       %{
+         "total" => socket.assigns.total,
+         "exact" => socket.assigns.exact,
+         "revision" => socket.assigns.revision
+       }, socket}
+    end
   end
 
   # The pager: a page from 1 (its buttons, its field).
@@ -619,8 +929,24 @@ defmodule Masu.Grid do
     last = if exact, do: max(div(max(total, 1) - 1, size), 0), else: page
     page = page |> max(0) |> min(last)
     socket = assign(socket, page: page)
-    {reply, socket} = block(socket, page * size, size)
-    {:reply, Map.put(reply, "page", page), view_changed(socket)}
+
+    cond do
+      # The LiveView reads the page; the rows come when it renders the grid.
+      controlled?(socket.assigns) ->
+        socket = socket |> report() |> view_changed()
+
+        {:reply, %{"pending" => true, "page" => page, "revision" => socket.assigns.revision},
+         socket}
+
+      # The browser asks for the page's rows, which a task reads.
+      async?(socket.assigns) ->
+        {:reply, %{"pending" => true, "page" => page, "revision" => socket.assigns.revision},
+         view_changed(socket)}
+
+      true ->
+        {reply, socket} = block(socket, page * size, size)
+        {:reply, Map.put(reply, "page", page), view_changed(socket)}
+    end
   end
 
   # The values of a column for its filter menu: among the rows of the
@@ -784,29 +1110,11 @@ defmodule Masu.Grid do
         query = %{
           query
           | expanded: current.expanded,
-            collapsed: if(same_filter?, do: current.collapsed, else: MapSet.new())
+            collapsed: if(same_filter?, do: current.collapsed, else: MapSet.new()),
+            sorts: if(socket.assigns.multi_sort, do: query.sorts, else: Enum.take(query.sorts, 1))
         }
 
-        source = Source.prepare(source, query, columns)
-
-        socket =
-          socket
-          |> assign(
-            source: source,
-            query: query,
-            page: 0,
-            revision: revision + 1,
-            initial: nil,
-            changed: []
-          )
-          |> recount()
-
-        socket = refresh_details(socket)
-        {from, count} = first_rows(socket.assigns)
-        {reply, socket} = block(socket, from, count)
-        reply = Map.put(reply, "query", Query.to_wire(query))
-
-        {:reply, reply, view_changed(socket)}
+        pending_query(socket, query) || run_query(socket, source, query, columns, revision)
 
       {:error, reason} ->
         {:reply, %{"error" => reason, "revision" => revision}, socket}
@@ -1239,6 +1547,88 @@ defmodule Masu.Grid do
      }, socket}
   end
 
+  # A query that a controlled grid's LiveView runs, or a task: the answer
+  # says so, and the rows come after it; or nil, for a query read now.
+  defp pending_query(socket, query) do
+    cond do
+      controlled?(socket.assigns) ->
+        socket = socket |> assign(query: query, page: 0) |> report() |> view_changed()
+        {:reply, pending_reply(socket, query), socket}
+
+      async?(socket.assigns) and connected?(socket) ->
+        socket = read_async(socket, socket.assigns.source, query, 0, true)
+        {:reply, pending_reply(socket, query), socket}
+
+      true ->
+        nil
+    end
+  end
+
+  defp pending_reply(socket, query),
+    do: %{
+      "pending" => true,
+      "revision" => socket.assigns.revision,
+      "query" => Query.to_wire(query)
+    }
+
+  # A query read now: its first rows in the answer.
+  defp run_query(socket, source, query, columns, revision) do
+    source = Source.prepare(source, query, columns)
+
+    socket =
+      socket
+      |> assign(
+        source: source,
+        query: query,
+        page: 0,
+        revision: revision + 1,
+        initial: nil,
+        changed: []
+      )
+      |> recount()
+      |> refresh_details()
+
+    {from, count} = first_rows(socket.assigns)
+    {reply, socket} = block(socket, from, count)
+    reply = Map.put(reply, "query", Query.to_wire(query))
+
+    {:reply, reply, view_changed(socket)}
+  end
+
+  # A block of rows in a task (`load={:async}`).
+  defp read_block(socket, from, count) do
+    %{source: source, revision: revision} = socket.assigns
+    name = {:masu_block, from, count, revision}
+
+    task = fn -> guarded(fn -> read_window(source, from, count) end) end
+
+    socket |> start_async(name, task) |> time_out(name)
+  end
+
+  # A block read in a task, as block/3 answers it.
+  defp take_block(socket, window, from, count) do
+    {rows, socket} =
+      case window do
+        {:nodes, nodes} ->
+          {encode_rows(nodes, socket.assigns, from), socket}
+
+        {:rows, {rows, known}} ->
+          socket = if known, do: put_count(socket, {known, true}), else: socket
+          {encode_rows(rows, socket.assigns, from), socket}
+      end
+
+    socket = learn(socket, from, length(rows), count)
+    %{total: total, exact: exact, revision: revision} = socket.assigns
+
+    {%{
+       "from" => from,
+       "rows" => rows,
+       "total" => total,
+       "exact" => exact,
+       "revision" => revision
+     }, socket}
+  end
+
   # The count (`count`): `:exact` counts with the query; `:deferred` reads
   # the rows first, and counts in a task; `:none` counts when the person
   # goes to the end (`masu:count`). A source may not know its count
@@ -1598,6 +1988,33 @@ defmodule Masu.Grid do
           />
         </div>
       </div>
+      <%!-- Always there, as the panels' (below). A read that runs: its state,
+           and Stop; one that failed: its error, and Run again. --%>
+      <div id={"#{@id}-state"} class="masu-state">
+        <div :if={running?(assigns)} class="masu-running" role="status">
+          <span class="masu-running-text">{@messages["running"]}</span>
+          <button
+            :if={async?(assigns) and @running != :connecting}
+            type="button"
+            class="masu-state-button"
+            phx-click="masu:cancel"
+            phx-target={@myself}
+          >
+            {@messages["stop"]}
+          </button>
+        </div>
+        <div :if={@error && !running?(assigns)} class="masu-error" role="alert">
+          <span class="masu-error-text">{@error}</span>
+          <button
+            type="button"
+            class="masu-state-button"
+            phx-click="masu:retry"
+            phx-target={@myself}
+          >
+            {@messages["retry"]}
+          </button>
+        </div>
+      </div>
       <%!-- Always there: a panel that comes or goes moves no element beside it. --%>
       <div id={"#{@id}-panels"} class="masu-panels">
         <div
@@ -1670,7 +2087,7 @@ defmodule Masu.Grid do
               </div>
             </div>
           </div>
-          <div class="masu-empty" hidden={@total > 0}>
+          <div class="masu-empty" hidden={@total > 0 or running?(assigns)}>
             <%= if @empty != [] do %>
               {render_slot(@empty)}
             <% else %>
@@ -1822,6 +2239,8 @@ defmodule Masu.Grid do
       "groupable" => assigns.tree == nil,
       "export" => Enum.map(export_formats(assigns), &Atom.to_string/1),
       "cellMenu" => Enum.map(assigns.cell_menu, &Atom.to_string/1),
+      "running" => running?(assigns),
+      "multiSort" => assigns.multi_sort,
       "selection" => selection_config(assigns),
       "creates" => creates?(assigns),
       "deletes" => Masu.Edit.deletes?(assigns),

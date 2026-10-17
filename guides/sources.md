@@ -186,3 +186,78 @@ What each operator means, and what it is in SQL:
 The text operators are for `:text` and `:enum` columns only. A source
 whose LIKE has case (and a `%` or `_` in the value) escapes and lowers
 as it can; it says it runs `:contains` only if it does.
+
+## Slow sources
+
+A grid reads its source inside the event that asks for the rows: the
+rows go back in its answer, with no process of its own. For a list, or
+a database query on its indexes, that is the right way, and it is the
+grid's own (`load={:inline}`).
+
+A slow source (a warehouse, a search engine, a query a person wrote)
+would hold the LiveView while it runs: no other event, no presence. A
+grid with `load={:async}` reads it in a task instead:
+
+```heex
+<.data_grid id="events" source={{MyApp.WarehouseSource, table: "events"}} load={:async} timeout={30_000}>
+```
+
+  * a new order, filter, search or page, the first rows, a block of rows
+    as the person scrolls, and a count (`count={:none}`) run in a task
+    (`start_async`); the LiveView answers meanwhile;
+  * the grid says "Running…", with Stop, and keeps its rows until the new
+    ones come; the last read asked for is the one taken;
+  * `timeout` (milliseconds) stops a read that takes longer, and says so;
+  * a source's error, a raise or `{:error, reason}` from `rows/3`, shows
+    in the grid, with Run again, and the LiveView lives on.
+
+Edits, new and deleted rows, and the export read as they do; a column of
+`type={:auto}` reads its first block for its type before the task.
+`Masu.Test` waits for the tasks: a test reads the same either way.
+
+## Queries of your own (controlled grids)
+
+An app that runs its queries itself (with its own timeout, count, cache
+and process) uses the grid as a view of them: with `on_query`, the grid
+shows the rows it is given, as they are, and tells the app what the
+person did, for the app to run its query again:
+
+```heex
+<.data_grid
+  id="results"
+  rows={@result.rows}
+  columns={@result.columns}
+  total={@result.total_count}
+  loading={@running}
+  on_query={&send(self(), {:results_query, &1})}
+  paging={:pages}
+  page_size={1000}
+  max_block={1000}
+  multi_sort={false}
+/>
+```
+
+```elixir
+def handle_info({:results_query, %{query: query, offset: offset, limit: limit}}, socket) do
+  {:noreply, run_query(socket, query.filters, query.sorts, offset, limit)}
+end
+```
+
+  * The grid never sorts, filters or pages the rows itself. A sort, a
+    filter, the search, a page or a view (a link, a saved view) calls
+    `on_query` with `%{query: %Masu.Query{}, page: n, offset: n, limit:
+    n}`: the person's view, and the rows of its page (`limit` is `nil`
+    in a grid that scrolls: its rows are all the rows).
+  * `rows` are the rows of the page, and `total` how many the query has.
+  * `loading` says that the app's query runs: the grid says "Running…"
+    and keeps its rows. When the app renders the grid with `loading`
+    false, its rows are the answer, the same as before or not.
+  * `multi_sort={false}` sorts by one column at a time, as most query
+    tools do; a click on a header turns its order, and a third takes it
+    away.
+  * The filter menu offers the operators the app runs with the
+    `columns`' types, or a source's `filters/2` (see above).
+
+A controlled grid does not take what reads or writes rows beyond those it
+is given: `changeset`, `update`, `create`, `delete`, `selectable`,
+`export`, `live`, `tree` and `group_by`.

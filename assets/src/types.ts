@@ -157,6 +157,10 @@ export interface Config {
   restores?: boolean;
   /** The built-in items of the menu of a cell: "copy", "filter", "sort". */
   cellMenu?: string[];
+  /** Rows to come: a read in a task (`load={:async}`), or the LiveView's own query (`on_query`). */
+  running?: boolean;
+  /** `false`: one sort at a time (`multi_sort={false}`). */
+  multiSort?: boolean;
 }
 
 export interface BlockReply {
@@ -167,6 +171,10 @@ export interface BlockReply {
   revision: number;
   query?: QuerySpec;
   error?: string;
+  /** The rows come later: in a `masu:block` event, or with the server's next render. */
+  pending?: boolean;
+  /** A read in a task that failed: the grid shows its error. */
+  failed?: boolean;
 }
 
 export interface Transport {
