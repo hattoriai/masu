@@ -22,10 +22,19 @@ async function withFont(page: Page) {
   });
 }
 
-/** The share of pixels that differ by more than a few levels in a channel, except on the lines `skip`. */
-async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = []): Promise<{ ratio: number; diff: string; lines: string[]; profile: string }> {
+/**
+ * The share of pixels that differ by more than a few levels in a channel,
+ * except on the lines `skip` (in CSS pixels, of a picture `cssHeight` high).
+ */
+async function difference(
+  page: Page,
+  a: Buffer,
+  b: Buffer,
+  cssHeight: number,
+  skip: number[] = [],
+): Promise<{ ratio: number; diff: string; lines: string[] }> {
   return page.evaluate(
-    async ([a, b, skip]) => {
+    async ([a, b, cssHeight, skip]) => {
       const load = (data: string) =>
         new Promise<HTMLImageElement>((resolve) => {
           const img = new Image();
@@ -76,7 +85,8 @@ async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = [])
         return `rgb(${p[i]} ${p[i + 1]} ${p[i + 2]})`;
       };
       for (let y = 0; y < height; y++) {
-        if (skip.includes(y)) continue;
+        // A screenshot can be at twice the CSS pixels (WebKit's is).
+        if (skip.includes(Math.floor((y * cssHeight) / height))) continue;
         const before = different;
         for (let x = 0; x < width; x++) {
           const i = (y * width + x) * 4;
@@ -93,28 +103,17 @@ async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = [])
         }
       }
       octx.putImageData(diff, 0, 0);
-      // Where the colour changes, down the middle of each image.
-      const changes = (p: Uint8ClampedArray) => {
-        const x = Math.floor(width / 2);
-        const out: string[] = [];
-        let last = "";
-        for (let y = 0; y < height; y++) {
-          const c = rgb(p, x, y);
-          if (c !== last) out.push(`${y}:${c}`);
-          last = c;
-        }
-        return out.join(" ");
-      };
-      const profile = `reference ${changes(pa)}\ngrid ${changes(pb)}`;
-      return { ratio: different / (width * height), diff: out.toDataURL(), lines, profile };
+      return { ratio: different / (width * height), diff: out.toDataURL(), lines };
     },
-    [a.toString("base64"), b.toString("base64"), skip] as const,
+    [a.toString("base64"), b.toString("base64"), cssHeight, skip] as const,
   );
 }
 
 for (const mode of ["light", "dark"] as const) {
-  test(`a grid themed with tokens looks like Lotus Web's table (${mode})`, async ({ browser }, info) => {
-    const skip: number[] = [];
+  test(`a grid themed with tokens looks like Lotus Web's table (${mode})`, async ({ browser, browserName }, info) => {
+    // WebKit draws no box-shadow on a table's row group, so Lotus Web's
+    // header has no line under it there (y = 48), where Masu's has.
+    const skip = browserName === "webkit" ? [48] : [];
     const lotus = await browser.newPage({ viewport: { width: 800, height: 600 } });
     await lotus.setContent(
       `<!doctype html><html lang="en" data-lotus-theme="lotus" class="${mode === "dark" ? "dark" : ""}"><head><style>${css}</style></head><body style="margin:0">${table}</body></html>`,
@@ -138,14 +137,7 @@ for (const mode of ["light", "dark"] as const) {
     expect([gridBox.width, gridBox.height]).toEqual([referenceBox.width, referenceBox.height]);
     const b = await grid.screenshot();
 
-    const { ratio, diff, lines, profile } = await difference(page, a, b, skip);
-    const boxes = await page.evaluate(() =>
-      [".masu-grid", ".masu-head", ".masu-header", ".masu-body", ".masu-body > .masu-row"].map((s) => {
-        const r = document.querySelector(`#look ${s}`)!.getBoundingClientRect();
-        return `${s} ${r.top}..${r.bottom}`;
-      }),
-    );
-    console.log(`${mode} (${info.project.name}): ${boxes.join(", ")}\n${profile}`);
+    const { ratio, diff, lines } = await difference(page, a, b, gridBox.height, skip);
     await info.attach(`lotus-${mode}.png`, { body: a, contentType: "image/png" });
     await info.attach(`masu-${mode}.png`, { body: b, contentType: "image/png" });
     await info.attach(`diff-${mode}.png`, { body: Buffer.from(diff.split(",")[1], "base64"), contentType: "image/png" });
@@ -160,7 +152,7 @@ for (const mode of ["light", "dark"] as const) {
     await page.mouse.move(gridBox.x + 200, gridBox.y + 48 + 52 + 26);
     // Lotus's colours change in 150ms.
     await lotus.waitForTimeout(400);
-    const hovered = await difference(page, await reference.screenshot(), await grid.screenshot(), skip);
+    const hovered = await difference(page, await reference.screenshot(), await grid.screenshot(), gridBox.height, skip);
     writeFileSync(info.outputPath(`diff-hover-${mode}.png`), Buffer.from(hovered.diff.split(",")[1], "base64"));
     console.log(`${mode}, hovered: ${(hovered.ratio * 100).toFixed(3)}% of pixels differ`);
     expect(hovered.ratio, `lines that differ: ${hovered.lines.join(", ")}`).toBeLessThan(0.002);
