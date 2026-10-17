@@ -23,7 +23,7 @@ async function withFont(page: Page) {
 }
 
 /** The share of pixels that differ by more than a few levels in a channel, except on the lines `skip`. */
-async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = []): Promise<{ ratio: number; diff: string }> {
+async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = []): Promise<{ ratio: number; diff: string; lines: number[] }> {
   return page.evaluate(
     async ([a, b, skip]) => {
       const load = (data: string) =>
@@ -69,8 +69,11 @@ async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = [])
         return false;
       };
       let different = 0;
+      // The lines that differ over most of their width, to name in a failure.
+      const lines: number[] = [];
       for (let y = 0; y < height; y++) {
         if (skip.includes(y)) continue;
+        const before = different;
         for (let x = 0; x < width; x++) {
           const i = (y * width + x) * 4;
           const off = !close(pa, pb, x, y) || !close(pb, pa, x, y);
@@ -80,19 +83,18 @@ async function difference(page: Page, a: Buffer, b: Buffer, skip: number[] = [])
           diff.data[i + 2] = off ? 0 : pa[i + 2] * 0.2;
           diff.data[i + 3] = 255;
         }
+        if (different - before > width / 2) lines.push(y);
       }
       octx.putImageData(diff, 0, 0);
-      return { ratio: different / (width * height), diff: out.toDataURL() };
+      return { ratio: different / (width * height), diff: out.toDataURL(), lines };
     },
     [a.toString("base64"), b.toString("base64"), skip] as const,
   );
 }
 
 for (const mode of ["light", "dark"] as const) {
-  test(`a grid themed with tokens looks like Lotus Web's table (${mode})`, async ({ browser, browserName }, info) => {
-    // WebKit draws no box-shadow on a table's row group, so Lotus Web's
-    // header has no line under it there (y = 48), where Masu's has.
-    const skip = browserName === "webkit" ? [48] : [];
+  test(`a grid themed with tokens looks like Lotus Web's table (${mode})`, async ({ browser }, info) => {
+    const skip: number[] = [];
     const lotus = await browser.newPage({ viewport: { width: 800, height: 600 } });
     await lotus.setContent(
       `<!doctype html><html lang="en" data-lotus-theme="lotus" class="${mode === "dark" ? "dark" : ""}"><head><style>${css}</style></head><body style="margin:0">${table}</body></html>`,
@@ -116,7 +118,7 @@ for (const mode of ["light", "dark"] as const) {
     expect([gridBox.width, gridBox.height]).toEqual([referenceBox.width, referenceBox.height]);
     const b = await grid.screenshot();
 
-    const { ratio, diff } = await difference(page, a, b, skip);
+    const { ratio, diff, lines } = await difference(page, a, b, skip);
     await info.attach(`lotus-${mode}.png`, { body: a, contentType: "image/png" });
     await info.attach(`masu-${mode}.png`, { body: b, contentType: "image/png" });
     await info.attach(`diff-${mode}.png`, { body: Buffer.from(diff.split(",")[1], "base64"), contentType: "image/png" });
@@ -124,7 +126,7 @@ for (const mode of ["light", "dark"] as const) {
     writeFileSync(info.outputPath(`masu-${mode}.png`), b);
     writeFileSync(info.outputPath(`diff-${mode}.png`), Buffer.from(diff.split(",")[1], "base64"));
     console.log(`${mode}: ${(ratio * 100).toFixed(3)}% of pixels differ`);
-    expect(ratio).toBeLessThan(0.002);
+    expect(ratio, `lines that differ: ${lines.join(", ")}`).toBeLessThan(0.002);
 
     // A cell under the pointer: Lotus's hover, on the cell.
     await lotus.mouse.move(referenceBox.x + 200, referenceBox.y + 48 + 52 + 26);
@@ -134,6 +136,6 @@ for (const mode of ["light", "dark"] as const) {
     const hovered = await difference(page, await reference.screenshot(), await grid.screenshot(), skip);
     writeFileSync(info.outputPath(`diff-hover-${mode}.png`), Buffer.from(hovered.diff.split(",")[1], "base64"));
     console.log(`${mode}, hovered: ${(hovered.ratio * 100).toFixed(3)}% of pixels differ`);
-    expect(hovered.ratio).toBeLessThan(0.002);
+    expect(hovered.ratio, `lines that differ: ${hovered.lines.join(", ")}`).toBeLessThan(0.002);
   });
 }
