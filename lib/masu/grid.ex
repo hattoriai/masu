@@ -40,8 +40,7 @@ defmodule Masu.Grid do
   alias Masu.Source.List, as: ListSource
   alias Phoenix.HTML.Safe
 
-  @max_block 500
-  @first_block 100
+  # The rows the server renders before the browser takes over.
   @initial_rows 60
   # Rows open on their detail at once: opening one more closes the first.
   @max_details 50
@@ -271,7 +270,7 @@ defmodule Masu.Grid do
     {from, limit} =
       if assigns.paging == :pages,
         do: {assigns.page * assigns.page_size, assigns.page_size},
-        else: {0, @initial_rows}
+        else: {0, assigns.block_size}
 
     socket =
       case Source.nodes(source, from, limit) do
@@ -467,7 +466,7 @@ defmodule Masu.Grid do
   def handle_event("masu:rows", %{"from" => from, "count" => count}, socket)
       when is_integer(from) and is_integer(count) do
     from = max(from, 0)
-    count = count |> max(0) |> min(@max_block)
+    count = count |> max(0) |> min(socket.assigns.max_block)
     {reply, socket} = block(socket, from, count)
     {:reply, reply, socket}
   end
@@ -804,7 +803,7 @@ defmodule Masu.Grid do
 
     {reply, socket} =
       if moved?,
-        do: block(socket, from, @first_block),
+        do: block(socket, from, socket.assigns.block_size),
         else: {%{"revision" => socket.assigns.revision}, socket}
 
     {:reply, reply, socket}
@@ -946,7 +945,7 @@ defmodule Masu.Grid do
       |> refresh_details()
 
     from = if is_integer(from), do: max(from, 0), else: 0
-    {reply, socket} = block(socket, from, @first_block)
+    {reply, socket} = block(socket, from, socket.assigns.block_size)
     {:reply, reply, socket}
   end
 
@@ -1086,7 +1085,7 @@ defmodule Masu.Grid do
   # The first rows of a view: of its page (`paging={:pages}`), or of the
   # top.
   defp first_rows(%{paging: :pages, page: page, page_size: size}), do: {page * size, size}
-  defp first_rows(_assigns), do: {0, @first_block}
+  defp first_rows(assigns), do: {0, assigns.block_size}
 
   # A row as the browser gets it: its id, its cells, then its read-only
   # cells (`locks?/1`), then its place in the tree (Masu.Tree).
@@ -1372,7 +1371,7 @@ defmodule Masu.Grid do
           </div>
           <div class="masu-body" role="rowgroup" style={"height: #{body_rows(assigns) * @row_height}px"}>
             <div
-              :for={{row, index} <- Enum.with_index(@initial || [])}
+              :for={{row, index} <- Enum.with_index(first_shown(@initial))}
               class="masu-row"
               role="row"
               aria-rowindex={index + 2}
@@ -1499,6 +1498,9 @@ defmodule Masu.Grid do
     |> String.reverse()
   end
 
+  # The rows the server renders of the first block it read.
+  defp first_shown(rows), do: Enum.take(rows || [], @initial_rows)
+
   # The rows the body is tall for, before the browser takes over: a
   # page's, or the count's.
   defp body_rows(%{paging: :pages} = assigns), do: length(assigns.initial || [])
@@ -1519,6 +1521,8 @@ defmodule Masu.Grid do
       "exact" => assigns.exact,
       "paging" => Atom.to_string(assigns.paging),
       "pageSize" => assigns.page_size,
+      "blockSize" =>
+        if(assigns.paging == :pages, do: assigns.page_size, else: assigns.block_size),
       "page" => assigns.page,
       "revision" => assigns.revision,
       "query" => Query.to_wire(assigns.query),

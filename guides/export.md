@@ -167,6 +167,23 @@ is not known (`aria-rowcount="-1"`), and the status says "1,000+ rows".
 A source of your own may not know its count either (`{:at_least, n}`,
 `:unknown`), or know it with its rows; see [Sources](sources.md).
 
+## Large tables: reads
+
+A grid reads its rows from its source a block at a time: 100 rows
+(`block_size`) as the person scrolls, at most 500 (`max_block`) in one
+read. Each read is a query of an Ecto source, or one request to a source
+of your own. Where a read is costly and rows are small (a warehouse, a
+query tool that runs the person's SQL again for each read), larger blocks
+mean fewer queries:
+
+```heex
+<.data_grid id="results" source={{MyApp.QuerySource, sql: @sql}} block_size={500}>
+```
+
+A larger block costs more memory in the LiveView and in the browser, and
+a slower first screen. The browser keeps about 6,000 rows, however large
+its blocks.
+
 ## Pages
 
 The grid scrolls by default. `paging={:pages}` shows a page of rows at a
@@ -177,9 +194,15 @@ and a page to go to:
 <.data_grid id="report" source={Order} repo={Repo} paging={:pages} page_size={50} url>
 ```
 
-Each page is a block of the source, as the grid reads any rows: a page
-needs nothing of a source. The page is part of the person's view (in the
-URL with `url`, in saved views, `"page" => "3"`); a new order, filter or
+Each page is one read of the source, as the grid reads any block: a page
+needs nothing of a source, and the next page is not read ahead. A page
+is no larger than `max_block`; raise it for larger pages:
+
+```heex
+<.data_grid id="results" source={...} paging={:pages} page_size={1000} max_block={1000}>
+```
+
+The page is part of the person's view (in the URL with `url`, in saved views, `"page" => "3"`); a new order, filter or
 search goes to the first page. Without a count, the pager says "1–50 of
 1,000+" and has a next page while the page is full. New rows (`create`)
 go on the last page.

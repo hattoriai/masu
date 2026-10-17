@@ -6,7 +6,8 @@ defmodule MasuTest.CountSource do
   @behaviour Masu.Source
 
   @impl true
-  def init(opts, _grid_opts), do: %{rows: Keyword.fetch!(opts, :rows), mode: opts[:mode]}
+  def init(opts, _grid_opts),
+    do: %{rows: Keyword.fetch!(opts, :rows), mode: opts[:mode], notify: opts[:notify]}
 
   @impl true
   def prepare(state, _query, _columns), do: state
@@ -20,7 +21,11 @@ defmodule MasuTest.CountSource do
   def rows(%{mode: :inline, rows: rows}, offset, limit),
     do: {Enum.slice(rows, offset, limit), length(rows)}
 
-  def rows(%{rows: rows}, offset, limit), do: Enum.slice(rows, offset, limit)
+  def rows(%{rows: rows} = state, offset, limit) do
+    # A test hears of each read: a read is a query, for a source like Lotus.
+    if state.notify, do: send(state.notify, {:read, offset, limit})
+    Enum.slice(rows, offset, limit)
+  end
 end
 
 defmodule MasuTest.CountsLive do
@@ -68,6 +73,37 @@ defmodule MasuTest.CountsLive do
     >
       <:col field={:id} type={:integer} />
       <:col field={:name} />
+    </.data_grid>
+    """
+  end
+end
+
+defmodule MasuTest.BlocksLive do
+  @moduledoc "Grids that read a source in blocks and pages of their own sizes, and tell the test of each read."
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, session, socket) do
+    rows = for id <- 1..2500, do: %{id: id, name: "row #{id}"}
+    {:ok, assign(socket, rows: rows, notify: session["notify"])}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.data_grid id="scroll" source={{MasuTest.CountSource, rows: @rows, mode: :exact, notify: @notify}} block_size={250}>
+      <:col field={:id} type={:integer} />
+    </.data_grid>
+    <.data_grid
+      id="report"
+      source={{MasuTest.CountSource, rows: @rows, mode: :exact, notify: @notify}}
+      paging={:pages}
+      page_size={1000}
+      max_block={1000}
+    >
+      <:col field={:id} type={:integer} />
     </.data_grid>
     """
   end
