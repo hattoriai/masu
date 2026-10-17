@@ -35,6 +35,9 @@ sorts, filters and counts (in the database, for an Ecto source), and
 * `columns(view, id)`: the labels, in order.
 * `values(view, id, key, search: nil)`: what the column's filter menu
   offers, as `{value, count}`, the most frequent first.
+* `place(view, id, row_id)`: where the row is in the grid's order (from
+  0), or `nil` when its filters leave it out: what a person who follows
+  someone scrolls to.
 
 ## Editing
 

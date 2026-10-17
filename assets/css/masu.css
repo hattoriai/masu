@@ -663,9 +663,28 @@
   box-shadow: 0 0 0 2px var(--masu-background), 0 0 0 3.5px var(--masu-peer-color, var(--masu-border));
   background: var(--masu-peer-color, var(--masu-surface));
   color: #fff;
+  font: inherit;
   font-size: 0.6875rem;
   font-weight: 600;
   overflow: hidden;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: box-shadow var(--masu-transition), transform var(--masu-transition);
+}
+
+button.masu-person:hover {
+  transform: translateY(-1px);
+}
+
+button.masu-person:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-peer-color, var(--masu-accent));
+}
+
+/* The person followed. */
+.masu-person[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--masu-background), 0 0 0 4.5px var(--masu-peer-color, var(--masu-accent));
 }
 
 .masu-person img {
@@ -677,6 +696,56 @@
 .masu-people-more {
   background: var(--masu-surface);
   color: var(--masu-muted);
+  cursor: default;
+}
+
+/* Following a person: their cell stays in view, the grid has a ring in
+   their color (--masu-follow-color), and a banner says whom, with Stop. */
+.masu[data-following] .masu-grid {
+  box-shadow: 0 0 0 2px var(--masu-follow-color, var(--masu-accent));
+}
+
+.masu-following {
+  position: absolute;
+  top: calc(var(--masu-space) * -0.5);
+  inset-inline-start: 50%;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.125rem 0.25rem 0.125rem 0.625rem;
+  border-radius: 999px;
+  background: var(--masu-follow-color, var(--masu-accent));
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+
+.masu-following-stop {
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.masu-following-stop:hover,
+.masu-following-stop:focus-visible {
+  background: rgba(255, 255, 255, 0.36);
+  outline: none;
+}
+
+/* A person's selected range: a wash in their color. */
+.masu-peer-range {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in oklab, var(--masu-peer-color) 12%, transparent);
+  pointer-events: none;
 }
 
 /* A person's place: a line in their color on the cell, and their name. */

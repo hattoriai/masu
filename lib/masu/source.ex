@@ -77,7 +77,14 @@ defmodule Masu.Source do
   """
   @callback fetch(state(), ids :: [term()], (term() -> term())) :: [term()]
 
-  @optional_callbacks supports?: 2, change: 3, values: 5, fetch: 3
+  @doc """
+  The place (from 0) of the row with an id in the rows of the query, in
+  their order, or `nil` when the query does not have it: where another
+  person's cell is in this person's order (`Masu.Presence`).
+  """
+  @callback locate(state(), id :: term(), (term() -> term())) :: non_neg_integer() | nil
+
+  @optional_callbacks supports?: 2, change: 3, values: 5, fetch: 3, locate: 3
 
   @type t :: %__MODULE__{module: module(), state: state()}
 
@@ -149,6 +156,12 @@ defmodule Masu.Source do
     if function_exported?(module, :fetch, 3),
       do: module.fetch(state, ids, row_id),
       else: []
+  end
+
+  @doc false
+  @spec locate(t(), term(), (term() -> term())) :: non_neg_integer() | nil
+  def locate(%__MODULE__{module: module, state: state}, id, row_id) do
+    if function_exported?(module, :locate, 3), do: module.locate(state, id, row_id)
   end
 
   @doc false

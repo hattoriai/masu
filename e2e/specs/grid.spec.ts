@@ -325,8 +325,8 @@ test.describe("two people", () => {
     const room = `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const ada = await (await browser.newContext({ locale: "en-GB" })).newPage();
     const alan = await (await browser.newContext({ locale: "en-GB" })).newPage();
-    await openPage(ada, `/together?room=${room}&presence=0`);
-    await openPage(alan, `/together?room=${room}&presence=0`);
+    await openPage(ada, `/together?as=Ada&room=${room}&presence=0`);
+    await openPage(alan, `/together?as=Alan&room=${room}&presence=0`);
     const cell = (page: import("@playwright/test").Page, row: number, col: number) => page.locator(`#together-r${row}-c${col}`);
 
     // Alan starts to type in Ken's name; Ada saves it first.
@@ -338,7 +338,7 @@ test.describe("two people", () => {
     await expect(cell(ada, 0, 1)).toHaveText("Ada's Ken");
 
     await alan.keyboard.press("Enter");
-    await expect(cell(alan, 0, 1)).toHaveAttribute("title", "Changed by someone else meanwhile.");
+    await expect(cell(alan, 0, 1)).toHaveAttribute("title", "Changed by Ada meanwhile.");
     await expect(cell(alan, 0, 1)).toHaveText("Ada's Ken");
 
     // A cell of the same row that no one else changed is saved, and shows
@@ -387,5 +387,66 @@ test.describe("presence", () => {
     await alan.context().close();
     await expect(ada.locator("#together .masu-person")).toHaveCount(0);
     await ada.context().close();
+  });
+
+  test("a click on an avatar follows the person, in this person's own order, until they scroll", async ({ browser }) => {
+    const room = `follow-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const open = async (name: string) => {
+      const page = await (await browser.newContext({ locale: "en-GB" })).newPage();
+      await openPage(page, `/together?as=${name}&room=${room}&rows=300`);
+      return page;
+    };
+    const ada = await open("Ada");
+    const alan = await open("Alan");
+
+    // Alan turns the order: his first row is the last of Ada's.
+    await header(alan, "together", "id").click();
+    await header(alan, "together", "id").click();
+    await settled(alan, "together");
+    await alan.locator("#together-r0-c1").click();
+
+    const avatar = ada.locator("#together .masu-person");
+    await expect(avatar).toHaveAttribute("aria-label", "Follow Alan");
+    await avatar.click();
+    await expect(avatar).toHaveAttribute("aria-pressed", "true");
+    await expect(ada.locator("#together .masu-following")).toContainText("Following Alan");
+    await expect(ada.locator("#together-r299-c1")).toBeInViewport();
+    await expect(ada.locator("#together .masu-peer .masu-peer-label")).toHaveText("Alan");
+
+    // Alan moves; Ada's grid goes with him.
+    await alan.keyboard.press("Control+End");
+    await expect(ada.locator("#together-r0-c5")).toBeInViewport();
+
+    // Ada scrolls herself: she no longer follows.
+    await grid(ada, "together").hover();
+    await ada.mouse.wheel(0, 600);
+    await expect(ada.locator("#together .masu-following")).toHaveCount(0);
+    await expect(avatar).toHaveAttribute("aria-pressed", "false");
+
+    await ada.context().close();
+    await alan.context().close();
+  });
+
+  test("each person sees the range the others selected", async ({ browser }) => {
+    const room = `range-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const open = async (name: string) => {
+      const page = await (await browser.newContext({ locale: "en-GB" })).newPage();
+      await openPage(page, `/together?as=${name}&room=${room}`);
+      return page;
+    };
+    const ada = await open("Ada");
+    const alan = await open("Alan");
+
+    await alan.locator("#together-r1-c1").click();
+    await alan.keyboard.press("Shift+ArrowDown");
+    await alan.keyboard.press("Shift+ArrowDown");
+    await alan.keyboard.press("Shift+ArrowRight");
+    await expect(ada.locator("#together .masu-peer-range")).toHaveCount(3);
+
+    await alan.keyboard.press("ArrowUp");
+    await expect(ada.locator("#together .masu-peer-range")).toHaveCount(0);
+
+    await ada.context().close();
+    await alan.context().close();
   });
 });

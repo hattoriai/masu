@@ -52,7 +52,9 @@ defmodule Masu.Presence do
 
   The avatars are HEEx: give the grid a `:person` slot to draw them with
   your own component; it gets each person as a map with `:id`, `:name`,
-  `:color`, `:avatar`, `:initials`, `:cell` and `:editing`:
+  `:color`, `:avatar`, `:initials`, `:cell`, `:range` and `:editing`. Each
+  avatar is a button that follows the person (their cell stays in view,
+  in this person's own order):
 
       <:person :let={person}>
         <.avatar src={person.avatar} name={person.name} ring={person.color} />
@@ -81,6 +83,7 @@ defmodule Masu.Presence do
           avatar: String.t() | nil,
           initials: String.t(),
           cell: [term()] | nil,
+          range: map() | nil,
           editing: boolean()
         }
 
@@ -113,6 +116,7 @@ defmodule Masu.Presence do
       color: color(user),
       avatar: Map.get(user, :avatar),
       cell: nil,
+      range: nil,
       editing: false
     }
   end
@@ -135,12 +139,13 @@ defmodule Masu.Presence do
 
   @doc false
   # Where this LiveView's user is now: a cell ([row id, column key]) or
-  # nil, and whether they are editing it.
-  @spec move(module(), String.t(), map(), [term()] | nil, boolean()) :: :ok
-  def move(presence, live_topic, user, cell, editing) do
+  # nil, the range they selected (`%{"rows" => ids, "keys" => keys}`, or
+  # nil), and whether they are editing the cell.
+  @spec move(module(), String.t(), map(), [term()] | nil, map() | nil, boolean()) :: :ok
+  def move(presence, live_topic, user, cell, range, editing) do
     {:ok, _ref} =
       presence.update(self(), topic(live_topic), to_string(user.id), fn meta ->
-        %{meta | cell: cell, editing: editing}
+        Map.merge(meta, %{cell: cell, range: range, editing: editing})
       end)
 
     :ok
@@ -163,6 +168,7 @@ defmodule Masu.Presence do
         avatar: meta.avatar,
         initials: initials(meta.name || id),
         cell: meta.cell,
+        range: Map.get(meta, :range),
         editing: meta.editing
       }
     end

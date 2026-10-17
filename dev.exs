@@ -392,7 +392,7 @@ defmodule MasuDev.TogetherLive do
   edits of one cell are a conflict. Each browser is a person (`?as=Ada`,
   or a name of its own), whom the others see (Masu.Presence). `?room=`
   gives a page of its own, as the browser tests do, and `?presence=0` a
-  page where no one sees the others.
+  page where no one sees the others; `?rows=300` takes more customers.
   """
   use Phoenix.LiveView
 
@@ -407,13 +407,22 @@ defmodule MasuDev.TogetherLive do
 
     {:ok,
      assign(socket,
-       rows: Enum.take(MasuDev.Customers.all(), 20),
+       rows: Enum.take(MasuDev.Customers.all(), rows(params)),
        user: user,
        topic: "together:" <> (params["room"] || "main"),
        presence: if(params["presence"] != "0", do: MasuDev.Presence),
        locale: params["locale"] || "en-GB"
      )}
   end
+
+  defp rows(%{"rows" => rows}) do
+    case Integer.parse(rows) do
+      {rows, ""} when rows in 1..10_000 -> rows
+      _other -> 20
+    end
+  end
+
+  defp rows(_params), do: 20
 
   @impl true
   def render(assigns) do

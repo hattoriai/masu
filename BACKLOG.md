@@ -4,12 +4,12 @@ Known gaps in Masu, each to become an issue. The first ones are the rest
 of the first release: a grid that a team coming from AG Grid or TanStack
 Table finds complete.
 
-## Collaboration: more of a shared sheet
+## Collaboration: comments on cells
 
-A click on an avatar goes to that person's cell (the server finds the
-row's place in this person's order). Each person's selected range, as a
-wash in their color. The name of who changed a cell meanwhile in the
-refusal ("Changed by Ada meanwhile"). Comments on a cell.
+A thread of comments on a cell, by its row id and column key: a mark in
+the cell's corner, the thread on hover or Enter, and the comments to the
+others as they are written, with a store of your own (a behaviour, and
+an Ecto one).
 
 ## Live rows: keep the row the person reads
 

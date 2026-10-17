@@ -70,6 +70,11 @@ defmodule Masu.Source.List do
     Enum.filter(rows, &MapSet.member?(wanted, Value.to_wire(row_id.(&1))))
   end
 
+  @impl true
+  def locate(%{view: view}, id, row_id) do
+    Enum.find(0..(tuple_size(view) - 1)//1, &(Value.to_wire(row_id.(elem(view, &1))) == id))
+  end
+
   # A changed row takes the place of the row with its id, a new one goes
   # at the end, and a deleted one leaves.
   @impl true

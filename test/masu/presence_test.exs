@@ -26,7 +26,7 @@ defmodule Masu.PresenceTest do
 
     assert_eventually(fn -> people(ada) == ["Alan"] end)
     assert_eventually(fn -> people(alan) == ["Ada"] end)
-    assert render(ada) =~ ~s(class="masu-initials" aria-label="Alan">)
+    assert render(ada) =~ ~s(aria-label="Follow Alan")
 
     GenServer.stop(alan.pid)
     assert_eventually(fn -> people(ada) == [] end)
@@ -46,6 +46,36 @@ defmodule Masu.PresenceTest do
       ada,
       "masu:people",
       %{"id" => "people", "people" => [%{name: "Alan", cell: [3, "name"], editing: true}]},
+      1000
+    )
+  end
+
+  test "a refusal names who changed the cell meanwhile" do
+    ada = open("ada")
+    alan = open("alan")
+    assert_eventually(fn -> people(ada) == ["Alan"] end)
+
+    assert :ok = edit(ada, "people", [{2, "name", "Alan T.", "alan Turing"}])
+
+    assert {:error, [{2, "name", "Changed by Ada meanwhile."}]} =
+             edit(alan, "people", [{2, "name", "A. Turing", "alan Turing"}])
+  end
+
+  test "a person's selected range goes to the others as row ids and column keys" do
+    ada = open("ada")
+    alan = open("alan")
+    assert_eventually(fn -> people(ada) == ["Alan"] end)
+
+    render_hook(element(alan, "#people"), "masu:cursor", %{
+      "cell" => [3, "name"],
+      "editing" => false,
+      "range" => %{"rows" => [1, 3, 4], "keys" => ["name"]}
+    })
+
+    assert_push_event(
+      ada,
+      "masu:people",
+      %{"people" => [%{name: "Alan", range: %{"rows" => [1, 3, 4], "keys" => ["name"]}}]},
       1000
     )
   end

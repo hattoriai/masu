@@ -89,6 +89,8 @@ export interface Person {
   color: string;
   /** Where they are: a row's id and a column's key. */
   cell: [unknown, string] | null;
+  /** The range they selected: its rows' ids and its columns' keys. */
+  range: { rows: unknown[]; keys: string[] } | null;
   editing: boolean;
 }
 

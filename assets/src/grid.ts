@@ -91,6 +91,9 @@ export class Grid {
   private people: Person[] = [];
   private peerEls: HTMLElement[] = [];
   private sentCursor = "null";
+  /** The person this person follows (Figma's follow): their cell stays in view. */
+  private following: string | null = null;
+  private followEl: HTMLElement | null = null;
   private cursorTimer: ReturnType<typeof setTimeout> | null = null;
   private requestTimer: ReturnType<typeof setTimeout> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -133,6 +136,7 @@ export class Grid {
 
   /** The server rendered the grid again: new rows, columns or options. */
   update(): void {
+    this.markFollowed();
     const config = readConfig(this.el);
     const columnsChanged = JSON.stringify(config.columns) !== JSON.stringify(this.config.columns);
     this.config = config;
@@ -633,6 +637,14 @@ export class Grid {
       else this.openMenu(col);
     });
     this.on(this.chipsEl, "click", (event) => this.onChipClick(event));
+    this.on(this.el, "click", (event) => {
+      const person = (event.target as HTMLElement).closest<HTMLElement>(".masu-person[data-person]");
+      if (person) this.toggleFollow(person.dataset.person!);
+    });
+    // The person's own scrolling, clicking or typing ends a follow.
+    for (const type of ["wheel", "touchstart", "mousedown", "keydown"] as const) {
+      this.on(this.gridEl, type, () => this.stopFollowing(), { passive: true });
+    }
     this.on(this.gridEl, "focus", () => this.schedule());
     this.on(document, "mousemove", (event) => this.onMouseMove(event));
     this.on(document, "mouseup", () => {
@@ -1172,6 +1184,8 @@ export class Grid {
   setPeople(people: Person[]): void {
     this.people = people;
     this.drawPeople();
+    if (this.following) this.follow();
+    else this.markFollowed();
   }
 
   private drawPeople(): void {
@@ -1183,6 +1197,32 @@ export class Grid {
     for (const [index, rowEl] of this.rows) {
       const data = rowEl.masuRow;
       if (data) rowsById.set(JSON.stringify(data[0]), index);
+    }
+
+    // Their selected ranges: a wash in their color on the cells of their
+    // rows, wherever this person's order puts them.
+    for (const person of this.people) {
+      if (!person.range) continue;
+      const cols = person.range.keys.map((key) => this.columns.findIndex((column) => column.key === key)).filter((col) => col >= 0);
+      if (cols.length === 0) continue;
+      const first = Math.min(...cols);
+      const last = Math.max(...cols);
+      const left = this.widths.slice(0, first).reduce((a, b) => a + b, 0);
+      const width = this.widths.slice(first, last + 1).reduce((a, b) => a + b, 0);
+      for (const id of person.range.rows) {
+        const index = rowsById.get(JSON.stringify(id));
+        if (index === undefined) continue;
+        const el = document.createElement("div");
+        el.className = "masu-peer-range";
+        el.style.setProperty("--masu-peer-color", person.color);
+        el.style.transform = `translateY(${index * this.config.rowHeight}px)`;
+        el.style.insetInlineStart = `${left}px`;
+        el.style.width = `${width}px`;
+        el.style.height = `${this.config.rowHeight}px`;
+        el.setAttribute("aria-hidden", "true");
+        this.body.appendChild(el);
+        this.peerEls.push(el);
+      }
     }
 
     for (const person of this.people) {
@@ -1213,6 +1253,113 @@ export class Grid {
     }
   }
 
+  /**
+   * The selected range as the others can draw it in their own order: the
+   * ids of its rows that the browser has (at most 500) and its columns'
+   * keys.
+   */
+  private rangeForOthers(): { rows: unknown[]; keys: string[] } | null {
+    const range = this.highlight();
+    if (!range || (range.top === range.bottom && range.left === range.right)) return null;
+    const rows: unknown[] = [];
+    for (let index = range.top; index <= range.bottom && rows.length < 500; index++) {
+      const data = this.cache.get(index) ?? this.stale?.get(index);
+      if (data) rows.push(data[0]);
+    }
+    return { rows, keys: this.columns.slice(range.left, range.right + 1).map((column) => column.key) };
+  }
+
+  /** Follows a person (their cell stays in view), or stops following them. */
+  toggleFollow(id: string): void {
+    if (this.following === id) this.stopFollowing();
+    else {
+      this.following = id;
+      this.follow();
+    }
+  }
+
+  private stopFollowing(): void {
+    if (!this.following) return;
+    this.following = null;
+    this.followEl?.remove();
+    this.followEl = null;
+    delete this.el.dataset.following;
+    this.el.style.removeProperty("--masu-follow-color");
+    this.markFollowed();
+  }
+
+  /** Scrolls to the followed person's cell: in view already, or where the server says it is in this order. */
+  private follow(): void {
+    const person = this.people.find((p) => p.id === this.following);
+    if (!person) {
+      this.stopFollowing();
+      return;
+    }
+    this.el.dataset.following = person.id;
+    this.el.style.setProperty("--masu-follow-color", person.color);
+    this.showFollowing(person, null);
+    this.markFollowed();
+    if (!person.cell) return;
+
+    const [id, key] = person.cell;
+    const col = Math.max(0, this.columns.findIndex((column) => column.key === key));
+    const wanted = JSON.stringify(id);
+    for (const [index, rowEl] of this.rows) {
+      if (rowEl.masuRow && JSON.stringify(rowEl.masuRow[0]) === wanted) {
+        this.scrollToCell(index, col);
+        return;
+      }
+    }
+    const revision = this.revision;
+    this.transport.push("masu:locate", { id }, (reply) => {
+      if (this.following !== person.id || reply.revision !== revision) return;
+      const index = reply.index as number | null;
+      if (index === null || index === undefined) this.showFollowing(person, "follow_hidden");
+      else this.scrollToCell(index, col);
+    });
+  }
+
+  private scrollToCell(index: number, col: number): void {
+    const rh = this.config.rowHeight;
+    const view = this.gridEl.clientHeight - this.head.offsetHeight;
+    const top = index * rh;
+    if (top < this.gridEl.scrollTop || top + rh > this.gridEl.scrollTop + view) {
+      this.gridEl.scrollTop = Math.max(0, top - (view - rh) / 2);
+    }
+    const left = this.widths.slice(0, col).reduce((a, b) => a + b, 0);
+    const right = left + this.widths[col];
+    if (left < this.gridEl.scrollLeft || right > this.gridEl.scrollLeft + this.gridEl.clientWidth) {
+      this.gridEl.scrollLeft = Math.max(0, left - 24);
+    }
+    this.schedule();
+  }
+
+  /** The banner of the person followed: "Following Ada", and Stop. */
+  private showFollowing(person: Person, note: string | null): void {
+    if (!this.followEl) {
+      this.followEl = document.createElement("div");
+      this.followEl.className = "masu-following";
+      this.followEl.setAttribute("role", "status");
+      this.gridEl.before(this.followEl);
+    }
+    const name = person.name ?? person.id;
+    const text = document.createElement("span");
+    text.textContent = this.message(note ?? "following", { label: name });
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "masu-following-stop";
+    stop.textContent = this.message("stop_following", {});
+    stop.addEventListener("click", () => this.stopFollowing());
+    this.followEl.replaceChildren(text, stop);
+  }
+
+  /** The avatar of the person followed is pressed. */
+  private markFollowed(): void {
+    for (const el of this.el.querySelectorAll<HTMLElement>(".masu-person[data-person]")) {
+      el.setAttribute("aria-pressed", el.dataset.person === this.following ? "true" : "false");
+    }
+  }
+
   /** Tells the others where this person is, when it changes, at most every 150 ms. */
   private reportCursor(): void {
     if (!this.config.presence || this.cursorTimer) return;
@@ -1220,10 +1367,11 @@ export class Grid {
       this.cursorTimer = null;
       const data = this.active.row >= 0 ? (this.cache.get(this.active.row) ?? this.stale?.get(this.active.row)) : undefined;
       const cell = data ? [data[0], this.columns[this.active.col].key] : null;
-      const cursor = JSON.stringify([cell, this.editor !== null]);
+      const range = this.rangeForOthers();
+      const cursor = JSON.stringify([cell, range, this.editor !== null]);
       if (cursor === this.sentCursor) return;
       this.sentCursor = cursor;
-      this.transport.push("masu:cursor", { cell, editing: this.editor !== null });
+      this.transport.push("masu:cursor", { cell, range, editing: this.editor !== null });
     }, CURSOR_DELAY);
   }
 
@@ -1375,6 +1523,9 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   more_errors: "({count} more)",
   peer_editing: "{label} is editing this cell",
   peer_typing: "{label} is typing",
+  following: "Following {label}",
+  follow_hidden: "{label} is on a row your filters leave out",
+  stop_following: "Stop",
 };
 
 // A funnel, drawn for Masu.

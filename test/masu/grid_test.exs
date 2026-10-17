@@ -147,4 +147,35 @@ defmodule Masu.GridTest do
       assert values(view, "orders", "code") == []
     end
   end
+
+  describe "the place of a row in the grid's order" do
+    test "a list finds it in its order, and not when its filters leave it out", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/people")
+
+      # By age, descending: Barbara 86, Grace 85, Edsger 72, Alan 41, Ada 36.
+      assert place(view, "people", 5) == 0
+      assert place(view, "people", 1) == 4
+
+      view |> sort("people", "name")
+      assert place(view, "people", 1) == 0
+
+      view |> filter("people", [{"age", :gt, 80}])
+      assert place(view, "people", 1) == nil
+      assert place(view, "people", 3) == 1
+    end
+
+    test "an Ecto source counts with row_number() in a window of its order", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/orders")
+
+      assert place(view, "orders", 1) == 0
+      view |> sort("orders", {"total", :desc})
+      assert place(view, "orders", 5) == 0
+      assert place(view, "orders", 3) == 4
+
+      view |> filter("orders", [{"status", :eq, "paid"}])
+      assert place(view, "orders", 4) == 0
+      assert place(view, "orders", 2) == nil
+      assert place(view, "orders", 6) == nil
+    end
+  end
 end

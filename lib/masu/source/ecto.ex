@@ -60,7 +60,8 @@ if Code.ensure_loaded?(Ecto.Query) do
         base: base,
         query: base,
         primary_key: primary_key(base),
-        count: nil
+        count: nil,
+        order: []
       }
     end
 
@@ -70,7 +71,8 @@ if Code.ensure_loaded?(Ecto.Query) do
         state.base
         |> where_filters(query.filters, columns)
         |> where_search(query.search, columns)
-        |> order(query.sorts, columns, state.primary_key)
+
+      {ecto, order} = order(ecto, query.sorts, columns, state.primary_key)
 
       count =
         ecto
@@ -80,7 +82,7 @@ if Code.ensure_loaded?(Ecto.Query) do
         |> select(count())
         |> state.repo.one(state.repo_opts)
 
-      %{state | query: ecto, count: count}
+      %{state | query: ecto, count: count, order: order}
     end
 
     @impl true
@@ -130,6 +132,28 @@ if Code.ensure_loaded?(Ecto.Query) do
     end
 
     def fetch(_state, _ids, _row_id), do: []
+
+    # The place of a row in the grid's order: its row_number() in a window
+    # of the same order, which PostgreSQL, MySQL 8 and SQLite 3.25 have.
+    @impl true
+    def locate(%{order: order, primary_key: [key]} = state, id, _row_id) when is_list(order) do
+      ranked =
+        state.query
+        |> exclude(:order_by)
+        |> exclude(:preload)
+        |> exclude(:select)
+        |> windows([r], w: [order_by: ^order])
+        |> select([r], %{id: field(r, ^key), n: over(row_number(), :w)})
+
+      from(s in subquery(ranked), where: s.id == ^id, select: s.n)
+      |> state.repo.one(state.repo_opts)
+      |> case do
+        nil -> nil
+        n -> n - 1
+      end
+    end
+
+    def locate(_state, _id, _row_id), do: nil
 
     @doc false
     # Runs `fun` with the row of `id` (through the grid's query, or nil) in
@@ -261,6 +285,8 @@ if Code.ensure_loaded?(Ecto.Query) do
       end
     end
 
+    # The query in the grid's order, and that order as a keyword list, or
+    # nil when it is the query's own order_by (which a window cannot copy).
     defp order(query, sorts, columns, primary_key) do
       fields =
         for %Sort{key: key, direction: direction} <- sorts,
@@ -272,14 +298,16 @@ if Code.ensure_loaded?(Ecto.Query) do
         # Without an order of its own, a query reads its rows in the order
         # of its primary key: an offset means nothing in no order.
         [] when query.order_bys == [] and primary_key != [] ->
-          order_by(query, ^Enum.map(primary_key, &{:asc, &1}))
+          order = Enum.map(primary_key, &{:asc, &1})
+          {order_by(query, ^order), order}
 
         [] ->
-          query
+          {query, if(query.order_bys == [], do: [])}
 
         fields ->
           tiebreak = for key <- primary_key, not List.keymember?(fields, key, 1), do: {:asc, key}
-          query |> exclude(:order_by) |> order_by(^(fields ++ tiebreak))
+          order = fields ++ tiebreak
+          {query |> exclude(:order_by) |> order_by(^order), order}
       end
     end
   end

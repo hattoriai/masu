@@ -75,7 +75,7 @@ defmodule Masu.Edit do
 
     refused =
       Enum.map(locked, &[id, &1["key"], "This cell cannot be edited."]) ++
-        Enum.map(stale, &conflict(row, id, &1, assigns.columns))
+        Enum.map(stale, &conflict(row, id, &1, assigns))
 
     case edits do
       [] ->
@@ -110,9 +110,18 @@ defmodule Masu.Edit do
   defp same?(_now, nil), do: false
   defp same?(now, before), do: Value.compare(now, before) == :eq
 
-  defp conflict(row, id, %{"key" => key}, columns) do
-    value = columns |> Column.find(key) |> Column.get(row) |> Value.to_wire()
-    [id, key, "Changed by someone else meanwhile.", value]
+  # The refusal names who saved the row, when the grid knows (from its
+  # live topic).
+  defp conflict(row, id, %{"key" => key}, assigns) do
+    value = assigns.columns |> Column.find(key) |> Column.get(row) |> Value.to_wire()
+
+    message =
+      case Map.get(Map.get(assigns, :saved_by, %{}), id) do
+        nil -> "Changed by someone else meanwhile."
+        name -> "Changed by #{name} meanwhile."
+      end
+
+    [id, key, message, value]
   end
 
   defp cell_editable?(row, %{"key" => key}, assigns) do

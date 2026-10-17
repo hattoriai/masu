@@ -47,7 +47,8 @@ defmodule Masu.Grid do
     "row" => "{count} row",
     "rows" => "{count} rows",
     "loading" => "Loading",
-    "people" => "Also here"
+    "people" => "Also here",
+    "follow" => "Follow {label}"
   }
 
   @impl true
@@ -62,7 +63,8 @@ defmodule Masu.Grid do
        changed: [],
        changed_by: %{},
        tracked: nil,
-       people: []
+       people: [],
+       saved_by: %{}
      )}
   end
 
@@ -125,7 +127,7 @@ defmodule Masu.Grid do
     |> assign(people: people)
     |> push_event("masu:people", %{
       "id" => socket.assigns.id,
-      "people" => Enum.map(people, &Map.take(&1, [:id, :name, :color, :cell, :editing]))
+      "people" => Enum.map(people, &Map.take(&1, [:id, :name, :color, :cell, :range, :editing]))
     })
   end
 
@@ -150,7 +152,15 @@ defmodule Masu.Grid do
 
     source = source |> Source.change(changes, row_id) |> Source.prepare(query, columns)
 
+    # Who saved each row last, for a refusal that names them ("Changed by
+    # Ada meanwhile.").
+    saved_by =
+      for {:upsert, row, %{name: name}} when is_binary(name) <- by_changes,
+          into: socket.assigns.saved_by,
+          do: {Value.to_wire(row_id.(row)), name}
+
     assign(socket,
+      saved_by: saved_by,
       source: source,
       total: Source.count(source),
       revision: revision + 1,
@@ -289,11 +299,22 @@ defmodule Masu.Grid do
      }, socket}
   end
 
+  # The place of a row in this person's order: where to scroll to follow
+  # another person (Masu.Presence).
+  def handle_event("masu:locate", %{"id" => id}, socket) do
+    index = Source.locate(socket.assigns.source, id, row_id(socket.assigns))
+    {:reply, %{"index" => index, "revision" => socket.assigns.revision}, socket}
+  end
+
   # Where this LiveView's user is in the grid, for the others (Masu.Presence).
-  def handle_event("masu:cursor", %{"cell" => cell, "editing" => editing}, socket)
+  def handle_event("masu:cursor", %{"cell" => cell, "editing" => editing} = params, socket)
       when (is_nil(cell) or (is_list(cell) and length(cell) == 2)) and is_boolean(editing) do
     %{presence: presence, tracked: topic, user: user} = socket.assigns
-    if presence && topic, do: :ok = Masu.Presence.move(presence, topic, user, cell, editing)
+    range = range(params["range"])
+
+    if presence && topic,
+      do: :ok = Masu.Presence.move(presence, topic, user, cell, range, editing)
+
     {:noreply, socket}
   end
 
@@ -325,6 +346,13 @@ defmodule Masu.Grid do
         {:reply, %{"error" => reason, "revision" => revision}, socket}
     end
   end
+
+  # A selected range goes to the others as its rows' ids (at most 500) and
+  # its columns' keys: the rows are where each person's order puts them.
+  defp range(%{"rows" => rows, "keys" => keys}) when is_list(rows) and is_list(keys),
+    do: %{"rows" => Enum.take(rows, 500), "keys" => Enum.filter(keys, &is_binary/1)}
+
+  defp range(_other), do: nil
 
   defp block(socket, from, count) do
     %{source: source, total: total, revision: revision} = socket.assigns
@@ -416,22 +444,24 @@ defmodule Masu.Grid do
       {@rest}
     >
       <div :if={@presence} class="masu-people" role="group" aria-label={@messages["people"]}>
-        <span
+        <button
           :for={person <- Enum.take(@people, 5)}
+          type="button"
           class="masu-person"
           style={"--masu-peer-color: #{person.color}"}
           title={person.name}
+          aria-label={String.replace(@messages["follow"], "{label}", person.name || person.id)}
           data-person={person.id}
         >
           <%= if @person != [] do %>
             {render_slot(@person, person)}
           <% else %>
             <img :if={person.avatar} src={person.avatar} alt={person.name} />
-            <span :if={!person.avatar} class="masu-initials" aria-label={person.name}>
+            <span :if={!person.avatar} class="masu-initials" aria-hidden="true">
               {person.initials}
             </span>
           <% end %>
-        </span>
+        </button>
         <span :if={length(@people) > 5} class="masu-person masu-people-more">
           +{length(@people) - 5}
         </span>

@@ -101,7 +101,9 @@ Each edit carries the value the person saw: the value of the cell when
 its editor opened (or, for a paste or a fill, when they pasted). The
 server compares it with the cell's value now, by the column's type
 (`120.50` is `120.5`), and refuses the edit if someone changed the cell
-meanwhile: "Changed by someone else meanwhile." The cell then shows its
+meanwhile: "Changed by Ada meanwhile." (the name of who saved the row,
+when the grid has a `live` topic and they had a `user`; "Changed by
+someone else meanwhile." otherwise). The cell then shows its
 value now, and the person decides again. It is the optimistic
 concurrency of a database, a compare-and-swap of each cell: two people
 who edit different cells of one row both save.

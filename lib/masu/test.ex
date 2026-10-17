@@ -128,6 +128,15 @@ defmodule Masu.Test do
     end
   end
 
+  @doc """
+  The place (from 0) of the row `row_id` in the grid's current order, or
+  `nil` when its query leaves the row out: where the grid scrolls to
+  follow another person to it.
+  """
+  @spec place(struct(), String.t(), term()) :: non_neg_integer() | nil
+  def place(view, id, row_id),
+    do: view |> event(id, "masu:locate", %{"id" => row_id}) |> Map.fetch!("index")
+
   @doc "The labels of the columns of the grid `id`, in order."
   @spec columns(struct(), String.t()) :: [String.t()]
   def columns(view, id) do
