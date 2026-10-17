@@ -7,6 +7,7 @@ import type { Person, Transport } from "./types";
 
 interface HookContext {
   el: HTMLElement;
+  liveSocket?: { execJS(el: HTMLElement, encodedJS: string, eventType?: string | null): void };
   handleEvent(event: string, callback: (payload: Record<string, unknown>) => void): void;
   pushEvent(event: string, payload: object, onReply?: (reply: Record<string, unknown>, ref: number) => void): void;
   pushEventTo(
@@ -30,6 +31,9 @@ export const Masu = {
         const target = hook.el.getAttribute("phx-target");
         if (target) hook.pushEventTo(hook.el, event, payload, reply);
         else hook.pushEvent(event, payload, reply);
+      },
+      exec(js) {
+        hook.liveSocket?.execJS(hook.el, js);
       },
     };
     hook.grid = new Grid(hook.el, transport);

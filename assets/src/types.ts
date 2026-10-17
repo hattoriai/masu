@@ -39,6 +39,23 @@ export interface ColumnConfig {
   pinned: "start" | "end" | null;
   /** How the column totals (Masu.Group): sum, avg, min, max, count, count_distinct, custom. */
   aggregate?: string | null;
+  /** The app's items of its header menu (`:header_action`). */
+  headerActions?: ActionItem[];
+  /** The app's items of the menu of its cells (`:cell_action`). */
+  cellActions?: ActionItem[];
+}
+
+/** An item of a menu of the app's own (Masu.Action). */
+export interface ActionItem {
+  /** Its place among the items of its slot: what the server takes back. */
+  id: number;
+  label: string;
+  /** It runs on the server (`on_action`, `event`). */
+  server: boolean;
+  /** A JS command for the browser to run, encoded. */
+  js: string | null;
+  /** It opens a panel that the server renders. */
+  panel: boolean;
 }
 
 /** A column of the grid, shown or not, as the columns menu lists it. */
@@ -136,6 +153,8 @@ export interface Config {
   deletes?: boolean;
   /** A delete can be undone. */
   restores?: boolean;
+  /** The built-in items of the menu of a cell: "copy", "filter", "sort". */
+  cellMenu?: string[];
 }
 
 export interface BlockReply {
@@ -150,6 +169,8 @@ export interface BlockReply {
 
 export interface Transport {
   push(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
+  /** Runs a JS command (Phoenix.LiveView.JS, encoded) on the grid's element. */
+  exec?(js: string): void;
 }
 
 /** Another person who has the grid open (Masu.Presence). */

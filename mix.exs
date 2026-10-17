@@ -113,6 +113,7 @@ defmodule Masu.MixProject do
         "guides/trees.md",
         "guides/groups.md",
         "guides/export.md",
+        "guides/menus.md",
         "guides/keyboard.md",
         "guides/testing.md",
         "guides/theming.md",
@@ -133,6 +134,7 @@ defmodule Masu.MixProject do
           "guides/trees.md",
           "guides/groups.md",
           "guides/export.md",
+          "guides/menus.md",
           "guides/keyboard.md",
           "guides/testing.md",
           "guides/theming.md"
@@ -151,7 +153,8 @@ defmodule Masu.MixProject do
           Masu.Live,
           Masu.Presence,
           Masu.Tree,
-          Masu.Group
+          Masu.Group,
+          Masu.Action
         ],
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],

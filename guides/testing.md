@@ -117,6 +117,15 @@ grid's reason.
 * `detail(view, id, row_id, open \\ true)`: opens a row's detail, which
   `render/1` then has; a grid in it is read with its own id.
 
+## Menus of your own
+
+* `actions(view, id, :header | :cell, key)`: the labels of the items
+  the grid offers for a column.
+* `header_action(view, id, label, key)` and `cell_action(view, id,
+  label, key, row_id, opts)`: run an item, as a click on it does; its
+  panel is then in `render/1`. `close_panel(view, id)` closes it. See
+  [Menus of your own](menus.md).
+
 ## What these tests do not cover
 
 `Masu.Test` does not run the browser: the drawing of the rows, the

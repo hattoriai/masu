@@ -27,6 +27,10 @@ app:
   column, with the values of an enum and their counts, and the filters
   as chips above the grid;
 * columns that resize, and fit their content on a double click;
+* menus of your own: items in each column's header menu, and a menu on
+  each cell (a right click, or Shift+F10) with copy, filter by the
+  value and sort, each item a function, an event to your LiveView, a JS
+  command, or a panel your LiveView renders;
 * the keyboard of a spreadsheet: the arrows, Page Up and Down, Home and
   End, a range selected with Shift, and ⌘C (Ctrl+C) that copies it as
   text a spreadsheet pastes;
@@ -49,6 +53,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Trees and details | `tree={:parent_id}`: rows in a tree, opened with →, ← and `*`, virtualized as a list of the open rows (a list or an Ecto source, children read as they open), siblings sorted among themselves, filters that keep the ancestors of a match; a `:detail` slot that opens a row on any HEEx under it, another grid too |
 | Groups and totals | `group_by` and "Group by" in the header menu: groups with their counts and totals, opened as a tree, sorted by value or by a total; `aggregate={:sum}` and a row of totals at the bottom; counted and totalled by the database, a `GROUP BY` a level |
 | Export and selection | an Export menu of CSV and XLSX of the whole query, streamed to the browser from a route of your router (`masu_exports`); `Masu.Live.export/1` for an app's own export; `selectable` rows, ranges, and every row of the query as an `Ecto.Query` (`Masu.Live.selected/1`); blocks of an Ecto source read by key, not `OFFSET`; counts deferred, on demand, or not known (`count`), and pages with a pager (`paging={:pages}`) |
+| Menus | `cell_menu`: a right click on a cell, or the context-menu key or Shift+F10, opens a menu of copy, copy with headers, filter by the value, exclude it, empty, and sort; `:header_action` and `:cell_action` add your items, each a function, an event to the LiveView, a JS command, or a panel of your HEEx under the header or the cell; for some columns (`columns`, `types`, `show`) or some people (`:if`), run only as the grid offers them |
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
 | Sorting | a click on a header; with Shift, by several columns, numbered in the headers; text without case, empty values last |
@@ -178,6 +183,8 @@ in the same order.
   their counts and totals, and a row of totals.
 * [Export, selection and large tables](guides/export.md): CSV and XLSX,
   selecting rows and every row of a query, paging by key.
+* [Menus of your own](guides/menus.md): items in the header menus, and
+  a menu on each cell.
 * [Keyboard and copy](guides/keyboard.md): the keys, the selection, and
   what a copy gives.
 * [Testing](guides/testing.md): `Masu.Test` with `Phoenix.LiveViewTest`.

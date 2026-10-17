@@ -14,6 +14,7 @@ cell, as in a spreadsheet.
 | Page Up, Page Down | a screen of rows up or down |
 | Enter or Space on a header | sorts by its column; with Shift, by it too |
 | Alt+↓ on a header | opens its filter menu; Escape closes it, and the focus comes back |
+| Shift+F10, the context-menu key | opens the menu of the active cell, or of the header, in a grid with one (see [Menus of your own](menus.md)): ↑ and ↓ move in it, Enter runs an item, Escape closes it |
 | →, ←, * on the first column of a tree | opens a row, closes it (or goes to its parent), opens every row beside it (see [Trees and details](trees.md)) |
 | Space on the first column, Shift and a box, Ctrl and a click | selects rows, in a grid with `selectable` (see [Export, selection and large tables](export.md)) |
 | Alt+→, Alt+← on a row | opens and closes its detail; Alt+↓ goes into it, Escape comes back |

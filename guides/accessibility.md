@@ -43,6 +43,21 @@ with the same name; the focus goes to its first field, and comes back to
 the header when it closes. An enum's values are a group of checkboxes.
 Each chip has a button that takes its filter away, named for it.
 
+A column with items of the app's own and no filter has a button named
+for the column's menu instead, with three dots.
+
+## The menu of a cell
+
+In a grid with one (see [Menus of your own](menus.md)), the menu of a
+cell is a `menu` named for its column, of `menuitem`s, with a
+`separator` between its groups. It opens on the context-menu key or
+Shift+F10, as on a right click; the focus goes to its first item. ↑ and
+↓ move, Home and End go to the ends, a letter to the next item that
+starts with it, Enter or Space runs an item, and Escape or Tab closes
+it; the focus comes back to the grid, on the same cell. The panel of an
+item is a `dialog` named by the item, with the focus in it, and Escape
+closes it.
+
 ## Editing
 
 The editor of a cell is an input named by its column's label, with the

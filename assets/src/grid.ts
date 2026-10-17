@@ -8,6 +8,7 @@
 // aria-activedescendant, so that a screen reader follows it while the
 // rows come and go.
 
+import { ActionMenu, type MenuItem } from "./actions";
 import { BlockCache } from "./blocks";
 import { describe, replaceFilter } from "./filters";
 import { fromTSV, inputText, invalid, matching, placePaste, sendValue, shownValue } from "./parse";
@@ -20,7 +21,19 @@ import { ColumnsPanel, ExportPanel, ViewsPanel } from "./panels";
 import { nextSorts } from "./sorting";
 import { toTSV } from "./tsv";
 import { sameView } from "./view";
-import type { BlockReply, CellValue, ColumnConfig, Config, Options, Person, QuerySpec, Row, Transport } from "./types";
+import type {
+  ActionItem,
+  BlockReply,
+  CellValue,
+  ColumnConfig,
+  Config,
+  FilterSpec,
+  Options,
+  Person,
+  QuerySpec,
+  Row,
+  Transport,
+} from "./types";
 
 const options: Options = {};
 
@@ -101,6 +114,13 @@ export class Grid {
   private searchEl: HTMLInputElement | null;
   private chipsEl: HTMLElement;
   private menu: { col: number; menu: FilterMenu } | null = null;
+  /** The menu of a cell: the grid's items and the app's (Masu.Action). */
+  private cellMenu: ActionMenu | null = null;
+  /** Where the panel of an item (Masu.Action), which the server renders, goes: a header (row -1) or a cell. */
+  private actionAnchor: { col: number; row: number; focus: boolean } | null = null;
+  private wiredPanels = new WeakSet<HTMLElement>();
+  /** When a menu opened by its key: the browser follows the key with a contextmenu event, on the menu. */
+  private menuKeyAt = 0;
   /** Where the pinned columns stick. */
   private pinned: Pins = pins([], []);
   /** The toolbar's buttons and their menus. */
@@ -271,6 +291,7 @@ export class Grid {
     this.renderTotals();
     this.showNotice();
     this.measureDetails();
+    this.placeActionPanel();
 
     // A count that came in (count={:deferred}), with the same rows.
     if (config.revision === this.revision && (config.total !== this.total || (config.exact !== false) !== this.exact)) {
@@ -316,6 +337,7 @@ export class Grid {
 
   destroy(): void {
     this.closeMenu(false);
+    this.closeCellMenu(false);
     this.closePanel(false);
     this.detailObserver?.disconnect();
     this.patchObserver?.disconnect();
@@ -953,18 +975,18 @@ export class Grid {
         cell.setAttribute("aria-sort", position === 0 ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
       }
 
-      if (column.filterable) {
+      if (this.hasHeaderMenu(col)) {
         const filtered = this.query.filters.some((filter) => filter.key === column.key);
         const filter = document.createElement("button");
         filter.type = "button";
         filter.tabIndex = -1;
         filter.className = "masu-filter-button";
         filter.dataset.col = String(col);
-        filter.setAttribute("aria-label", this.message("filter", { label: column.label }));
+        filter.setAttribute("aria-label", this.message(column.filterable ? "filter" : "column_menu", { label: column.label }));
         filter.setAttribute("aria-haspopup", "dialog");
         filter.setAttribute("aria-expanded", this.menu?.col === col ? "true" : "false");
         if (filtered) filter.dataset.active = "true";
-        filter.innerHTML = FILTER_ICON;
+        filter.innerHTML = column.filterable ? FILTER_ICON : MORE_ICON;
         cell.appendChild(filter);
       }
 
@@ -1079,11 +1101,18 @@ export class Grid {
     if (text) this.openMenu(Number(text.dataset.col));
   }
 
-  /** Opens the filter menu of a column, under its header. */
+  /** Whether a column has a header menu: it filters, or has the app's items. */
+  private hasHeaderMenu(col: number): boolean {
+    const column = this.columns[col];
+    return column !== undefined && (column.filterable || (column.headerActions?.length ?? 0) > 0);
+  }
+
+  /** Opens the header menu of a column (its filter, and the app's items), under its header. */
   openMenu(col: number): void {
     const column = this.columns[col];
-    if (!column?.filterable) return;
+    if (!column || !this.hasHeaderMenu(col)) return;
     this.closeMenu(false);
+    this.closeCellMenu(false);
     const anchor = this.headerRow.children[col] as HTMLElement;
     this.ensureVisible({ row: this.active.row, col });
     const menu = new FilterMenu(
@@ -1111,6 +1140,10 @@ export class Grid {
               }
             : undefined,
         grouped: (this.query.groups ?? []).includes(column.key),
+        actions: (column.headerActions ?? []).map((action) => ({
+          label: action.label,
+          run: () => this.runAction("header", action, col, -1, null),
+        })),
       },
       anchor,
     );
@@ -1133,6 +1166,257 @@ export class Grid {
 
   private messages(): Record<string, string> {
     return { ...DEFAULT_MESSAGES, ...this.config.messages };
+  }
+
+  // The menu of a cell, and the items of the app's own (Masu.Action).
+
+  private onContextMenu(event: MouseEvent): void {
+    if (this.inDetail(event.target) || this.editor) return;
+    // Opened by its key already, which the browser follows with this event.
+    if (this.cellMenu || this.menu) {
+      event.preventDefault();
+      return;
+    }
+    const target = event.target as HTMLElement;
+    const header = target.closest<HTMLElement>(".masu-hcell");
+    if (header && header.parentElement === this.headerRow) {
+      // A header's own menu, when the app has items for its headers.
+      const col = Number(header.dataset.col);
+      if ((this.columns[col]?.headerActions?.length ?? 0) > 0) {
+        event.preventDefault();
+        this.openMenu(col);
+      }
+      return;
+    }
+    // From the keyboard, the event is on the grid: the active cell's menu.
+    const cell = target === this.gridEl ? (this.active.row >= 0 ? this.active : null) : this.cellAt(target);
+    if (!cell) return;
+    const at = target === this.gridEl ? null : { x: event.clientX, y: event.clientY };
+    if (this.openCellMenu(cell, at)) event.preventDefault();
+  }
+
+  /**
+   * Opens the menu of a cell, at a point (a click's) or under the cell.
+   * Returns whether it has a menu: the grid's items (`cell_menu`) or the
+   * app's, for a row of data (not a group's, nor a new row).
+   */
+  private openCellMenu(cell: Cell, at: { x: number; y: number } | null): boolean {
+    const data = this.dataAt(cell.row);
+    if (!data || isGroup(data) || isDraft(data)) return false;
+    const items = this.cellItems(cell, data);
+    if (items.length === 0) return false;
+
+    this.closeMenu(false);
+    this.closeCellMenu(false);
+    this.closeActionPanel(false);
+    if (!at) {
+      this.ensureVisible(cell);
+      this.render();
+      const box = this.cellElement(cell)?.getBoundingClientRect();
+      at = box ? { x: box.left, y: box.bottom } : { x: 0, y: 0 };
+    }
+    const column = this.columns[cell.col];
+    this.cellMenu = new ActionMenu(
+      { root: this.uiEl, label: this.message("cell_menu", { label: column.label }), close: (focus) => this.closeCellMenu(focus) },
+      items,
+      at,
+    );
+    return true;
+  }
+
+  private closeCellMenu(focus: boolean): void {
+    if (!this.cellMenu) return;
+    this.cellMenu.destroy();
+    this.cellMenu = null;
+    if (focus) this.gridEl.focus({ preventScroll: true });
+  }
+
+  private cellElement(cell: Cell): HTMLElement | null {
+    if (cell.row < 0) return (this.headerRow.children[cell.col] as HTMLElement | undefined) ?? null;
+    return (this.rows.get(cell.row)?.children[cell.col] as HTMLElement | undefined) ?? null;
+  }
+
+  /** The items of a cell's menu: copy, filter, sort (`cell_menu`), then the app's. */
+  private cellItems(cell: Cell, data: Row): MenuItem[] {
+    const column = this.columns[cell.col];
+    const builtIn = this.config.cellMenu ?? [];
+    const range = this.highlight();
+    const inRange = range && contains(range, cell.row, cell.col) ? range : null;
+    const items: MenuItem[] = [];
+    const group = (more: MenuItem[]) => {
+      if (more.length > 0) more[0].separated = true;
+      items.push(...more);
+    };
+
+    if (builtIn.includes("copy")) {
+      const copied = inRange ?? rect(cell, cell);
+      group([
+        { name: "copy", label: this.message("copy", {}), run: () => this.copyRange(copied, false) },
+        { name: "copy-headers", label: this.message("copy_with_headers", {}), run: () => this.copyRange(copied, true) },
+      ]);
+    }
+
+    // A cell of HEEx has its value only when it edits.
+    const sent = data[cell.col + 1];
+    const known = !column.html || Array.isArray(sent);
+    if (builtIn.includes("filter") && column.filterable && known) {
+      const value = rawValue(sent);
+      const filter = (spec: FilterSpec) => () =>
+        this.setQuery({ ...this.query, filters: replaceFilter(this.query.filters, column.key, spec) });
+      const more: MenuItem[] = [];
+      if (value !== null) {
+        const shown = clip(column.type === "boolean" ? this.message(value ? "yes" : "no", {}) : this.formatters[cell.col](value));
+        const only: FilterSpec =
+          column.type === "enum" ? { key: column.key, op: "in", value: [value] } : { key: column.key, op: "eq", value };
+        more.push(
+          { name: "filter-value", label: this.message("filter_value", { label: shown }), run: filter(only) },
+          { name: "exclude-value", label: this.message("exclude_value", { label: shown }), run: filter({ key: column.key, op: "neq", value }) },
+        );
+      }
+      more.push(
+        { name: "filter-empty", label: this.message("filter_empty", {}), run: filter({ key: column.key, op: "is_nil" }) },
+        { name: "filter-not-empty", label: this.message("filter_not_empty", {}), run: filter({ key: column.key, op: "not_nil" }) },
+      );
+      group(more);
+    }
+
+    if (builtIn.includes("sort") && column.sortable) {
+      const sort = (dir: "asc" | "desc") => () => this.setQuery({ ...this.query, sorts: [{ key: column.key, dir }] });
+      group([
+        { name: "sort-asc", label: this.message("sort_asc", {}), run: sort("asc") },
+        { name: "sort-desc", label: this.message("sort_desc", {}), run: sort("desc") },
+      ]);
+    }
+
+    group(
+      (column.cellActions ?? []).map((action) => ({
+        label: action.label,
+        run: () => this.runAction("cell", action, cell.col, cell.row, inRange),
+      })),
+    );
+    return items;
+  }
+
+  /** Copies a range, with its columns' labels first when `headers`. */
+  private copyRange(range: Rect, headers: boolean): void {
+    const last = Math.min(range.bottom, range.top + MAX_COPY_ROWS - 1);
+    this.load(range.top, last, () => {
+      const text = this.copyText(range.top, last, range, headers);
+      const done = navigator.clipboard?.writeText(text);
+      if (!done) {
+        this.announce(this.message("copy_failed", {}));
+        return;
+      }
+      done.then(
+        () => this.announceCopy(last - range.top + 1),
+        () => this.announce(this.message("copy_failed", {})),
+      );
+    });
+  }
+
+  /**
+   * Runs an item of the app's (Masu.Action) on a header (row -1) or a
+   * cell: its JS command here, and on the server its function, its event
+   * or its panel. The server reads the row and the value itself.
+   */
+  private runAction(kind: "header" | "cell", action: ActionItem, col: number, row: number, range: Rect | null): void {
+    const column = this.columns[col];
+    if (!column) return;
+    const data = row >= 0 ? this.dataAt(row) : undefined;
+    if (kind === "cell" && !data) return;
+
+    this.rangeIds(range, (ids) => {
+      const keys = range ? this.columns.slice(range.left, range.right + 1).map((c) => c.key) : null;
+      if (action.js) {
+        const sent = data?.[col + 1];
+        const detail: Record<string, unknown> = { grid: this.id, kind, action: action.label, column: column.key };
+        if (data) {
+          detail.id = data[0];
+          detail.value = !column.html || Array.isArray(sent) ? rawValue(sent) : null;
+        }
+        if (ids && keys) detail.range = { ids, columns: keys };
+        this.el.dispatchEvent(new CustomEvent("masu:action", { bubbles: true, detail }));
+        this.transport.exec?.(action.js);
+      }
+      if (!action.server && !action.panel) return;
+
+      const payload: Record<string, unknown> = { kind, action: action.id, label: action.label, key: column.key };
+      if (data) payload.id = data[0];
+      if (ids && keys) payload.range = { ids, keys };
+      this.transport.push("masu:action", payload, (reply) => {
+        if (reply.panel) {
+          this.actionAnchor = { col, row, focus: true };
+          this.placeActionPanel();
+        } else if (reply.error) {
+          this.announce(this.message("action_failed", {}));
+        }
+      });
+    });
+  }
+
+  /** The ids of the rows of a range of several cells (as many as a copy takes), or null. */
+  private rangeIds(range: Rect | null, then: (ids: unknown[] | null) => void): void {
+    if (!range || (range.top === range.bottom && range.left === range.right)) {
+      then(null);
+      return;
+    }
+    const last = Math.min(range.bottom, range.top + MAX_COPY_ROWS - 1);
+    this.load(range.top, last, () => {
+      const ids: unknown[] = [];
+      for (let index = range.top; index <= last; index++) {
+        const data = this.dataAt(index);
+        if (data && !isGroup(data) && !isDraft(data)) ids.push(data[0]);
+      }
+      then(ids);
+    });
+  }
+
+  /** The panel of an item that the server rendered, if open. */
+  private actionPanel(): HTMLElement | null {
+    const panel = this.el.querySelector<HTMLElement>(":scope > .masu-panels > .masu-action-panel");
+    return panel && !panel.hidden ? panel : null;
+  }
+
+  /**
+   * Places the server's panel under its header or cell, inside the
+   * grid's element: again after each render, which takes its style away.
+   */
+  private placeActionPanel(): void {
+    const panel = this.actionPanel();
+    if (!panel) return;
+    const col = this.columns.findIndex((column) => column.key === panel.dataset.key);
+    const anchor = this.actionAnchor ?? { col: Math.max(col, 0), row: -1, focus: false };
+    const target = this.cellElement({ row: anchor.row, col: anchor.col }) ?? this.cellElement({ row: -1, col: anchor.col });
+    const root = this.el.getBoundingClientRect();
+    const box = (target ?? this.gridEl).getBoundingClientRect();
+    const left = Math.max(0, Math.min(box.left - root.left, root.width - panel.offsetWidth));
+    setStyle(panel, "top", `${box.bottom - root.top + 4}px`);
+    setStyle(panel, "inset-inline-start", `${left}px`);
+
+    if (!this.wiredPanels.has(panel)) {
+      this.wiredPanels.add(panel);
+      panel.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          this.closeActionPanel(true);
+        }
+      });
+    }
+    if (anchor.focus) {
+      anchor.focus = false;
+      const first = panel.querySelector<HTMLElement>('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      (first ?? panel).focus();
+    }
+  }
+
+  private closeActionPanel(focus: boolean): void {
+    const panel = this.actionPanel();
+    if (!panel) return;
+    panel.hidden = true;
+    this.actionAnchor = null;
+    this.transport.push("masu:action_panel", { open: false });
+    if (focus) this.gridEl.focus({ preventScroll: true });
   }
 
   private applyWidths(): void {
@@ -1306,6 +1590,14 @@ export class Grid {
       if (this.menu?.col === col) this.closeMenu(true);
       else this.openMenu(col);
     });
+    this.on(this.gridEl, "contextmenu", (event) => this.onContextMenu(event));
+    this.on(this.el, "contextmenu", (event) => {
+      if (performance.now() - this.menuKeyAt < 1000 && (this.cellMenu || this.menu)) event.preventDefault();
+    });
+    this.on(document, "mousedown", (event) => {
+      const panel = this.actionPanel();
+      if (panel && !panel.contains(event.target as Node)) this.closeActionPanel(false);
+    });
     this.on(this.chipsEl, "click", (event) => this.onChipClick(event));
     this.on(this.el, "click", (event) => {
       const person = (event.target as HTMLElement).closest<HTMLElement>(".masu-person[data-person]");
@@ -1377,6 +1669,19 @@ export class Grid {
   private onKeyDown(event: KeyboardEvent): void {
     const mod = event.ctrlKey || event.metaKey;
     if (this.editor) return;
+
+    // The menu of the active cell, or of the header.
+    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+      this.menuKeyAt = performance.now();
+      if (this.active.row === -1) {
+        if (!this.hasHeaderMenu(this.active.col)) return;
+        event.preventDefault();
+        this.openMenu(this.active.col);
+      } else if (this.openCellMenu(this.active, null)) {
+        event.preventDefault();
+      }
+      return;
+    }
     if (this.onRowKey(event, mod)) return;
     if (this.onEditKey(event, mod)) return;
 
@@ -1533,6 +1838,20 @@ export class Grid {
 
   private onMouseDown(event: MouseEvent): void {
     const target = event.target as HTMLElement;
+    // A right click: the cell under it is the active one, unless it is in
+    // the range selected, which its menu is for.
+    if (event.button === 2) {
+      const cell = this.cellAt(target);
+      if (!cell) return;
+      this.gridEl.focus({ preventScroll: true });
+      const range = this.highlight();
+      if (!range || !contains(range, cell.row, cell.col)) {
+        this.active = cell;
+        this.anchor = null;
+        this.render();
+      }
+      return;
+    }
     // A box (the click selects); the focus stays on the grid.
     if (target.closest(".masu-select, .masu-select-all")) {
       event.preventDefault();
@@ -3254,9 +3573,9 @@ export class Grid {
     });
   }
 
-  private copyText(first: number, last: number, selection: Rect): string {
+  private copyText(first: number, last: number, selection: Rect, headers?: boolean): string {
     const lines: string[][] = [];
-    if (selection.top === 0 && last === this.total - 1 && this.total > 1) {
+    if (headers ?? (selection.top === 0 && last === this.total - 1 && this.total > 1)) {
       lines.push(this.columns.slice(selection.left, selection.right + 1).map((column) => column.label));
     }
     for (let index = first; index <= last; index++) {
@@ -3479,6 +3798,17 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   view_shared: "Shared",
   view_delete: "Delete {label}",
   view_dropped: "Part of this view no longer applies: {label}",
+  column_menu: "{label} menu",
+  cell_menu: "{label}: actions",
+  copy: "Copy",
+  copy_with_headers: "Copy with headers",
+  filter_value: "Filter by {label}",
+  exclude_value: "Exclude {label}",
+  filter_empty: "Filter by empty",
+  filter_not_empty: "Filter by not empty",
+  sort_asc: "Sort ascending",
+  sort_desc: "Sort descending",
+  action_failed: "This action no longer applies",
 };
 
 // Three columns, and a stack of sheets, drawn for Masu.
@@ -3490,6 +3820,10 @@ const VIEWS_ICON =
 // A tray with an arrow down, drawn for Masu.
 const EXPORT_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M8 2.5v7M5 6.5l3 3 3-3M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// Three dots, drawn for Masu: a header's menu without a filter.
+const MORE_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></svg>';
 
 // A funnel, drawn for Masu.
 const FILTER_ICON =
@@ -3549,6 +3883,11 @@ function cellKey(id: unknown, key: string): string {
 /** The value of a cell: an editable column of HEEx sends [html, value]. */
 function rawValue(value: unknown): CellValue {
   return Array.isArray(value) ? (value[1] as CellValue) : (value as CellValue);
+}
+
+/** A value short enough for a menu's item. */
+function clip(text: string): string {
+  return text.length > 40 ? `${text.slice(0, 39)}…` : text;
 }
 
 function escapeHTML(text: string): string {

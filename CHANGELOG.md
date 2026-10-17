@@ -83,6 +83,19 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   class or `data-theme="dark"`; Tailwind in the Theming guide, and Lotus
   Web's results table as its worked example, compared pixel for pixel in
   e2e.
+- Menus of your own (`Masu.Action`): `:header_action` items in each
+  column's header menu, and a menu on each cell, opened by a right
+  click, the context-menu key or Shift+F10, as an ARIA menu. `cell_menu`
+  gives it copy, copy with headers, filter by the value, exclude it,
+  empty and not empty, and sort; `:cell_action` adds the app's items.
+  An item runs a function (`on_action`), sends the LiveView `{Masu.Action,
+  name, context}` (`event`), runs a JS command in the browser (`js`, after
+  a `masu:action` event), or opens a panel of its content under the header
+  or the cell; for some columns (`columns`, `types`, `show`). The context
+  has the column, and the cell's row and value read from the source, and
+  the range it is in. The server runs only the items the grid offers.
+  `Masu.Test.actions/4`, `header_action/4`, `cell_action/6` and
+  `close_panel/2`.
 - Row ids: `row_id={:position}` knows rows by their place in the query,
   for a read-only grid of rows with no id; a grid that needs no ids does
   so for a row without one. A grid whose features need ids that stay
