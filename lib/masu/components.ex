@@ -96,6 +96,11 @@ defmodule Masu.Components do
     default: nil,
     doc: "with `presence`: this person, `%{id: ..., name: ..., color: ..., avatar: ...}`"
 
+  attr :share_view, :boolean,
+    default: true,
+    doc:
+      "with `presence`: whether the person's order, filters and search go to the others, who see them when they follow the person"
+
   attr :row_id, :any,
     default: nil,
     doc: "a function that gives a row's id; the `id` of the row unless given"
@@ -169,6 +174,7 @@ defmodule Masu.Components do
       row_editable={@row_editable}
       presence={@presence}
       user={@user}
+      share_view={@share_view}
       person={@person}
       on_save={@on_save}
       row_id={@row_id}

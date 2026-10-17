@@ -15,7 +15,7 @@ defmodule MasuTest.PresenceLive do
   def mount(params, _session, socket) do
     user = %{id: params["user"], name: String.capitalize(params["user"])}
     user = if params["color"], do: Map.put(user, :color, params["color"]), else: user
-    {:ok, assign(socket, user: user, slot: params["slot"] == "1")}
+    {:ok, assign(socket, user: user, slot: params["slot"] == "1", share: params["share"] != "0")}
   end
 
   @impl true
@@ -29,7 +29,8 @@ defmodule MasuTest.PresenceLive do
       </.data_grid>
     <% else %>
       <.data_grid id="people" rows={MasuTest.People.all()} changeset={&MasuTest.EditPeopleLive.changeset/2}
-        live={{MasuTest.PubSub, "presence-people"}} presence={MasuTest.Presence} user={@user}>
+        live={{MasuTest.PubSub, "presence-people"}} presence={MasuTest.Presence} user={@user}
+        share_view={@share}>
         <:col field={:name} />
       </.data_grid>
     <% end %>

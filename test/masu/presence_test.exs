@@ -61,6 +61,59 @@ defmodule Masu.PresenceTest do
              edit(alan, "people", [{2, "name", "A. Turing", "alan Turing"}])
   end
 
+  test "a person's view and the first row on their screen go to the others" do
+    ada = open("ada")
+    alan = open("alan")
+    assert_eventually(fn -> people(ada) == ["Alan"] end)
+
+    assert_push_event(ada, "masu:people", %{"people" => [%{name: "Alan", view: view}]}, 1000)
+    assert view == %{"sorts" => [], "filters" => [], "search" => nil}
+
+    render_hook(element(alan, "#people"), "masu:query", %{
+      "sorts" => [%{"key" => "name", "dir" => "desc"}],
+      "filters" => [],
+      "search" => "a"
+    })
+
+    assert_push_event(
+      ada,
+      "masu:people",
+      %{
+        "people" => [
+          %{view: %{"sorts" => [%{"key" => "name", "dir" => "desc"}], "search" => "a"}}
+        ]
+      },
+      1000
+    )
+
+    render_hook(element(alan, "#people"), "masu:cursor", %{
+      "cell" => [3, "name"],
+      "editing" => false,
+      "top" => 3
+    })
+
+    assert_push_event(ada, "masu:people", %{"people" => [%{top: 3}]}, 1000)
+  end
+
+  test "a grid with share_view={false} keeps its view from the others" do
+    ada = open("ada")
+    alan = open("alan", "&share=0")
+    assert_eventually(fn -> people(ada) == ["Alan"] end)
+
+    render_hook(element(alan, "#people"), "masu:query", %{
+      "sorts" => [%{"key" => "name", "dir" => "desc"}],
+      "filters" => [],
+      "search" => nil
+    })
+
+    render_hook(element(alan, "#people"), "masu:cursor", %{
+      "cell" => [3, "name"],
+      "editing" => false
+    })
+
+    assert_push_event(ada, "masu:people", %{"people" => [%{cell: [3, "name"], view: nil}]}, 1000)
+  end
+
   test "a person's selected range goes to the others as row ids and column keys" do
     ada = open("ada")
     alan = open("alan")

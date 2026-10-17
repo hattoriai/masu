@@ -389,15 +389,81 @@ test.describe("presence", () => {
     await ada.context().close();
   });
 
-  test("a click on an avatar follows the person, in this person's own order, until they scroll", async ({ browser }) => {
-    const room = `follow-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const open = async (name: string) => {
+  const twoPeople = async (browser: import("@playwright/test").Browser, prefix: string, alanParams = "") => {
+    const room = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const open = async (name: string, params: string) => {
       const page = await (await browser.newContext({ locale: "en-GB" })).newPage();
-      await openPage(page, `/together?as=${name}&room=${room}&rows=300`);
+      await openPage(page, `/together?as=${name}&room=${room}&rows=300${params}`);
       return page;
     };
-    const ada = await open("Ada");
-    const alan = await open("Alan");
+    return { ada: await open("Ada", ""), alan: await open("Alan", alanParams) };
+  };
+  const scrollTop = (page: import("@playwright/test").Page) => grid(page, "together").evaluate((el) => el.scrollTop);
+
+  test("a click on an avatar shows that person's view and place; Stop brings back one's own", async ({ browser }) => {
+    const { ada, alan } = await twoPeople(browser, "follow");
+
+    // Ada reads a little way down, in her own order.
+    await ada.locator("#together-r0-c1").click();
+    await ada.keyboard.press("PageDown");
+    await ada.keyboard.press("PageDown");
+    const adaTop = await scrollTop(ada);
+    expect(adaTop).toBeGreaterThan(0);
+
+    // Alan turns the order and reads further down.
+    await header(alan, "together", "id").click();
+    await header(alan, "together", "id").click();
+    await settled(alan, "together");
+    await alan.locator("#together-r0-c1").click();
+    for (let i = 0; i < 5; i++) await alan.keyboard.press("PageDown");
+
+    const avatar = ada.locator("#together .masu-person");
+    await avatar.click();
+    await expect(avatar).toHaveAttribute("aria-pressed", "true");
+    await expect(ada.locator("#together .masu-following")).toContainText("Following Alan");
+    await expect(header(ada, "together", "id")).toHaveAttribute("aria-sort", "descending");
+    await expect.poll(async () => Math.abs((await scrollTop(ada)) - (await scrollTop(alan)))).toBeLessThan(40);
+    await expect(ada.locator("#together .masu-peer .masu-peer-label")).toHaveText("Alan");
+
+    // Alan moves on; Ada's grid goes with him.
+    await alan.keyboard.press("Control+Home");
+    await expect.poll(() => scrollTop(ada)).toBe(0);
+
+    await ada.locator("#together .masu-following-stop").click();
+    await expect(ada.locator("#together .masu-following")).toHaveCount(0);
+    await expect(header(ada, "together", "id")).toHaveAttribute("aria-sort", "none");
+    await expect.poll(() => scrollTop(ada)).toBe(adaTop);
+    await expect(avatar).toHaveAttribute("aria-pressed", "false");
+
+    await ada.context().close();
+    await alan.context().close();
+  });
+
+  test("scrolling while following keeps that person's view, with a way back", async ({ browser }) => {
+    const { ada, alan } = await twoPeople(browser, "takeover");
+    await alan.locator(".masu-search").fill("an");
+    await settled(alan, "together");
+    await alan.locator("#together-r0-c1").click();
+
+    await ada.locator("#together .masu-person").click();
+    await expect(ada.locator(".masu-search")).toHaveValue("an");
+
+    await grid(ada, "together").hover();
+    await ada.mouse.wheel(0, 300);
+    await expect(ada.locator("#together .masu-following")).toContainText("Alan's view");
+    await expect(ada.locator(".masu-search")).toHaveValue("an");
+    await expect(ada.locator("#together .masu-person")).toHaveAttribute("aria-pressed", "false");
+
+    await ada.getByRole("button", { name: "Back to your view" }).click();
+    await expect(ada.locator(".masu-search")).toHaveValue("");
+    await expect(ada.locator("#together .masu-following")).toHaveCount(0);
+
+    await ada.context().close();
+    await alan.context().close();
+  });
+
+  test("a person whose grid keeps its view is followed in one's own order", async ({ browser }) => {
+    const { ada, alan } = await twoPeople(browser, "private", "&share=0");
 
     // Alan turns the order: his first row is the last of Ada's.
     await header(alan, "together", "id").click();
@@ -405,23 +471,13 @@ test.describe("presence", () => {
     await settled(alan, "together");
     await alan.locator("#together-r0-c1").click();
 
-    const avatar = ada.locator("#together .masu-person");
-    await expect(avatar).toHaveAttribute("aria-label", "Follow Alan");
-    await avatar.click();
-    await expect(avatar).toHaveAttribute("aria-pressed", "true");
+    await ada.locator("#together .masu-person").click();
     await expect(ada.locator("#together .masu-following")).toContainText("Following Alan");
+    await expect(header(ada, "together", "id")).toHaveAttribute("aria-sort", "none");
     await expect(ada.locator("#together-r299-c1")).toBeInViewport();
-    await expect(ada.locator("#together .masu-peer .masu-peer-label")).toHaveText("Alan");
 
-    // Alan moves; Ada's grid goes with him.
     await alan.keyboard.press("Control+End");
     await expect(ada.locator("#together-r0-c5")).toBeInViewport();
-
-    // Ada scrolls herself: she no longer follows.
-    await grid(ada, "together").hover();
-    await ada.mouse.wheel(0, 600);
-    await expect(ada.locator("#together .masu-following")).toHaveCount(0);
-    await expect(avatar).toHaveAttribute("aria-pressed", "false");
 
     await ada.context().close();
     await alan.context().close();
