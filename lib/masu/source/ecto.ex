@@ -23,6 +23,16 @@ if Code.ensure_loaded?(Ecto.Query) do
     `lower(field) LIKE ...`, which PostgreSQL, MySQL and SQLite all run.
     An index on `lower(field)` makes them fast on a large table.
 
+    ## A tree
+
+    With the grid's `tree` (a field that holds the parent's id), the rows
+    are a tree (`Masu.Tree`). The source keeps the ids of the rows that
+    show, not the rows: the roots, in the grid's order, and the children
+    of each row the person opens, read when it opens; each block of rows
+    is then read by its ids. A filter or a search reads the ids of the
+    rows that match and climbs to their ancestors, a level per query. The
+    schema needs one primary key.
+
     ## Options
 
       * `:repo` (required) - the repo that runs the queries.
@@ -34,7 +44,10 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     import Ecto.Query
 
-    alias Masu.{Column, Filter, Query, Sort}
+    alias Masu.{Column, Filter, Query, Sort, Tree}
+
+    # How many levels a filter climbs to find the ancestors of its rows.
+    @max_depth 100
 
     @doc false
     @spec queryable?(term()) :: boolean()
@@ -61,11 +74,58 @@ if Code.ensure_loaded?(Ecto.Query) do
         query: base,
         primary_key: primary_key(base),
         count: nil,
-        order: []
+        order: [],
+        tree: tree!(Keyword.get(opts, :tree), base),
+        flat: nil,
+        filtered: false
       }
     end
 
+    defp tree!(nil, _base), do: nil
+
+    defp tree!(field, base) when is_atom(field) do
+      if length(primary_key(base)) != 1 do
+        raise ArgumentError, "a Masu tree of an Ecto source needs a schema with one primary key"
+      end
+
+      field
+    end
+
+    defp tree!(other, _base),
+      do: raise(ArgumentError, "the tree of an Ecto source is a field, got: #{inspect(other)}")
+
     @impl true
+    def prepare(%{tree: parent} = state, %Query{} = query, columns) when parent != nil do
+      {ordered, order} = order(state.base, query.sorts, columns, state.primary_key)
+
+      {entries, open?, filtered} =
+        if query.filters == [] and query.search == nil do
+          # The roots, and the children of the rows that are open, a level
+          # at a time: an open row under a closed one is not read.
+          roots = ordered |> where([r], is_nil(field(r, ^parent))) |> pairs(state)
+          children = open_children(ordered, roots, query.expanded, state)
+          {roots ++ children, &MapSet.member?(query.expanded, &1), false}
+        else
+          # The rows that match and their ancestors, in the grid's order.
+          kept =
+            state.base
+            |> where_filters(query.filters, columns)
+            |> where_search(query.search, columns)
+            |> exclude(:order_by)
+            |> pairs(state)
+            |> Map.new()
+            |> ancestors(state, 0)
+            |> Map.keys()
+
+          [key] = state.primary_key
+          entries = ordered |> where([r], field(r, ^key) in ^kept) |> pairs(state)
+          {entries, &(not MapSet.member?(query.collapsed, &1)), true}
+        end
+
+      flat = Tree.flatten(entries, open?)
+      %{state | flat: flat, count: length(flat), order: order, filtered: filtered}
+    end
+
     def prepare(state, %Query{} = query, columns) do
       ecto =
         state.base
@@ -85,16 +145,119 @@ if Code.ensure_loaded?(Ecto.Query) do
       %{state | query: ecto, count: count, order: order}
     end
 
+    defp open_children(ordered, level, expanded, %{tree: parent} = state) do
+      open = for {id, _parent} <- level, MapSet.member?(expanded, id), do: id
+
+      if open == [] do
+        []
+      else
+        children = ordered |> where([r], field(r, ^parent) in ^open) |> pairs(state)
+        # Each row once, whatever cycles the data has.
+        expanded = Enum.reduce(open, expanded, &MapSet.delete(&2, &1))
+        children ++ open_children(ordered, children, expanded, state)
+      end
+    end
+
+    # `{id, parent id}` of the rows of a query.
+    defp pairs(query, %{primary_key: [key], tree: parent} = state) do
+      query
+      |> exclude(:preload)
+      |> exclude(:select)
+      |> select([r], {field(r, ^key), field(r, ^parent)})
+      |> state.repo.all(state.repo_opts)
+    end
+
+    # The parents the kept rows name, read until every one is there.
+    defp ancestors(parents, state, depth) do
+      missing =
+        parents
+        |> Map.values()
+        |> Enum.reject(&(is_nil(&1) or Map.has_key?(parents, &1)))
+        |> Enum.uniq()
+
+      if missing == [] or depth >= @max_depth do
+        parents
+      else
+        [key] = state.primary_key
+
+        found =
+          state.base
+          |> exclude(:order_by)
+          |> where([r], field(r, ^key) in ^missing)
+          |> pairs(state)
+
+        # A parent that is not in the grid's query ends the climb.
+        found_parents = Map.new(found)
+        lost = for id <- missing, not Map.has_key?(found_parents, id), into: %{}, do: {id, nil}
+
+        parents |> Map.merge(found_parents) |> Map.merge(lost) |> ancestors(state, depth + 1)
+      end
+    end
+
     @impl true
     def count(%{count: nil} = state), do: state |> prepare(%Query{}, []) |> count()
     def count(%{count: count}), do: count
 
     @impl true
+    def rows(%{flat: flat} = state, offset, limit) when is_list(flat) do
+      state |> nodes(offset, limit) |> Enum.map(&elem(&1, 0))
+    end
+
     def rows(state, offset, limit) do
       state.query
       |> offset(^offset)
       |> limit(^limit)
       |> state.repo.all(state.repo_opts)
+    end
+
+    # The rows of a block of the tree, by their ids, with their places. A
+    # row the source has not opened may have children: one query tells.
+    @impl true
+    def nodes(%{flat: nil}, _offset, _limit), do: nil
+
+    def nodes(%{flat: flat} = state, offset, limit) do
+      block = Enum.slice(flat, offset, limit)
+      ids = Enum.map(block, &elem(&1, 0))
+      [key] = state.primary_key
+      rows = state |> fetch(ids, nil) |> Map.new(&{Map.get(&1, key), &1})
+      parents = if state.filtered, do: MapSet.new(), else: with_children(state, ids)
+
+      for {id, _parent, info} <- block, row = rows[id] do
+        {row, %{info | children: info.children or MapSet.member?(parents, id)}}
+      end
+    end
+
+    @impl true
+    def siblings(%{flat: flat} = state, id) when is_list(flat) do
+      candidates =
+        case List.keyfind(flat, id, 0) do
+          {_id, _parent, %{level: 0}} -> for {s, _p, %{level: 0}} <- flat, do: s
+          {_id, parent, _info} -> for {s, ^parent, _info} <- flat, do: s
+          nil -> []
+        end
+
+      if state.filtered do
+        Tree.siblings(flat, id)
+      else
+        parents = with_children(state, candidates)
+        Enum.filter(candidates, &MapSet.member?(parents, &1))
+      end
+    end
+
+    def siblings(_state, _id), do: []
+
+    defp with_children(_state, []), do: MapSet.new()
+
+    defp with_children(%{tree: parent} = state, ids) do
+      state.base
+      |> exclude(:order_by)
+      |> exclude(:preload)
+      |> exclude(:select)
+      |> where([r], field(r, ^parent) in ^ids)
+      |> select([r], field(r, ^parent))
+      |> distinct(true)
+      |> state.repo.all(state.repo_opts)
+      |> MapSet.new()
     end
 
     @impl true
@@ -134,8 +297,12 @@ if Code.ensure_loaded?(Ecto.Query) do
     def fetch(_state, _ids, _row_id), do: []
 
     # The place of a row in the grid's order: its row_number() in a window
-    # of the same order, which PostgreSQL, MySQL 8 and SQLite 3.25 have.
+    # of the same order, which PostgreSQL, MySQL 8 and SQLite 3.25 have; in
+    # a tree, its place among the rows that show.
     @impl true
+    def locate(%{flat: flat}, id, _row_id) when is_list(flat),
+      do: Enum.find_index(flat, &(elem(&1, 0) == id))
+
     def locate(%{order: order, primary_key: [key]} = state, id, _row_id) when is_list(order) do
       ranked =
         state.query

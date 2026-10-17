@@ -87,6 +87,8 @@ defmodule MasuTest.Orders do
       )
       """)
 
+      :ok = MasuTest.Accounts.setup!(Repo)
+
       for {number, customer, status, total, day} <- [
             {"A-1", "Acme", "paid", "10.00", 1},
             {"A-2", "Bob's", "late", "250.50", 2},

@@ -11,18 +11,67 @@ defmodule Masu.Source.List do
 
   Text sorts without case, `nil` after every value, and rows that compare
   equal keep their order in the list.
+
+  ## A tree
+
+  With the grid's `tree` (a field of the row that holds its parent's id,
+  or a function of the row), the rows are a tree (`Masu.Tree`): the list
+  holds every row, and the grid shows the roots and the children of the
+  rows that are open.
   """
 
   @behaviour Masu.Source
 
-  alias Masu.{Column, Filter, Query, Value}
+  alias Masu.{Column, Filter, Query, Tree, Value}
 
   @impl true
-  def init(rows, _opts) when is_list(rows) do
-    %{all: rows, view: List.to_tuple(rows)}
+  def init(rows, opts) when is_list(rows) do
+    %{
+      all: rows,
+      view: List.to_tuple(rows),
+      tree: Keyword.get(opts, :tree),
+      row_id: Keyword.get(opts, :row_id) || (&Map.get(&1, :id)),
+      nodes: nil,
+      flat: []
+    }
   end
 
   @impl true
+  def prepare(%{tree: parent} = state, %Query{} = query, columns) when parent != nil do
+    id = fn row -> Value.to_wire(state.row_id.(row)) end
+    parent_id = fn row -> Value.to_wire(parent_of(parent, row)) end
+    sorted = sort(state.all, query.sorts, columns)
+
+    # A filter or a search keeps the rows that match and their
+    # ancestors, open unless the person closed them.
+    {rows, open?} =
+      if query.filters == [] and query.search == nil do
+        {sorted, &MapSet.member?(query.expanded, &1)}
+      else
+        parents = Map.new(state.all, &{id.(&1), parent_id.(&1)})
+
+        kept =
+          state.all
+          |> filter(query.filters, columns)
+          |> search(query.search, columns)
+          |> Enum.map(id)
+          |> Tree.with_ancestors(&Map.get(parents, &1))
+
+        {Enum.filter(sorted, &MapSet.member?(kept, id.(&1))),
+         &(not MapSet.member?(query.collapsed, &1))}
+      end
+
+    by_id = Map.new(rows, &{id.(&1), &1})
+    flat = rows |> Enum.map(&{id.(&1), parent_id.(&1)}) |> Tree.flatten(open?)
+
+    %{
+      state
+      | view: flat |> Enum.map(&Map.fetch!(by_id, elem(&1, 0))) |> List.to_tuple(),
+        nodes: flat |> Enum.map(&elem(&1, 2)) |> List.to_tuple(),
+        flat: flat
+    }
+  end
+
   def prepare(%{all: rows} = state, %Query{} = query, columns) do
     view =
       rows
@@ -42,6 +91,21 @@ defmodule Masu.Source.List do
     last = min(offset + limit, tuple_size(view)) - 1
     if offset > last, do: [], else: for(i <- offset..last//1, do: elem(view, i))
   end
+
+  @impl true
+  def nodes(%{nodes: nil}, _offset, _limit), do: nil
+
+  def nodes(%{nodes: nodes} = state, offset, limit) do
+    last = min(offset + limit, tuple_size(nodes)) - 1
+    rows = rows(state, offset, limit)
+    if offset > last, do: [], else: Enum.zip(rows, for(i <- offset..last//1, do: elem(nodes, i)))
+  end
+
+  @impl true
+  def siblings(%{flat: flat}, id), do: Tree.siblings(flat, id)
+
+  defp parent_of(field, row) when is_atom(field), do: Map.get(row, field)
+  defp parent_of(fun, row) when is_function(fun, 1), do: fun.(row)
 
   @impl true
   def supports?(_state, _column), do: true

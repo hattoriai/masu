@@ -119,6 +119,15 @@ defmodule Masu.Components do
     doc:
       "with `presence`: whether the person's order, filters and search go to the others, who see them when they follow the person"
 
+  attr :tree, :any,
+    default: nil,
+    doc:
+      "rows in a tree: the field of a row that holds its parent's id (or a function of the row); see `Masu.Tree`"
+
+  attr :expanded, :list,
+    default: [],
+    doc: "with `tree`: the ids of the rows that start open"
+
   attr :row_id, :any,
     default: nil,
     doc: "a function that gives a row's id; the `id` of the row unless given"
@@ -167,6 +176,10 @@ defmodule Masu.Components do
 
   slot :empty, doc: "what the grid shows when it has no rows"
 
+  slot :detail,
+    doc:
+      "what a row shows when it opens, under it: any HEEx, another `data_grid` too; it gets the row"
+
   slot :person,
     doc:
       "draws a person who has the grid open (`:let`), see `Masu.Presence`; initials in their color unless given"
@@ -199,6 +212,9 @@ defmodule Masu.Components do
       presence={@presence}
       user={@user}
       share_view={@share_view}
+      tree={@tree}
+      expanded={@expanded}
+      detail={@detail}
       url={@url}
       views={@views}
       views_key={@views_key}

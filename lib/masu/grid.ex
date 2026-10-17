@@ -34,12 +34,14 @@ defmodule Masu.Grid do
 
   use Phoenix.LiveComponent
 
-  alias Masu.{Column, Layout, Query, Source, Value, View}
+  alias Masu.{Column, Layout, Query, Source, Tree, Value, View}
   alias Phoenix.HTML.Safe
 
   @max_block 500
   @first_block 100
   @initial_rows 60
+  # Rows open on their detail at once: opening one more closes the first.
+  @max_details 50
 
   @messages %{
     "search" => "Search",
@@ -49,7 +51,8 @@ defmodule Masu.Grid do
     "loading" => "Loading",
     "people" => "Also here",
     "follow" => "Follow {label}",
-    "view_dropped" => "Part of this view no longer applies: {label}"
+    "view_dropped" => "Part of this view no longer applies: {label}",
+    "detail" => "Details"
   }
 
   @impl true
@@ -72,7 +75,10 @@ defmodule Masu.Grid do
        view_params: %{},
        uri: nil,
        notice: nil,
-       saved_views: []
+       saved_views: [],
+       initial_nodes: nil,
+       open_details: [],
+       detail_rows: []
      )}
   end
 
@@ -192,7 +198,8 @@ defmodule Masu.Grid do
           into: socket.assigns.saved_by,
           do: {Value.to_wire(row_id.(row)), name}
 
-    assign(socket,
+    socket
+    |> assign(
       saved_by: saved_by,
       source: source,
       total: Source.count(source),
@@ -201,6 +208,7 @@ defmodule Masu.Grid do
       changed: changed,
       changed_by: changed_by
     )
+    |> refresh_details()
   end
 
   # A change from a grid's edit says who saved it; the source does not need it.
@@ -222,14 +230,31 @@ defmodule Masu.Grid do
     default = %View{query: query, layout: Layout.new(all)}
     socket = assign(socket, all_columns: all, default_view: default)
     {view, dropped, uri} = first_view(socket.assigns, all, default)
+    expanded = MapSet.new(socket.assigns.expanded || [], &Value.to_wire/1)
+    view = %{view | query: %{view.query | expanded: expanded}}
     source = Source.prepare(source, view.query, all)
 
     socket
     |> assign(input: input, source: source, uri: uri, notice: notice(dropped, 1))
     |> put_view(view)
     |> assign(total: Source.count(source))
-    |> assign(initial: Source.rows(source, 0, @initial_rows))
+    |> put_initial()
     |> list_views()
+  end
+
+  # The first rows, which the server renders and the browser starts with
+  # (in a tree, with their places).
+  defp put_initial(%{assigns: %{source: source}} = socket) do
+    case Source.nodes(source, 0, @initial_rows) do
+      nil ->
+        assign(socket, initial: Source.rows(source, 0, @initial_rows), initial_nodes: nil)
+
+      nodes ->
+        assign(socket,
+          initial: Enum.map(nodes, &elem(&1, 0)),
+          initial_nodes: Enum.map(nodes, &elem(&1, 1))
+        )
+    end
   end
 
   defp first_view(assigns, all, default) do
@@ -267,6 +292,7 @@ defmodule Masu.Grid do
       initial: nil,
       changed: []
     )
+    |> refresh_details()
   end
 
   # The columns again (the LiveView rendered the grid again): the person's
@@ -295,7 +321,8 @@ defmodule Masu.Grid do
   # A whole view at once (a saved view, the grid's own, or the URL's):
   # its rows from the first.
   defp apply_view(socket, %View{} = view, dropped, opts \\ []) do
-    %{source: source, all_columns: all, revision: revision} = socket.assigns
+    %{source: source, all_columns: all, revision: revision, query: current} = socket.assigns
+    view = %{view | query: %{view.query | expanded: current.expanded}}
     source = Source.prepare(source, view.query, all)
 
     socket
@@ -303,11 +330,12 @@ defmodule Masu.Grid do
       source: source,
       total: Source.count(source),
       revision: revision + 1,
-      initial: Source.rows(source, 0, @initial_rows),
       changed: [],
       notice: notice(dropped, revision + 1)
     )
+    |> put_initial()
     |> put_view(view)
+    |> refresh_details()
     |> view_changed(opts)
   end
 
@@ -343,8 +371,15 @@ defmodule Masu.Grid do
 
   defp views_key(assigns), do: assigns.views_key || assigns.id
 
-  defp source_opts(assigns),
-    do: [repo: assigns.repo, repo_opts: assigns.repo_opts, grid: assigns.id]
+  defp source_opts(assigns) do
+    [
+      repo: assigns.repo,
+      repo_opts: assigns.repo_opts,
+      grid: assigns.id,
+      tree: assigns.tree,
+      row_id: row_id(assigns)
+    ]
+  end
 
   # A column that the source cannot sort or filter by does neither. A
   # column is editable when the grid edits, and it names a field.
@@ -416,13 +451,15 @@ defmodule Masu.Grid do
         broadcast(socket.assigns.live, saved, socket.assigns.user)
         if is_function(socket.assigns.on_save, 1), do: socket.assigns.on_save.(saved)
 
-        assign(socket,
+        socket
+        |> assign(
           source: source,
           total: Source.count(source),
           revision: revision + 1,
           initial: nil,
           changed: []
         )
+        |> refresh_details()
       end
 
     {:reply,
@@ -462,6 +499,17 @@ defmodule Masu.Grid do
 
     case Query.from_wire(params, columns) do
       {:ok, query} ->
+        # The rows the person opened stay open; those they closed in a
+        # filter's tree open again with a new filter.
+        current = socket.assigns.query
+        same_filter? = query.filters == current.filters and query.search == current.search
+
+        query = %{
+          query
+          | expanded: current.expanded,
+            collapsed: if(same_filter?, do: current.collapsed, else: MapSet.new())
+        }
+
         source = Source.prepare(source, query, columns)
 
         socket =
@@ -474,6 +522,8 @@ defmodule Masu.Grid do
             changed: []
           )
 
+        socket = refresh_details(socket)
+
         reply =
           socket
           |> block(0, @first_block)
@@ -484,6 +534,48 @@ defmodule Masu.Grid do
       {:error, reason} ->
         {:reply, %{"error" => reason, "revision" => revision}, socket}
     end
+  end
+
+  # A row of a tree opened or closed (`open`), or every row beside it
+  # that has children (`siblings`, the `*` key). The rows below it move:
+  # the answer has the rows from `from`.
+  def handle_event("masu:toggle", %{"id" => id} = params, socket) do
+    %{source: source, query: query} = socket.assigns
+
+    ids =
+      if params["siblings"] == true, do: Source.siblings(source, id), else: [id]
+
+    open = params["open"] != false
+    filtered? = query.filters != [] or query.search != nil
+
+    query =
+      cond do
+        filtered? and open ->
+          %{query | collapsed: Enum.reduce(ids, query.collapsed, &MapSet.delete(&2, &1))}
+
+        filtered? ->
+          %{query | collapsed: Enum.reduce(ids, query.collapsed, &MapSet.put(&2, &1))}
+
+        open ->
+          %{query | expanded: Enum.reduce(ids, query.expanded, &MapSet.put(&2, &1))}
+
+        true ->
+          %{query | expanded: Enum.reduce(ids, query.expanded, &MapSet.delete(&2, &1))}
+      end
+
+    reprepare(socket, query, params["from"])
+  end
+
+  # A row's detail (the `:detail` slot) opened or closed.
+  def handle_event("masu:detail", %{"id" => id} = params, socket) do
+    open = Enum.reject(socket.assigns.open_details, &(&1 == id))
+
+    open =
+      if params["open"] == false,
+        do: open,
+        else: Enum.take(open ++ [id], -@max_details)
+
+    {:reply, %{}, socket |> assign(open_details: open) |> refresh_details()}
   end
 
   # The person moved, hid, pinned or resized columns. When the columns that
@@ -560,6 +652,47 @@ defmodule Masu.Grid do
     {:reply, %{}, list_views(socket)}
   end
 
+  # The same view with its rows again (a tree's rows opened or closed).
+  defp reprepare(socket, query, from) do
+    %{source: source, all_columns: all, revision: revision} = socket.assigns
+    source = Source.prepare(source, query, all)
+
+    socket =
+      socket
+      |> assign(
+        query: query,
+        source: source,
+        total: Source.count(source),
+        revision: revision + 1,
+        initial: nil,
+        changed: []
+      )
+      |> refresh_details()
+
+    from = if is_integer(from), do: max(from, 0), else: 0
+    {:reply, block(socket, from, @first_block), socket}
+  end
+
+  # The rows of the open details, read again, with their places in the
+  # person's order (nil: their filters leave the row out).
+  defp refresh_details(%{assigns: %{detail: []}} = socket), do: socket
+
+  defp refresh_details(%{assigns: %{open_details: []}} = socket),
+    do: assign(socket, detail_rows: [])
+
+  defp refresh_details(socket) do
+    %{source: source, open_details: open} = socket.assigns
+    row_id = row_id(socket.assigns)
+    rows = source |> Source.fetch(open, row_id) |> Map.new(&{Value.to_wire(row_id.(&1)), &1})
+
+    detail_rows =
+      for id <- open, row = rows[id], index = Source.locate(source, id, row_id), index != nil do
+        {id, row, index}
+      end
+
+    assign(socket, detail_rows: detail_rows)
+  end
+
   defp apply_params(socket, params) do
     %{all_columns: all, default_view: default} = socket.assigns
     {view, dropped} = View.from_params(params, all, default)
@@ -592,23 +725,33 @@ defmodule Masu.Grid do
 
   defp block(socket, from, count) do
     %{source: source, total: total, revision: revision} = socket.assigns
-    rows = if count == 0, do: [], else: Source.rows(source, from, count)
 
-    %{
-      "from" => from,
-      "rows" => encode_rows(rows, socket.assigns),
-      "total" => total,
-      "revision" => revision
-    }
+    rows =
+      cond do
+        count == 0 -> []
+        nodes = Source.nodes(source, from, count) -> encode_rows(nodes, socket.assigns)
+        true -> source |> Source.rows(from, count) |> encode_rows(socket.assigns)
+      end
+
+    %{"from" => from, "rows" => rows, "total" => total, "revision" => revision}
   end
 
+  # A row as the browser gets it: its id, its cells, then its read-only
+  # cells (`locks?/1`), then its place in the tree (Masu.Tree).
   defp encode_rows(rows, assigns) do
     row_id = row_id(assigns)
     locks? = locks?(assigns)
 
-    Enum.map(rows, fn row ->
+    Enum.map(rows, fn row_or_node ->
+      {row, info} =
+        case row_or_node do
+          {row, %{level: _} = info} -> {row, info}
+          row -> {row, nil}
+        end
+
       cells = [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)]
-      if locks?, do: cells ++ [locks(assigns, row)], else: cells
+      cells = if locks?, do: cells ++ [locks(assigns, row)], else: cells
+      if info, do: cells ++ [Tree.to_wire(info)], else: cells
     end)
   end
 
@@ -714,17 +857,26 @@ defmodule Masu.Grid do
             autocomplete="off"
           />
         </div>
+      </div>
+      <%!-- The scroll box is the server's, for the details it renders in it;
+           its rows are the browser's (phx-update="ignore"). --%>
+      <div
+        id={"#{@id}-grid"}
+        class="masu-grid"
+        role={if @tree, do: "treegrid", else: "grid"}
+        tabindex="0"
+        aria-label={@label}
+        aria-labelledby={@label_id}
+        aria-rowcount={@total + 1}
+        aria-colcount={length(@columns)}
+        aria-multiselectable="true"
+        style={"--masu-row-height: #{@row_height}px; height: #{@height}"}
+      >
         <div
-          id={"#{@id}-grid"}
-          class="masu-grid"
-          role="grid"
-          tabindex="0"
-          aria-label={@label}
-          aria-labelledby={@label_id}
-          aria-rowcount={@total + 1}
-          aria-colcount={length(@columns)}
-          aria-multiselectable="true"
-          style={"--masu-cols: #{@cols}; --masu-row-height: #{@row_height}px; height: #{@height}"}
+          id={"#{@id}-content"}
+          class="masu-content"
+          phx-update="ignore"
+          style={"--masu-cols: #{@cols}"}
         >
           <div class="masu-head" role="rowgroup">
             <div class="masu-row masu-header" role="row" aria-rowindex="1">
@@ -770,7 +922,20 @@ defmodule Masu.Grid do
             <% end %>
           </div>
         </div>
-        <div class="masu-status" role="status" aria-live="polite"></div>
+        <div :if={@detail != []} id={"#{@id}-details"} class="masu-details">
+          <div
+            :for={{id, row, _index} <- @detail_rows}
+            id={"#{@id}-detail-#{:erlang.phash2(id)}"}
+            class="masu-detail"
+            role="region"
+            aria-label={@messages["detail"]}
+            data-id={JSON.encode!(id)}
+          >
+            {render_slot(@detail, row)}
+          </div>
+        </div>
+      </div>
+      <div id={"#{@id}-status"} class="masu-status" role="status" aria-live="polite" phx-update="ignore">
       </div>
     </div>
     """
@@ -802,10 +967,17 @@ defmodule Masu.Grid do
       "view" => assigns.view_params,
       "views" => views_config(assigns),
       "notice" => assigns.notice,
-      "initial" =>
-        assigns.initial && %{"from" => 0, "rows" => encode_rows(assigns.initial, assigns)}
+      "tree" => assigns.tree != nil,
+      "detail" => assigns.detail != [],
+      "details" => for({id, _row, index} <- assigns.detail_rows, do: [id, index]),
+      "initial" => assigns.initial && %{"from" => 0, "rows" => encode_initial(assigns)}
     })
   end
+
+  defp encode_initial(%{initial_nodes: nil} = assigns), do: encode_rows(assigns.initial, assigns)
+
+  defp encode_initial(assigns),
+    do: assigns.initial |> Enum.zip(assigns.initial_nodes) |> encode_rows(assigns)
 
   defp column_config(%Column{} = column) do
     %{

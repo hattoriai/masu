@@ -97,6 +97,12 @@ export interface Config {
   views: SavedView[] | null;
   /** The parts of a view that no longer apply: [an id, the columns' keys]. */
   notice: [number, string] | null;
+  /** The rows are a tree (Masu.Tree): each ends with its place in it. */
+  tree: boolean;
+  /** The rows open on a detail (the `:detail` slot). */
+  detail: boolean;
+  /** The open details: [row id, its index in the person's order]. */
+  details: [unknown, number][];
 }
 
 export interface BlockReply {

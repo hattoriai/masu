@@ -100,7 +100,7 @@ test.describe("a grid of a hundred thousand rows", () => {
     await page.mouse.down();
     await page.mouse.move(box.x + 104, box.y + box.height / 2, { steps: 4 });
     await page.mouse.up();
-    const cols = () => grid(page, "customers").evaluate((el) => el.style.getPropertyValue("--masu-cols").split(" "));
+    const cols = () => page.locator("#customers-content").evaluate((el) => (el as HTMLElement).style.getPropertyValue("--masu-cols").split(" "));
     expect((await cols())[1]).toBe("290px");
 
     await resizer.dblclick();
@@ -627,5 +627,116 @@ test.describe("layout and views", () => {
     await alan.getByRole("button", { name: "The grid's own view" }).click();
     await expect.poll(() => headers(alan)).toContain("City");
     await alan.context().close();
+  });
+});
+
+test.describe("trees", () => {
+  const row = (page: import("@playwright/test").Page, index: number) => page.locator(`#files .masu-body .masu-row[aria-rowindex="${index + 2}"]`);
+
+  test("→ opens a row, ← closes it or goes to its parent, and * opens a level", async ({ page }) => {
+    await openPage(page, "/tree");
+    await expect(page.locator("#files-grid")).toHaveAttribute("role", "treegrid");
+    await expect(page.locator("#files-grid")).toHaveAttribute("aria-rowcount", "201");
+    await expect(row(page, 0)).toHaveAttribute("aria-level", "1");
+    await expect(row(page, 0)).toHaveAttribute("aria-expanded", "false");
+    await expect(row(page, 0)).toHaveAttribute("aria-setsize", "200");
+
+    await page.locator("#files-r0-c0").click();
+    await page.keyboard.press("ArrowRight");
+    await expect(row(page, 0)).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#files-r1-c0")).toHaveText("Part 1");
+    await expect(row(page, 1)).toHaveAttribute("aria-level", "2");
+
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#files-r2-c0")).toHaveText("File 1.txt");
+    await expect(row(page, 2)).not.toHaveAttribute("aria-expanded");
+
+    // ← on a file goes to its folder, then closes it.
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator("#files-grid")).toHaveAttribute("aria-activedescendant", "files-r1-c0");
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator("#files-r2-c0")).toHaveText("Part 2");
+
+    // The arrow closes the project; * opens every project.
+    await page.locator("#files-r0-c0 .masu-twisty").click();
+    await expect(page.locator("#files-grid")).toHaveAttribute("aria-rowcount", "201");
+    await page.keyboard.press("*");
+    await expect(page.locator("#files-grid")).toHaveAttribute("aria-rowcount", "2201");
+    await expect(page.locator("#files-r11-c0")).toHaveText("Project 2");
+  });
+
+  test("a search keeps the rows that match and their folders, and a deep tree scrolls", async ({ page }) => {
+    await openPage(page, "/tree");
+    await page.locator(".masu-search").fill("Part 10");
+    await settled(page, "files");
+    await expect(page.locator("#files-grid")).toHaveAttribute("aria-rowcount", "401");
+    await expect(page.locator("#files-r0-c0")).toHaveText("Project 1");
+    await expect(page.locator("#files-r1-c0")).toHaveText("Part 10");
+    // The project is open on what matches; the part has none of its files.
+    await expect(row(page, 0)).toHaveAttribute("aria-expanded", "true");
+    await expect(row(page, 1)).not.toHaveAttribute("aria-expanded");
+
+    await page.locator(".masu-search").fill("");
+    await expect(page.locator("#files-grid")).toHaveAttribute("aria-rowcount", "201");
+    await page.locator("#files-r0-c0").click();
+    await page.keyboard.press("Shift+*");
+    await expect(page.locator("#files-grid")).toHaveAttribute("aria-rowcount", "2201");
+    await page.keyboard.press("Control+End");
+    await expect(page.locator("#files-r2199-c0")).toHaveText("Part 10");
+  });
+});
+
+test.describe("details", () => {
+  test("Alt+→ opens a row's detail under it, Alt+↓ goes into it, Escape comes back", async ({ page }) => {
+    await openPage(page, "/details");
+    const below = page.locator("#orders-r2-c0");
+    const before = (await below.boundingBox())!.y;
+
+    await page.locator("#orders-r1-c1").click();
+    await page.keyboard.press("Alt+ArrowRight");
+    const detail = page.locator("#orders .masu-detail");
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText("Alan Matsumoto ordered 5 lines.");
+    await expect(page.locator("#orders > .masu-status")).toHaveText("Details shown");
+
+    // The rows under it move down by its height.
+    const box = (await detail.boundingBox())!;
+    await expect.poll(async () => (await below.boundingBox())!.y).toBeGreaterThan(before + box.height - 2);
+    expect(Math.abs(box.y - (before))).toBeLessThan(2);
+
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect(page.locator("#lines-2-grid")).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#lines-2-grid")).toHaveAttribute("aria-activedescendant", "lines-2-r2-c0");
+    // The outer grid did not move.
+    await expect(page.locator("#orders-grid")).toHaveAttribute("aria-activedescendant", "orders-r1-c1");
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#orders-grid")).toBeFocused();
+    await page.keyboard.press("Alt+ArrowLeft");
+    await expect(detail).toHaveCount(0);
+    await expect.poll(async () => (await below.boundingBox())!.y).toBe(before);
+  });
+
+  test("a detail stays under its row as the grid scrolls and sorts", async ({ page }) => {
+    await openPage(page, "/details");
+    await page.locator("#orders-r0-c0 .masu-detail-toggle").click();
+    const detail = page.locator("#orders .masu-detail");
+    await expect(detail).toContainText("Katherine Hamilton ordered");
+
+    await header(page, "orders", "number").click();
+    await header(page, "orders", "number").click();
+    await settled(page, "orders");
+    // SO-10001 is last now: the detail goes with it.
+    await page.locator("#orders-r0-c0").click();
+    await grid(page, "orders").evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(page.locator("#orders-r1999-c0")).toContainText("SO-10001");
+    await expect(detail).toBeInViewport();
+    const rowBox = (await page.locator("#orders-r1999-c0").boundingBox())!;
+    const box = (await detail.boundingBox())!;
+    expect(Math.abs(box.y - (rowBox.y + rowBox.height))).toBeLessThan(3);
   });
 });

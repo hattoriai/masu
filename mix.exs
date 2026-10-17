@@ -110,6 +110,7 @@ defmodule Masu.MixProject do
         "guides/live.md",
         "guides/collaboration.md",
         "guides/views.md",
+        "guides/trees.md",
         "guides/keyboard.md",
         "guides/testing.md",
         "guides/theming.md",
@@ -127,6 +128,7 @@ defmodule Masu.MixProject do
           "guides/live.md",
           "guides/collaboration.md",
           "guides/views.md",
+          "guides/trees.md",
           "guides/keyboard.md",
           "guides/testing.md",
           "guides/theming.md"
@@ -137,7 +139,7 @@ defmodule Masu.MixProject do
         ]
       ],
       groups_for_modules: [
-        Grid: [Masu, Masu.Components, Masu.Grid, Masu.Column, Masu.Live, Masu.Presence],
+        Grid: [Masu, Masu.Components, Masu.Grid, Masu.Column, Masu.Live, Masu.Presence, Masu.Tree],
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],
         Sources: [Masu.Source, Masu.Source.List, Masu.Source.Ecto],

@@ -84,7 +84,29 @@ defmodule Masu.Source do
   """
   @callback locate(state(), id :: term(), (term() -> term())) :: non_neg_integer() | nil
 
-  @optional_callbacks supports?: 2, change: 3, values: 5, fetch: 3, locate: 3
+  @doc """
+  For a tree (`Masu.Tree`): the rows from `offset`, as `rows/3` gives
+  them, each with where it is in the tree (`t:Masu.Tree.node_info/0`), or
+  `nil` when the source is not a tree. The rows of a tree are the roots
+  and the children of the rows that are open (`Masu.Query`'s `expanded`),
+  in order.
+  """
+  @callback nodes(state(), offset :: non_neg_integer(), limit :: pos_integer()) ::
+              [{term(), Masu.Tree.node_info()}] | nil
+
+  @doc """
+  For a tree: the ids of the siblings of a row (it among them) that have
+  children: the rows that open with the row's level (`*`).
+  """
+  @callback siblings(state(), id :: term()) :: [term()]
+
+  @optional_callbacks supports?: 2,
+                      change: 3,
+                      values: 5,
+                      fetch: 3,
+                      locate: 3,
+                      nodes: 3,
+                      siblings: 2
 
   @type t :: %__MODULE__{module: module(), state: state()}
 
@@ -162,6 +184,20 @@ defmodule Masu.Source do
   @spec locate(t(), term(), (term() -> term())) :: non_neg_integer() | nil
   def locate(%__MODULE__{module: module, state: state}, id, row_id) do
     if function_exported?(module, :locate, 3), do: module.locate(state, id, row_id)
+  end
+
+  @doc false
+  # The rows from `offset` with their places in the tree, or nil: the
+  # source is not a tree.
+  @spec nodes(t(), non_neg_integer(), pos_integer()) :: [{term(), map()}] | nil
+  def nodes(%__MODULE__{module: module, state: state}, offset, limit) do
+    if function_exported?(module, :nodes, 3), do: module.nodes(state, offset, limit)
+  end
+
+  @doc false
+  @spec siblings(t(), term()) :: [term()]
+  def siblings(%__MODULE__{module: module, state: state}, id) do
+    if function_exported?(module, :siblings, 2), do: module.siblings(state, id), else: []
   end
 
   @doc false

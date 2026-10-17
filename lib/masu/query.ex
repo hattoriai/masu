@@ -8,6 +8,11 @@ defmodule Masu.Query do
   the column's type. `search` is text to find in the columns that are
   searchable, or `nil`.
 
+  In a tree (`Masu.Tree`), `expanded` holds the ids of the rows the
+  person opened, and `collapsed` those they closed while a filter or a
+  search shows every row it keeps open. Neither goes to the browser with
+  the query, nor into a view's params.
+
   A grid starts with the query of its `sort` and `filters` attributes,
   and changes it as the person sorts and searches. `Masu.Test` changes it
   the same way.
@@ -18,10 +23,12 @@ defmodule Masu.Query do
   @type t :: %__MODULE__{
           sorts: [Sort.t()],
           filters: [Filter.t()],
-          search: String.t() | nil
+          search: String.t() | nil,
+          expanded: MapSet.t(),
+          collapsed: MapSet.t()
         }
 
-  defstruct sorts: [], filters: [], search: nil
+  defstruct sorts: [], filters: [], search: nil, expanded: MapSet.new(), collapsed: MapSet.new()
 
   @doc """
   Makes a query from what the browser sends, and checks it against the

@@ -185,6 +185,60 @@ defmodule Masu.Test do
   def search(view, id, text), do: query(view, id, %{"search" => text})
 
   @doc """
+  The rows of a tree (`Masu.Tree`) in the grid `id`, in order, as maps
+  of `:id`, `:level` (0 for a root), `:children` (whether it has any) and
+  `:expanded`. Options as `rows/3`.
+  """
+  @spec nodes(struct(), String.t(), keyword()) :: [map()]
+  def nodes(view, id, opts \\ []) do
+    view
+    |> event(id, "masu:rows", %{
+      "from" => Keyword.get(opts, :from, 0),
+      "count" => Keyword.get(opts, :count, 100)
+    })
+    |> Map.fetch!("rows")
+    |> Enum.map(fn [row_id | rest] ->
+      [level, children, expanded, _position, _size] = List.last(rest)
+      %{id: row_id, level: level, children: children, expanded: expanded}
+    end)
+  end
+
+  @doc """
+  Opens the row `row_id` of a tree in the grid `id`, as a click on its
+  arrow (or →) does: its children show under it. Returns the view.
+  """
+  @spec expand(struct(), String.t(), term()) :: struct()
+  def expand(view, id, row_id), do: toggle(view, id, %{"id" => row_id, "open" => true})
+
+  @doc "Closes the row `row_id` of a tree in the grid `id`. Returns the view."
+  @spec collapse(struct(), String.t(), term()) :: struct()
+  def collapse(view, id, row_id), do: toggle(view, id, %{"id" => row_id, "open" => false})
+
+  @doc """
+  Opens every row beside `row_id` that has children, as `*` does.
+  Returns the view.
+  """
+  @spec expand_siblings(struct(), String.t(), term()) :: struct()
+  def expand_siblings(view, id, row_id),
+    do: toggle(view, id, %{"id" => row_id, "open" => true, "siblings" => true})
+
+  defp toggle(view, id, payload) do
+    event(view, id, "masu:toggle", payload)
+    view
+  end
+
+  @doc """
+  Opens (or, with `false`, closes) the detail of the row `row_id` in the
+  grid `id`: the grid renders its `:detail` slot for the row, which
+  `Phoenix.LiveViewTest.render/1` then has. Returns the view.
+  """
+  @spec detail(struct(), String.t(), term(), boolean()) :: struct()
+  def detail(view, id, row_id, open \\ true) do
+    event(view, id, "masu:detail", %{"id" => row_id, "open" => open})
+    view
+  end
+
+  @doc """
   The view of the grid `id`, as its params (see `Masu.View`): what differs
   from the grid's own view. `%{}` is the grid's own view.
   """
