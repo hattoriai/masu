@@ -7,9 +7,13 @@ defmodule MasuTest.ExportLive do
   on_mount(Masu.Live)
 
   @impl true
-  def mount(_params, _session, socket), do: {:ok, assign(socket, csv: nil)}
+  def mount(_params, _session, socket), do: {:ok, assign(socket, csv: nil, admin: true)}
 
+  # Export is for admins: the grid's `export` follows.
   @impl true
+  def handle_event("admin", _params, socket),
+    do: {:noreply, assign(socket, admin: not socket.assigns.admin)}
+
   def handle_event("csv", _params, socket) do
     csv = "people" |> Masu.Live.export() |> Masu.Export.stream() |> Enum.join()
     {:noreply, assign(socket, csv: csv)}
@@ -19,8 +23,9 @@ defmodule MasuTest.ExportLive do
   def render(assigns) do
     ~H"""
     <button id="csv" phx-click="csv">CSV</button>
+    <button id="admin" phx-click="admin">Admin</button>
     <pre :if={@csv} id="out">{@csv}</pre>
-    <.data_grid id="people" rows={rows()} export sort={[:id]}>
+    <.data_grid id="people" rows={rows()} export={@admin} sort={[:id]}>
       <:col field={:id} type={:integer} label="ID" />
       <:col :let={p} field={:name}><b>{p.name}</b></:col>
       <:col field={:balance} type={:decimal} />

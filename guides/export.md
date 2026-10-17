@@ -11,6 +11,19 @@ file has every row of the person's query (their order, filters and
 search), with the columns that show, in their order, and their labels
 as its first row. `export={[:csv]}` offers CSV alone.
 
+A grid exports only when it says so: without `export` it has no menu,
+and the server refuses an export it is asked for. It is an assign like
+any other, so it can be the person's to have, and change as they use
+the page:
+
+```heex
+<.data_grid id="orders" source={Order} repo={Repo} export={@current_scope.user.admin?}>
+```
+
+When it turns `false` the menu goes, and the grid gives no link, to an
+event a browser could still send. A grid that never exports needs no
+route.
+
 The file downloads from a route of your router, which `masu_exports`
 mounts:
 

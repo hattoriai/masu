@@ -131,7 +131,7 @@ defmodule Masu.Components do
   attr :export, :any,
     default: false,
     doc:
-      "an Export menu: `true` for CSV and XLSX, or a list of `:csv` and `:xlsx`; see `Masu.Export`"
+      "an Export menu: `true` for CSV and XLSX, or a list of `:csv` and `:xlsx`; `false` (the default) has none, and the server exports nothing; see `Masu.Export`"
 
   attr :group_by, :any,
     default: [],

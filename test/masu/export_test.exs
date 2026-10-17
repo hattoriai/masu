@@ -46,6 +46,34 @@ defmodule Masu.ExportTest do
     assert conn.resp_body =~ "used, or has expired"
   end
 
+  defp formats(view) do
+    [json] =
+      view
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#people")
+      |> LazyHTML.attribute("data-masu")
+
+    JSON.decode!(json)["export"]
+  end
+
+  test "export is the grid's to give: a grid without it makes no link" do
+    view = open()
+    assert formats(view) == ["csv", "xlsx"]
+
+    # No longer an admin: the menu goes, and the server refuses the event
+    # a browser could still send.
+    view |> element("#admin") |> render_click()
+    assert formats(view) == []
+
+    assert_raise ExUnit.AssertionError, ~r/did not export: format/, fn ->
+      export_url(view, "people", :csv)
+    end
+
+    view |> element("#admin") |> render_click()
+    assert {_name, "ID,Name" <> _rest} = export(view, "people", :csv)
+  end
+
   test "a link of no export gives nothing; a ticket goes with its LiveView" do
     assert get(build_conn(), "/admin/masu/exports/nonsense").status == 404
 

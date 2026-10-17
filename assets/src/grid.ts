@@ -1699,6 +1699,13 @@ export class Grid {
       toolbar.appendChild(actions);
     }
 
+    // A menu the grid no longer has (an `export` that turned false: the
+    // person is no longer an admin, say) goes, with its panel.
+    if (!this.config.columnsMenu && this.columnsButton) this.columnsButton = this.dropButton("columns", this.columnsButton);
+    if (this.config.views === null && this.viewsButton) this.viewsButton = this.dropButton("views", this.viewsButton);
+    if ((this.config.export ?? []).length === 0 && this.exportButton)
+      this.exportButton = this.dropButton("export", this.exportButton);
+
     if (this.config.columnsMenu && !this.columnsButton) {
       this.columnsButton = toolbarButton(this.message("columns_menu", {}), "masu-columns-button", COLUMNS_ICON);
       this.columnsButton.addEventListener("click", () => this.togglePanel("columns"));
@@ -1796,6 +1803,12 @@ export class Grid {
       this.render();
       this.announceCount();
     });
+  }
+
+  private dropButton(kind: "columns" | "views" | "export", button: HTMLButtonElement): null {
+    if (this.panel?.kind === kind) this.closePanel(false);
+    button.remove();
+    return null;
   }
 
   private closePanel(focus: boolean): void {
