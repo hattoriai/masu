@@ -1010,12 +1010,12 @@ defmodule Masu.Grid do
           {[], socket}
 
         nodes = Source.nodes(source, from, count) ->
-          {encode_rows(nodes, socket.assigns), socket}
+          {encode_rows(nodes, socket.assigns, from), socket}
 
         true ->
           {rows, known} = Source.window(source, from, count)
           socket = if known, do: put_count(socket, {known, true}), else: socket
-          {encode_rows(rows, socket.assigns), socket}
+          {encode_rows(rows, socket.assigns, from), socket}
       end
 
     socket = learn(socket, from, length(rows), count)
@@ -1088,29 +1088,33 @@ defmodule Masu.Grid do
   defp first_rows(assigns), do: {0, assigns.block_size}
 
   # A row as the browser gets it: its id, its cells, then its read-only
-  # cells (`locks?/1`), then its place in the tree (Masu.Tree).
-  defp encode_rows(rows, assigns) do
-    row_id = row_id(assigns)
+  # cells (`locks?/1`), then its place in the tree (Masu.Tree). `from` is
+  # the place of the first row: a row's id with `row_id={:position}`, or
+  # of a row without one in a grid that needs none.
+  defp encode_rows(rows, assigns, from \\ 0) do
+    id_of = id_of(assigns)
     locks? = locks?(assigns)
 
-    Enum.map(rows, fn
+    rows
+    |> Enum.with_index(from)
+    |> Enum.map(fn
       # A group's row: its totals in their columns, read-only, then its
       # place and [key, value, count] (Masu.Group).
-      {%Group{} = group, info} ->
+      {{%Group{} = group, info}, _index} ->
         cells =
           [Group.id(group) | Enum.map(assigns.columns, &Value.to_wire(group.aggregates[&1.key]))]
 
         cells = if locks?, do: cells ++ [true], else: cells
         cells ++ [Tree.to_wire(info), [group.key, Value.to_wire(group.value), group.count]]
 
-      row_or_node ->
+      {row_or_node, index} ->
         {row, info} =
           case row_or_node do
             {row, %{level: _} = info} -> {row, info}
             row -> {row, nil}
           end
 
-        cells = [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)]
+        cells = [id_of.(row, index) | cells(assigns.columns, row)]
         cells = if locks?, do: cells ++ [locks(assigns, row)], else: cells
         if info, do: cells ++ [Tree.to_wire(info)], else: cells
     end)
@@ -1248,7 +1252,57 @@ defmodule Masu.Grid do
     :ok
   end
 
-  defp row_id(assigns), do: assigns.row_id || (&default_row_id/1)
+  defp row_id(%{row_id: fun}) when is_function(fun, 1), do: fun
+  defp row_id(_assigns), do: &default_row_id/1
+
+  # A row's id as the browser has it. With `row_id={:position}`, its place
+  # in the query. A row with no id is given its place in a grid that needs
+  # none (a table that shows rows); a grid that needs ids says which.
+  defp id_of(%{row_id: :position}), do: fn _row, index -> index end
+
+  defp id_of(assigns) do
+    row_id = row_id(assigns)
+
+    features = stable_id_features(assigns)
+
+    fn row, index ->
+      case Value.to_wire(row_id.(row)) do
+        nil when features == [] -> index
+        nil -> raise ArgumentError, missing_id(assigns.id, features)
+        id -> id
+      end
+    end
+  end
+
+  @doc false
+  # What a grid does that needs its rows' ids to stay the same from one
+  # query to the next: the attributes that turn it on.
+  @spec stable_id_features(map()) :: [String.t()]
+  def stable_id_features(assigns) do
+    [
+      edit: assigns[:changeset] != nil or assigns[:update] != nil,
+      create: assigns[:create] != nil or assigns[:struct] != nil,
+      delete: assigns[:delete] != nil or assigns[:deletable] not in [nil, false],
+      selectable: assigns[:selectable] == true,
+      live: assigns[:live] != nil,
+      presence: assigns[:presence] != nil,
+      detail: assigns[:detail] not in [nil, []],
+      tree: assigns[:tree] != nil
+    ]
+    |> Enum.filter(&elem(&1, 1))
+    |> Enum.map(fn
+      {:edit, _on} -> "changeset or update"
+      {:create, _on} -> "create or struct"
+      {:delete, _on} -> "delete or deletable"
+      {:detail, _on} -> ":detail"
+      {key, _on} -> Atom.to_string(key)
+    end)
+  end
+
+  defp missing_id(grid, features) do
+    "a row of the grid #{grid} has no id, and its #{Enum.join(features, ", ")} needs one: " <>
+      "give its rows an `id`, or give the grid `row_id`, a function of a row that gives its id"
+  end
 
   defp cells(columns, row) do
     Enum.map(columns, fn
@@ -1553,10 +1607,14 @@ defmodule Masu.Grid do
     })
   end
 
-  defp encode_initial(%{initial_nodes: nil} = assigns), do: encode_rows(assigns.initial, assigns)
+  defp encode_initial(%{initial_nodes: nil} = assigns),
+    do: encode_rows(assigns.initial, assigns, assigns.initial_from)
 
   defp encode_initial(assigns),
-    do: assigns.initial |> Enum.zip(assigns.initial_nodes) |> encode_rows(assigns)
+    do:
+      assigns.initial
+      |> Enum.zip(assigns.initial_nodes)
+      |> encode_rows(assigns, assigns.initial_from)
 
   defp column_config(%Column{} = column) do
     %{

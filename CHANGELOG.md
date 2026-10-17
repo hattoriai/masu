@@ -74,6 +74,12 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_select`. An Ecto source reads the next block by key, not by
   `OFFSET`. `Masu.Test.export/4`, `export_url/3`, `select/4`, `select_all/3` and
   `selection/2`.
+- Row ids: `row_id={:position}` knows rows by their place in the query,
+  for a read-only grid of rows with no id; a grid that needs no ids does
+  so for a row without one. A grid whose features need ids that stay
+  (editing, new and deleted rows, selection, live rows, presence,
+  details, trees) refuses `:position`, and a row without an id, saying
+  which.
 - Reads: `block_size` (100) is the rows of one read as the person
   scrolls, and `max_block` (500) the most of one read; a page
   (`paging={:pages}`) is one read, up to `max_block`, and the next page is
