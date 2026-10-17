@@ -62,6 +62,18 @@ A query that the grid refuses (a filter on a column that does not filter,
 a value that is not of the column's type) fails the test with the
 grid's reason.
 
+## Layout and views
+
+* `layout(view, id, changes)`: moves, hides, pins and resizes columns,
+  as the columns menu and the headers do: `order: keys`, `hidden: keys`,
+  `pinned: %{key => :start | :end}`, `widths: %{key => pixels}`.
+* `view(view, id)`: the grid's view, as its params (`%{}` is the grid's
+  own view; see `Masu.View`).
+* `apply_view(view, id, params)`: applies a view, as a link or a saved
+  view does; gives the keys of the parts that no longer apply.
+
+`columns/2` and `rows/3` read the columns that show, in their order.
+
 ## What these tests do not cover
 
 `Masu.Test` does not run the browser: the drawing of the rows, the

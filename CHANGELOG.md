@@ -62,6 +62,16 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Masu.Test.place/3`).
   Each person's selected range shows to the others in their color. A
   refused edit names who changed the cell: "Changed by Ada meanwhile."
+- Layout and views: `pinned={:start | :end}` and `hidden` on a `:col`;
+  columns that move by dragging their header (or Alt+Shift+←/→), and a
+  columns menu (`columns_menu`) to show, hide, pin and move them. A
+  person's view (`Masu.View`: order, filters, search and `Masu.Layout`)
+  goes into the URL with `url`, and into a store with `views`
+  (`Masu.Views`: `Masu.Views.Ecto` with `mix masu.gen.views`, and
+  `Masu.Views.Memory`): their last view comes back, and a views menu
+  saves named views, shared or not. A view's parts that no longer apply
+  are dropped, and the grid says so. `Masu.Test.view/2`,
+  `apply_view/3` and `layout/3`.
 - Live rows: `live={{pubsub, topic}}`, the `Masu.Live` hook, and
   `Masu.Live.broadcast_upsert/3` and `broadcast_delete/3`. A grid takes
   the changes of its topic into the person's query, a batch at a time;

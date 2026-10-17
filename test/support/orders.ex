@@ -78,6 +78,15 @@ defmodule MasuTest.Orders do
       )
       """)
 
+      # The table of Masu.Views.Ecto, as `mix masu.gen.views` makes it.
+      Repo.query!("""
+      CREATE TABLE masu_views (
+        id INTEGER PRIMARY KEY, grid TEXT NOT NULL, owner TEXT NOT NULL, name TEXT,
+        shared BOOLEAN NOT NULL DEFAULT FALSE, params TEXT NOT NULL,
+        inserted_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      )
+      """)
+
       for {number, customer, status, total, day} <- [
             {"A-1", "Acme", "paid", "10.00", 1},
             {"A-2", "Bob's", "late", "250.50", 2},

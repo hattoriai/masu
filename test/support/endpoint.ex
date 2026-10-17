@@ -27,6 +27,7 @@ defmodule MasuTest.Router do
     live("/edit/update", MasuTest.UpdateLive)
     live("/edit/locked", MasuTest.LockedLive)
     live("/presence", MasuTest.PresenceLive)
+    live("/views", MasuTest.ViewsLive)
   end
 end
 

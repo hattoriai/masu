@@ -150,6 +150,7 @@ defmodule MasuDev.Layouts do
           {"Small", "/small"},
           {"Live", "/live"},
           {"Together", "/together"},
+          {"Views", "/views"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -262,6 +263,61 @@ defmodule MasuDev.CustomersLive do
       <:col field={:active} type={:boolean} />
       <:col field={:signed_up} type={:date} label="Signed up" />
       <:col field={:last_seen} type={:datetime} label="Last seen" />
+    </.data_grid>
+    """
+  end
+end
+
+defmodule MasuDev.ViewsLive do
+  @moduledoc """
+  Ten thousand customers in a grid whose view is the person's own: the
+  columns menu shows, hides, pins and moves columns, a drag on a header
+  moves it, the view goes into the URL (a link opens it), and the views
+  menu saves named views (in memory, `Masu.Views.Memory`). Each browser
+  is a person (`?as=Ada`, or "dev").
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  on_mount(Masu.Live)
+
+  @impl true
+  def mount(params, _session, socket) do
+    {:ok,
+     assign(socket,
+       customers: Enum.take(MasuDev.Customers.all(), 10_000),
+       user: %{id: params["as"] || "dev", name: params["as"] || "dev"},
+       locale: params["locale"] || "en-GB"
+     )}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="views-label">Views</h1>
+    <.data_grid
+      id="views"
+      rows={@customers}
+      label_id="views-label"
+      searchable
+      columns_menu
+      url
+      views={Masu.Views.Memory}
+      user={@user}
+      height="34rem"
+      locale={@locale}
+    >
+      <:col field={:id} type={:integer} width={90} label="ID" pinned={:start} />
+      <:col field={:name} width={190} pinned={:start} />
+      <:col field={:email} width={280} hidden />
+      <:col field={:city} />
+      <:col field={:plan} type={:enum} width={130} />
+      <:col field={:seats} type={:integer} />
+      <:col field={:active} type={:boolean} />
+      <:col field={:signed_up} type={:date} label="Signed up" />
+      <:col field={:last_seen} type={:datetime} label="Last seen" />
+      <:col field={:revenue} type={:decimal} pinned={:end} />
     </.data_grid>
     """
   end
@@ -474,6 +530,7 @@ defmodule MasuDev.Router do
     live("/small", MasuDev.SmallLive)
     live("/live", MasuDev.QuotesLive)
     live("/together", MasuDev.TogetherLive)
+    live("/views", MasuDev.ViewsLive)
   end
 end
 
@@ -510,7 +567,12 @@ Task.async(fn ->
 
   {:ok, _pid} =
     Supervisor.start_link(
-      [{Phoenix.PubSub, name: MasuDev.PubSub}, MasuDev.Presence, MasuDev.Endpoint],
+      [
+        {Phoenix.PubSub, name: MasuDev.PubSub},
+        MasuDev.Presence,
+        Masu.Views.Memory,
+        MasuDev.Endpoint
+      ],
       strategy: :one_for_one
     )
 

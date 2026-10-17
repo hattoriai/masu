@@ -14,6 +14,8 @@ import { fromTSV, inputText, placePaste, sendValue, shownValue } from "./parse";
 import { FilterMenu } from "./menu";
 import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
+import { moveKey, pins, scrollFor, visualLeft, type Pins } from "./layout";
+import { ColumnsPanel, ViewsPanel } from "./panels";
 import { nextSorts } from "./sorting";
 import { toTSV } from "./tsv";
 import { sameView } from "./view";
@@ -60,6 +62,8 @@ export class Grid {
   /** The rows on the screen are old: ask for them at once, not after a pause. */
   private urgent = false;
 
+  /** The part of the grid the browser owns (phx-update="ignore"): menus go in it, out of the server's renders. */
+  private uiEl: HTMLElement;
   private gridEl: HTMLElement;
   private head: HTMLElement;
   private headerRow: HTMLElement;
@@ -69,6 +73,19 @@ export class Grid {
   private searchEl: HTMLInputElement | null;
   private chipsEl: HTMLElement;
   private menu: { col: number; menu: FilterMenu } | null = null;
+  /** Where the pinned columns stick. */
+  private pinned: Pins = pins([], []);
+  /** The toolbar's buttons and their menus. */
+  private columnsButton: HTMLButtonElement | null = null;
+  private viewsButton: HTMLButtonElement | null = null;
+  private panel: { kind: "columns"; panel: ColumnsPanel } | { kind: "views"; panel: ViewsPanel } | null = null;
+  /** A block of a revision the grid does not have yet (a layout's answer). */
+  private pendingBlock: BlockReply | null = null;
+  private lastNotice = 0;
+  /** A press on a header: a click sorts, a drag moves the column. */
+  private headerPress: { col: number; x: number; shift: boolean; moved: boolean; target: number | null } | null = null;
+  private dropEl: HTMLElement | null = null;
+  private resizing = false;
 
   private rows = new Map<number, RowElement>();
   private pool: RowElement[] = [];
@@ -124,6 +141,7 @@ export class Grid {
     this.query = this.config.query;
 
     this.gridEl = el.querySelector<HTMLElement>(".masu-grid")!;
+    this.uiEl = el.querySelector<HTMLElement>(".masu-ui") ?? el;
     this.head = this.gridEl.querySelector<HTMLElement>(".masu-head")!;
     this.headerRow = this.head.querySelector<HTMLElement>(".masu-header")!;
     this.body = this.gridEl.querySelector<HTMLElement>(".masu-body")!;
@@ -142,27 +160,50 @@ export class Grid {
     this.renderHeader();
     this.applyWidths();
     this.body.replaceChildren();
+    this.renderToolbar();
     this.listen();
     this.render();
+    this.showNotice();
   }
 
   /** The server rendered the grid again: new rows, columns or options. */
   update(): void {
     this.markFollowed();
     const config = readConfig(this.el);
-    const columnsChanged = JSON.stringify(config.columns) !== JSON.stringify(this.config.columns);
+    const previous = this.config;
+    // The columns that show, in their order: the rows of others are of no use.
+    const keysChanged = keysOf(config.columns) !== keysOf(previous.columns);
+    const columnsChanged = JSON.stringify(withoutWidths(config.columns)) !== JSON.stringify(withoutWidths(previous.columns));
+    const widthsChanged = JSON.stringify(config.columns.map((c) => [c.key, c.width])) !== JSON.stringify(previous.columns.map((c) => [c.key, c.width]));
     this.config = config;
 
-    if (columnsChanged) {
+    if (columnsChanged || (widthsChanged && !this.resizing)) {
+      // Widths the server sends (a view applied) win; else the person's stay.
       const widths = new Map(this.columns.map((column, i) => [column.key, this.widths[i]]));
+      const sent = new Map(previous.columns.map((column) => [column.key, column.width]));
       this.columns = config.columns;
-      this.widths = this.columns.map((column) => widths.get(column.key) ?? column.width);
+      this.widths = this.columns.map((column) =>
+        widthsChanged && sent.get(column.key) !== column.width ? column.width : (widths.get(column.key) ?? column.width),
+      );
       this.makeFormatters();
       this.renderHeader();
       this.applyWidths();
       this.clearRows();
       this.pool = [];
     }
+    if (keysChanged) {
+      this.cache = new BlockCache(this.cache.size, this.cache.maxBlocks);
+      this.stale = null;
+      this.active = { row: this.active.row, col: Math.min(this.active.col, this.columns.length - 1) };
+    }
+    // A view applied by the server (a saved view, the URL) brings its
+    // search; not over a search the person is typing.
+    const search = config.query.search ?? "";
+    if (this.searchEl && !this.searchTimer && search !== (previous.query.search ?? "") && search !== this.searchEl.value.trim()) {
+      this.searchEl.value = search;
+    }
+    this.renderToolbar();
+    this.showNotice();
 
     if (config.revision > this.revision) {
       // New rows from the server (a live change, or new rows of the
@@ -177,10 +218,13 @@ export class Grid {
       this.total = config.total;
       this.query = config.query;
       // The rows of the older revision stay on the screen until the new
-      // ones come, so that the grid does not blink as its rows change.
-      this.stale = this.cache;
-      this.cache = new BlockCache(this.stale.size, this.stale.maxBlocks);
+      // ones come, so that the grid does not blink as its rows change;
+      // not when the columns moved.
+      this.stale = keysChanged ? null : this.cache;
+      this.cache = new BlockCache(this.cache.size, this.cache.maxBlocks);
       if (config.initial) this.cache.store(config.initial.from, config.initial.rows);
+      if (this.pendingBlock?.revision === this.revision) this.cache.store(this.pendingBlock.from, this.pendingBlock.rows);
+      this.pendingBlock = null;
       this.renderHeader();
       this.urgent = true;
     }
@@ -190,6 +234,7 @@ export class Grid {
 
   destroy(): void {
     this.closeMenu(false);
+    this.closePanel(false);
     this.editor?.input.remove();
     this.editor = null;
     for (const cleanup of this.cleanups) cleanup();
@@ -305,6 +350,7 @@ export class Grid {
 
     this.markHeader(selection);
     this.updateActiveDescendant();
+    if (this.editor) this.editor.input.style.insetInlineStart = `${this.colLeft(this.editor.col)}px`;
     this.drawPeople();
     this.reportCursor();
     this.cache.evict(this.cache.blockOf(first));
@@ -334,7 +380,26 @@ export class Grid {
     cell.className = `masu-cell masu-align-${column.align} masu-type-${column.type}`;
     cell.setAttribute("role", "gridcell");
     cell.setAttribute("aria-colindex", String(col + 1));
+    this.pin(cell, col);
     return cell;
+  }
+
+  /** A cell of a pinned column sticks to its edge, at its offset. */
+  private pin(cell: HTMLElement, col: number): void {
+    const pinned = this.columns[col].pinned;
+    if (!pinned) return;
+    cell.classList.add("masu-pinned", `masu-pinned-${pinned}`);
+    // The last pinned to the start and the first pinned to the end draw
+    // the edge.
+    const edge = pinned === "start" ? this.columns[col + 1]?.pinned !== "start" : this.columns[col - 1]?.pinned !== "end";
+    if (edge) cell.classList.add("masu-pinned-edge");
+    if (pinned === "start") cell.style.insetInlineStart = `var(--masu-pin-${col})`;
+    else cell.style.insetInlineEnd = `var(--masu-pin-${col})`;
+  }
+
+  /** Where a column's cells are on the rows, with the scroll: a pinned one sticks. */
+  private colLeft(col: number): number {
+    return visualLeft(col, this.widths, this.pinned, Math.abs(this.gridEl.scrollLeft), this.gridEl.clientWidth);
   }
 
   private fillRow(rowEl: RowElement, index: number, row: Row | null): void {
@@ -429,6 +494,7 @@ export class Grid {
       cell.setAttribute("aria-colindex", String(col + 1));
       cell.dataset.key = column.key;
       cell.dataset.col = String(col);
+      this.pin(cell, col);
 
       const label = document.createElement("span");
       label.className = "masu-label";
@@ -531,7 +597,7 @@ export class Grid {
     this.ensureVisible({ row: this.active.row, col });
     const menu = new FilterMenu(
       {
-        root: this.el,
+        root: this.uiEl,
         column,
         current: this.query.filters.find((filter) => filter.key === column.key),
         messages: this.messages(),
@@ -573,6 +639,13 @@ export class Grid {
   private applyWidths(): void {
     this.gridEl.style.setProperty("--masu-cols", this.widths.map((width) => `${width}px`).join(" "));
     this.gridEl.style.setProperty("--masu-width", `${this.widths.reduce((a, b) => a + b, 0)}px`);
+    this.pinned = pins(
+      this.columns.map((column) => column.pinned ?? null),
+      this.widths,
+    );
+    for (const [col, offset] of [...this.pinned.start, ...this.pinned.end]) {
+      this.gridEl.style.setProperty(`--masu-pin-${col}`, `${offset}px`);
+    }
   }
 
   private makeFormatters(): void {
@@ -675,6 +748,7 @@ export class Grid {
     this.on(document, "mousemove", (event) => this.onMouseMove(event));
     this.on(document, "mouseup", () => {
       this.dragging = false;
+      this.releaseHeader();
     });
     this.on(document, "copy", (event) => this.onCopy(event));
     this.on(document, "paste", (event) => this.onPaste(event));
@@ -682,12 +756,16 @@ export class Grid {
     if (this.searchEl) {
       this.on(this.searchEl, "input", () => {
         if (this.searchTimer) clearTimeout(this.searchTimer);
-        this.searchTimer = setTimeout(() => this.search(this.searchEl!.value), SEARCH_DELAY);
+        this.searchTimer = setTimeout(() => {
+          this.searchTimer = null;
+          this.search(this.searchEl!.value);
+        }, SEARCH_DELAY);
       });
       this.on(this.searchEl, "keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
           if (this.searchTimer) clearTimeout(this.searchTimer);
+          this.searchTimer = null;
           this.search(this.searchEl!.value);
         } else if (event.key === "ArrowDown") {
           event.preventDefault();
@@ -735,6 +813,13 @@ export class Grid {
       return;
     }
 
+    if (event.altKey && event.shiftKey && this.active.row === -1 && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      event.preventDefault();
+      const rtl = getComputedStyle(this.gridEl).direction === "rtl";
+      this.moveColumn(this.active.col, (event.key === "ArrowRight") !== rtl ? 1 : -1);
+      return;
+    }
+
     if (event.altKey && event.key === "ArrowDown" && this.active.row === -1) {
       event.preventDefault();
       this.openMenu(this.active.col);
@@ -779,12 +864,13 @@ export class Grid {
 
     const header = target.closest<HTMLElement>(".masu-hcell");
     if (header) {
+      // A click sorts (on the release); a drag moves the column.
       event.preventDefault();
       this.gridEl.focus({ preventScroll: true });
       const col = Number(header.dataset.col);
       this.active = { row: -1, col };
       this.anchor = null;
-      this.sortBy(col, event.shiftKey);
+      this.headerPress = { col, x: event.clientX, shift: event.shiftKey, moved: false, target: null };
       this.render();
       return;
     }
@@ -804,6 +890,10 @@ export class Grid {
   }
 
   private onMouseMove(event: MouseEvent): void {
+    if (this.headerPress) {
+      this.dragHeader(event);
+      return;
+    }
     if (!this.dragging) return;
     const element = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
     const cell = element && this.gridEl.contains(element) ? this.cellAt(element) : null;
@@ -841,10 +931,13 @@ export class Grid {
     const onMove = (moveEvent: MouseEvent) => {
       this.setWidth(col, startWidth + sign * (moveEvent.clientX - startX));
     };
+    this.resizing = true;
     const onUp = () => {
+      this.resizing = false;
       this.el.classList.remove("masu-resizing");
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      this.reportWidth(col);
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -872,6 +965,219 @@ export class Grid {
     measure(this.headerRow.children[col]);
     for (const rowEl of this.rows.values()) measure(rowEl.children[col]);
     this.setWidth(col, Math.min(Math.ceil(widest) + 4, MAX_AUTO_WIDTH));
+    this.reportWidth(col);
+  }
+
+  // Layout: the toolbar's menus, moving, hiding, pinning and resizing
+  // columns. The server keeps the layout (it is part of the person's
+  // view) and sends the columns again; when the columns that show move,
+  // the browser drops its rows, and the server's answer has those on the
+  // screen.
+
+  /** Tells the server of a change of layout, with where the screen starts. */
+  private sendLayout(changes: { order?: string[]; hidden?: string[]; pinned?: Record<string, string>; widths?: Record<string, number> }): void {
+    const from = Math.max(0, Math.floor(this.gridEl.scrollTop / this.config.rowHeight) - OVERSCAN);
+    this.transport.push("masu:layout", { ...changes, from }, (reply) => {
+      const answer = reply as unknown as BlockReply | null;
+      if (answer?.rows) this.takeBlock(answer);
+    });
+  }
+
+  /** A block of rows from an answer: of this revision, or of the next, which comes with the server's render. */
+  private takeBlock(answer: BlockReply): void {
+    if (answer.revision === this.revision) {
+      this.cache.store(answer.from, answer.rows);
+      this.schedule();
+    } else if (answer.revision > this.revision) {
+      this.pendingBlock = answer;
+    }
+  }
+
+  private reportWidth(col: number): void {
+    const column = this.columns[col];
+    if (column) this.sendLayout({ widths: { [column.key]: this.widths[col] } });
+  }
+
+  /** Moves a column one place, among the columns of its pin. */
+  private moveColumn(col: number, step: -1 | 1): void {
+    const column = this.columns[col];
+    const other = this.columns[col + step];
+    if (!column || !other || (column.pinned ?? null) !== (other.pinned ?? null)) return;
+    const order = this.config.catalog.map((c) => c.key);
+    const moved = step < 0 ? moveKey(order, column.key, other.key) : moveKey(order, other.key, column.key);
+    this.active = { row: -1, col: col + step };
+    this.sendLayout({ order: moved });
+    this.announce(this.message("moved", { label: column.label }));
+  }
+
+  private dragHeader(event: MouseEvent): void {
+    const press = this.headerPress!;
+    if (!press.moved && Math.abs(event.clientX - press.x) < 5) return;
+    press.moved = true;
+    this.el.classList.add("masu-moving");
+
+    // The place among the columns of its pin: before the first whose middle is past the pointer.
+    const pin = this.columns[press.col].pinned ?? null;
+    const cells = Array.from(this.headerRow.children) as HTMLElement[];
+    const zone = this.columns.map((c, col) => ({ c, col })).filter(({ c }) => (c.pinned ?? null) === pin);
+    const rtl = getComputedStyle(this.gridEl).direction === "rtl";
+    let target = zone[zone.length - 1].col + 1;
+    for (const { col } of zone) {
+      const box = cells[col].getBoundingClientRect();
+      const middle = box.left + box.width / 2;
+      if (rtl ? event.clientX > middle : event.clientX < middle) {
+        target = col;
+        break;
+      }
+    }
+    press.target = target;
+
+    this.dropEl ??= Object.assign(document.createElement("div"), { className: "masu-drop" });
+    if (!this.dropEl.isConnected) this.head.appendChild(this.dropEl);
+    const edge = target < this.columns.length ? this.colLeft(target) : this.colLeft(target - 1) + this.widths[target - 1];
+    this.dropEl.style.insetInlineStart = `${edge - 1}px`;
+    for (const cell of cells) cell.classList.toggle("masu-dragged", Number(cell.dataset.col) === press.col);
+  }
+
+  private releaseHeader(): void {
+    const press = this.headerPress;
+    if (!press) return;
+    this.headerPress = null;
+    this.dropEl?.remove();
+    this.el.classList.remove("masu-moving");
+    for (const cell of this.headerRow.children) cell.classList.remove("masu-dragged");
+
+    if (!press.moved) {
+      this.sortBy(press.col, press.shift);
+      return;
+    }
+    const target = press.target;
+    if (target === null || target === press.col || target === press.col + 1) return;
+    const column = this.columns[press.col];
+    const order = this.config.catalog.map((c) => c.key);
+    let moved: string[];
+    if (target < this.columns.length && (this.columns[target].pinned ?? null) === (column.pinned ?? null)) {
+      moved = moveKey(order, column.key, this.columns[target].key);
+    } else {
+      // After the last column of its pin.
+      const last = this.columns[target - 1].key;
+      moved = moveKey(moveKey(order, column.key, last), last, column.key);
+    }
+    this.active = { row: -1, col: target > press.col ? target - 1 : target };
+    this.sendLayout({ order: moved });
+    this.announce(this.message("moved", { label: column.label }));
+  }
+
+  /** The toolbar's buttons: the columns menu and the views menu. */
+  private renderToolbar(): void {
+    const wanted = this.config.columnsMenu || this.config.views !== null;
+    if (!wanted && !this.columnsButton && !this.viewsButton) return;
+
+    let toolbar = this.el.querySelector<HTMLElement>(".masu-toolbar");
+    if (!toolbar) {
+      toolbar = document.createElement("div");
+      toolbar.className = "masu-toolbar";
+      this.chipsEl.before(toolbar);
+    }
+    let actions = toolbar.querySelector<HTMLElement>(".masu-toolbar-actions");
+    if (!actions) {
+      actions = document.createElement("div");
+      actions.className = "masu-toolbar-actions";
+      toolbar.appendChild(actions);
+    }
+
+    if (this.config.columnsMenu && !this.columnsButton) {
+      this.columnsButton = toolbarButton(this.message("columns_menu", {}), "masu-columns-button", COLUMNS_ICON);
+      this.columnsButton.addEventListener("click", () => this.togglePanel("columns"));
+      actions.appendChild(this.columnsButton);
+    }
+    if (this.config.views !== null && !this.viewsButton) {
+      this.viewsButton = toolbarButton(this.message("views_menu", {}), "masu-views-button", VIEWS_ICON);
+      this.viewsButton.addEventListener("click", () => this.togglePanel("views"));
+      actions.appendChild(this.viewsButton);
+    }
+    if (this.viewsButton) {
+      // The button says which named view shows, if one does: the person's
+      // own first, when a shared one is the same.
+      const views = this.config.views ?? [];
+      const current = views.find((view) => view.current && view.mine) ?? views.find((view) => view.current);
+      const text = this.viewsButton.querySelector(".masu-toolbar-text")!;
+      text.textContent = current ? current.name : this.message("views_menu", {});
+      if (current) this.viewsButton.setAttribute("aria-label", this.message("views_current", { label: current.name }));
+      else this.viewsButton.removeAttribute("aria-label");
+    }
+
+    if (this.panel?.kind === "columns") this.panel.panel.refresh();
+    if (this.panel?.kind === "views") this.panel.panel.refresh();
+  }
+
+  private togglePanel(kind: "columns" | "views"): void {
+    const open = this.panel?.kind;
+    this.closePanel(false);
+    if (open === kind) return;
+    this.closeMenu(false);
+    const messages = this.messages();
+
+    if (kind === "columns") {
+      const panel = new ColumnsPanel(
+        {
+          root: this.uiEl,
+          messages,
+          catalog: () => this.config.catalog,
+          change: (layout) => this.sendLayout(layout),
+          close: () => this.closePanel(true),
+        },
+        this.columnsButton!,
+      );
+      this.panel = { kind, panel };
+    } else {
+      const panel = new ViewsPanel(
+        {
+          root: this.uiEl,
+          messages,
+          views: () => this.config.views ?? [],
+          apply: (id) => this.viewAction({ action: "apply", id }),
+          reset: () => this.viewAction({ action: "reset" }),
+          save: (name, shared, done) =>
+            this.transport.push("masu:view", { action: "save", name, shared }, (reply) => done((reply.error as string | undefined) ?? null)),
+          remove: (id) => this.transport.push("masu:view", { action: "delete", id }),
+          close: () => this.closePanel(true),
+        },
+        this.viewsButton!,
+      );
+      this.panel = { kind, panel };
+    }
+  }
+
+  /** A view applied: its rows from the first. */
+  private viewAction(payload: Record<string, unknown>): void {
+    this.transport.push("masu:view", payload, (reply) => {
+      if (reply.error) {
+        this.announce(String(reply.error));
+        return;
+      }
+      this.gridEl.scrollTop = 0;
+      this.anchor = null;
+      this.active = { row: Math.min(this.active.row, 0), col: Math.min(this.active.col, this.columns.length - 1) };
+      this.render();
+      this.announceCount();
+    });
+  }
+
+  private closePanel(focus: boolean): void {
+    if (!this.panel) return;
+    const { kind, panel } = this.panel;
+    this.panel = null;
+    panel.destroy();
+    if (focus) (kind === "columns" ? this.columnsButton : this.viewsButton)?.focus();
+  }
+
+  /** Says once that part of a view no longer applies (Masu.View). */
+  private showNotice(): void {
+    const notice = this.config.notice;
+    if (!notice || notice[0] === this.lastNotice) return;
+    this.lastNotice = notice[0];
+    this.announce(this.message("view_dropped", { label: notice[1] }));
   }
 
 
@@ -955,7 +1261,7 @@ export class Grid {
     input.setAttribute("aria-label", column.label);
     input.value = text ?? inputText(column.type, raw);
     input.style.transform = `translateY(${cell.row * this.config.rowHeight}px)`;
-    input.style.insetInlineStart = `${this.widths.slice(0, cell.col).reduce((a, b) => a + b, 0)}px`;
+    input.style.insetInlineStart = `${this.colLeft(cell.col)}px`;
     input.style.width = `${this.widths[cell.col]}px`;
     input.style.height = `${this.config.rowHeight}px`;
 
@@ -1233,8 +1539,8 @@ export class Grid {
       if (cols.length === 0) continue;
       const first = Math.min(...cols);
       const last = Math.max(...cols);
-      const left = this.widths.slice(0, first).reduce((a, b) => a + b, 0);
-      const width = this.widths.slice(first, last + 1).reduce((a, b) => a + b, 0);
+      const left = this.colLeft(first);
+      const width = this.colLeft(last) + this.widths[last] - left;
       for (const id of person.range.rows) {
         const index = rowsById.get(JSON.stringify(id));
         if (index === undefined) continue;
@@ -1261,7 +1567,8 @@ export class Grid {
       el.className = `masu-peer${person.editing ? " masu-peer-editing" : ""}${index === 0 ? " masu-peer-top" : ""}`;
       el.style.setProperty("--masu-peer-color", person.color);
       el.style.transform = `translateY(${index * this.config.rowHeight}px)`;
-      el.style.insetInlineStart = `${this.widths.slice(0, col).reduce((a, b) => a + b, 0)}px`;
+      el.style.insetInlineStart = `${this.colLeft(col)}px`;
+      if (this.columns[col].pinned) el.classList.add("masu-peer-pinned");
       el.style.width = `${this.widths[col]}px`;
       el.style.height = `${this.config.rowHeight}px`;
       el.dataset.person = person.id;
@@ -1447,12 +1754,14 @@ export class Grid {
     if (top < this.gridEl.scrollTop || top + rh > this.gridEl.scrollTop + view) {
       this.gridEl.scrollTop = Math.max(0, top - (view - rh) / 2);
     }
-    const left = this.widths.slice(0, col).reduce((a, b) => a + b, 0);
-    const right = left + this.widths[col];
-    if (left < this.gridEl.scrollLeft || right > this.gridEl.scrollLeft + this.gridEl.clientWidth) {
-      this.gridEl.scrollLeft = Math.max(0, left - 24);
-    }
+    this.scrollToColumn(col);
     this.schedule();
+  }
+
+  /** Scrolls sideways to show a column, unless it shows: the pinned ones always do. */
+  private scrollToColumn(col: number): void {
+    const scroll = scrollFor(col, this.widths, this.pinned, Math.abs(this.gridEl.scrollLeft), this.gridEl.clientWidth);
+    if (scroll !== null) this.gridEl.scrollLeft = scroll;
   }
 
   /** Says whose view the grid now shows, with its filters, for a screen reader. */
@@ -1605,11 +1914,7 @@ export class Grid {
       if (top < viewTop) this.gridEl.scrollTop = top;
       else if (bottom > viewBottom) this.gridEl.scrollTop = bottom - (this.gridEl.clientHeight - headHeight);
     }
-    const left = this.widths.slice(0, cell.col).reduce((a, b) => a + b, 0);
-    const right = left + this.widths[cell.col];
-    const scrollLeft = Math.abs(this.gridEl.scrollLeft);
-    if (left < scrollLeft) this.gridEl.scrollLeft = left;
-    else if (right > scrollLeft + this.gridEl.clientWidth) this.gridEl.scrollLeft = right - this.gridEl.clientWidth;
+    this.scrollToColumn(cell.col);
   }
 
   // Words for a screen reader.
@@ -1633,6 +1938,28 @@ export class Grid {
   private announce(text: string): void {
     if (this.statusEl) this.statusEl.textContent = text;
   }
+}
+
+function keysOf(columns: ColumnConfig[]): string {
+  return columns.map((column) => column.key).join("\u0000");
+}
+
+function withoutWidths(columns: ColumnConfig[]): Omit<ColumnConfig, "width">[] {
+  return columns.map(({ width: _width, ...column }) => column);
+}
+
+function toolbarButton(label: string, className: string, icon: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `masu-toolbar-button ${className}`;
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-expanded", "false");
+  button.innerHTML = icon;
+  const text = document.createElement("span");
+  text.className = "masu-toolbar-text";
+  text.textContent = label;
+  button.appendChild(text);
+  return button;
 }
 
 const DEFAULT_MESSAGES: Record<string, string> = {
@@ -1686,7 +2013,33 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   showing_view: "Showing {label}'s view",
   their_view: "{label}'s view",
   back_to_view: "Back to your view",
+  columns_menu: "Columns",
+  columns_search: "Find a column",
+  show_all: "Show all",
+  pin: "Pin {label}",
+  pin_none: "Not pinned",
+  pin_start: "Pinned to the start",
+  pin_end: "Pinned to the end",
+  move_up: "Move {label} up",
+  move_down: "Move {label} down",
+  moved: "{label} moved",
+  views_menu: "Views",
+  views_current: "Views: {label}",
+  view_reset: "The grid's own view",
+  view_name: "Name this view",
+  view_share: "Share with everyone",
+  view_save: "Save view",
+  view_saved: "View saved",
+  view_shared: "Shared",
+  view_delete: "Delete {label}",
+  view_dropped: "Part of this view no longer applies: {label}",
 };
+
+// Three columns, and a stack of sheets, drawn for Masu.
+const COLUMNS_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="2" y="2.5" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 2.5v11M10 2.5v11" stroke="currentColor" stroke-width="1.4"/></svg>';
+const VIEWS_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.5 5.5 8 2.5l5.5 3L8 8.5z M2.5 8.5 8 11.5l5.5-3 M2.5 11 8 14l5.5-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
 
 // A funnel, drawn for Masu.
 const FILTER_ICON =

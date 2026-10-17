@@ -65,6 +65,12 @@ decimals and dates.
 `align` is `:start`, `:center` or `:end`. Numbers align to the end,
 booleans to the center, everything else to the start.
 
+## Pinned and hidden
+
+`pinned={:start}` or `pinned={:end}` keeps a column in view while the
+others scroll sideways; `hidden` starts it hidden. A person moves, hides,
+pins and resizes columns as they work: see [Layout and views](views.md).
+
 ## Sorting, filtering and searching
 
 Every column sorts and filters unless it says `sortable={false}` or

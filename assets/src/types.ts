@@ -29,6 +29,28 @@ export interface ColumnConfig {
   editable: boolean;
   /** The server renders the cell's HTML (with the value, `[html, value]`, when editable). */
   html: boolean;
+  /** Kept in view while the others scroll sideways. */
+  pinned: "start" | "end" | null;
+}
+
+/** A column of the grid, shown or not, as the columns menu lists it. */
+export interface CatalogColumn {
+  key: string;
+  label: string;
+  type: ColumnType;
+  hidden: boolean;
+  pinned: "start" | "end" | null;
+  filterable: boolean;
+  width: number;
+}
+
+/** A named view of the views menu (Masu.Views). */
+export interface SavedView {
+  id: string;
+  name: string;
+  shared: boolean;
+  mine: boolean;
+  current: boolean;
 }
 
 export interface SortSpec {
@@ -67,6 +89,14 @@ export interface Config {
   presence: boolean;
   messages: Record<string, string>;
   initial: { from: number; rows: Row[] } | null;
+  /** Every column, in the layout's order, hidden ones too. */
+  catalog: CatalogColumn[];
+  /** The grid has a columns menu. */
+  columnsMenu: boolean;
+  /** The named views; null for a grid that keeps none. */
+  views: SavedView[] | null;
+  /** The parts of a view that no longer apply: [an id, the columns' keys]. */
+  notice: [number, string] | null;
 }
 
 export interface BlockReply {

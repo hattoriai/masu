@@ -34,7 +34,7 @@ defmodule Masu.Grid do
 
   use Phoenix.LiveComponent
 
-  alias Masu.{Column, Query, Source, Value}
+  alias Masu.{Column, Layout, Query, Source, Value, View}
   alias Phoenix.HTML.Safe
 
   @max_block 500
@@ -48,7 +48,8 @@ defmodule Masu.Grid do
     "rows" => "{count} rows",
     "loading" => "Loading",
     "people" => "Also here",
-    "follow" => "Follow {label}"
+    "follow" => "Follow {label}",
+    "view_dropped" => "Part of this view no longer applies: {label}"
   }
 
   @impl true
@@ -64,7 +65,14 @@ defmodule Masu.Grid do
        changed_by: %{},
        tracked: nil,
        people: [],
-       saved_by: %{}
+       saved_by: %{},
+       all_columns: [],
+       layout: nil,
+       default_view: nil,
+       view_params: %{},
+       uri: nil,
+       notice: nil,
+       saved_views: []
      )}
   end
 
@@ -78,6 +86,22 @@ defmodule Masu.Grid do
     end
   end
 
+  # The URL's params changed (Masu.Live): a view of them, unless it is
+  # the grid's own (the patch the grid made).
+  def update(%{masu_params: true}, socket) do
+    {params, uri} = Masu.Live.params(socket.assigns.id)
+    params = params || %{}
+    socket = assign(socket, uri: uri)
+
+    if params == socket.assigns.view_params do
+      {:ok, socket}
+    else
+      %{all_columns: all, default_view: default} = socket.assigns
+      {view, dropped} = View.from_params(params, all, default)
+      {:ok, apply_view(socket, view, dropped, patch: false)}
+    end
+  end
+
   def update(assigns, socket) do
     socket = assign(socket, Map.drop(assigns, [:input]))
     columns = Enum.map(assigns.col, &Column.new/1)
@@ -86,7 +110,7 @@ defmodule Masu.Grid do
       cond do
         is_nil(socket.assigns.source) -> start(socket, assigns.input, columns)
         assigns.input != socket.assigns.input -> restart(socket, assigns.input, columns)
-        true -> assign(socket, columns: supported(socket.assigns.source, columns, socket.assigns))
+        true -> relayout(socket, supported(socket.assigns.source, columns, socket.assigns))
       end
 
     {:ok, follow(socket)}
@@ -146,7 +170,7 @@ defmodule Masu.Grid do
   # again; the browser asks again for the rows it shows, and highlights
   # the changed ones.
   defp take_changes(socket, by_changes) do
-    %{source: source, query: query, columns: columns, revision: revision} = socket.assigns
+    %{source: source, query: query, all_columns: columns, revision: revision} = socket.assigns
     row_id = row_id(socket.assigns)
 
     changes = Enum.map(by_changes, &without_by/1)
@@ -183,41 +207,141 @@ defmodule Masu.Grid do
   defp without_by({:upsert, row, _by}), do: {:upsert, row}
   defp without_by(change), do: change
 
+  # The grid's first view: of the URL (`url`), else the person's last
+  # (`views`), else the grid's own, of its attributes.
   defp start(socket, input, columns) do
     source = Source.new(input, source_opts(socket.assigns))
-    columns = supported(source, columns, socket.assigns)
+    all = supported(source, columns, socket.assigns)
 
     query =
-      case Query.new([sort: socket.assigns.sort, filters: socket.assigns.filters], columns) do
+      case Query.new([sort: socket.assigns.sort, filters: socket.assigns.filters], all) do
         {:ok, query} -> query
         {:error, reason} -> raise ArgumentError, "grid #{socket.assigns.id}: #{reason}"
       end
 
-    source = Source.prepare(source, query, columns)
+    default = %View{query: query, layout: Layout.new(all)}
+    socket = assign(socket, all_columns: all, default_view: default)
+    {view, dropped, uri} = first_view(socket.assigns, all, default)
+    source = Source.prepare(source, view.query, all)
 
     socket
-    |> assign(input: input, source: source, columns: columns, query: query)
+    |> assign(input: input, source: source, uri: uri, notice: notice(dropped, 1))
+    |> put_view(view)
     |> assign(total: Source.count(source))
     |> assign(initial: Source.rows(source, 0, @initial_rows))
+    |> list_views()
   end
 
-  # New rows (or a new query of the LiveView): the person's order, filters
-  # and search stay, and the browser drops the rows it has.
+  defp first_view(assigns, all, default) do
+    {params, uri} = if assigns.url, do: Masu.Live.params(assigns.id), else: {nil, nil}
+
+    {view, dropped} =
+      cond do
+        params != nil -> View.from_params(params, all, default)
+        last = last_view(assigns) -> View.from_params(last, all, default)
+        true -> {default, []}
+      end
+
+    {view, dropped, uri}
+  end
+
+  defp last_view(%{views: views, user: user} = assigns) when views != nil and user != nil,
+    do: views.last(views_key(assigns), user)
+
+  defp last_view(_assigns), do: nil
+
+  # New rows (or a new query of the LiveView): the person's view stays,
+  # and the browser drops the rows it has.
   defp restart(socket, input, columns) do
     source = Source.new(input, source_opts(socket.assigns))
-    columns = supported(source, columns, socket.assigns)
-    source = Source.prepare(source, socket.assigns.query, columns)
+    all = supported(source, columns, socket.assigns)
+    source = Source.prepare(source, socket.assigns.query, all)
 
-    assign(socket,
+    socket
+    |> relayout(all)
+    |> assign(
       input: input,
       source: source,
-      columns: columns,
       total: Source.count(source),
       revision: socket.assigns.revision + 1,
       initial: nil,
       changed: []
     )
   end
+
+  # The columns again (the LiveView rendered the grid again): the person's
+  # layout, fitted to them.
+  defp relayout(socket, all) do
+    layout = Layout.fit(socket.assigns.layout, all)
+    default = %{socket.assigns.default_view | layout: Layout.new(all)}
+
+    assign(socket,
+      all_columns: all,
+      default_view: default,
+      layout: layout,
+      columns: Layout.columns(layout, all)
+    )
+  end
+
+  defp put_view(socket, %View{query: query, layout: layout} = view) do
+    assign(socket,
+      query: query,
+      layout: layout,
+      columns: Layout.columns(layout, socket.assigns.all_columns),
+      view_params: View.to_params(view, socket.assigns.default_view)
+    )
+  end
+
+  # A whole view at once (a saved view, the grid's own, or the URL's):
+  # its rows from the first.
+  defp apply_view(socket, %View{} = view, dropped, opts \\ []) do
+    %{source: source, all_columns: all, revision: revision} = socket.assigns
+    source = Source.prepare(source, view.query, all)
+
+    socket
+    |> assign(
+      source: source,
+      total: Source.count(source),
+      revision: revision + 1,
+      initial: Source.rows(source, 0, @initial_rows),
+      changed: [],
+      notice: notice(dropped, revision + 1)
+    )
+    |> put_view(view)
+    |> view_changed(opts)
+  end
+
+  defp notice([], _id), do: nil
+  defp notice(keys, id), do: [id, Enum.join(keys, ", ")]
+
+  # The view changed: into the URL (`url`), the store (`views`), and to
+  # the people who may follow this person (Masu.Presence).
+  defp view_changed(socket, opts \\ []) do
+    %{query: query, layout: layout, default_view: default} = socket.assigns
+    params = View.to_params(%View{query: query, layout: layout}, default)
+    socket = assign(socket, view_params: params)
+    assigns = socket.assigns
+
+    if assigns.views && assigns.user && connected?(socket),
+      do: :ok = assigns.views.put_last(views_key(assigns), assigns.user, params)
+
+    socket = share_view(socket)
+
+    # The LiveView patches its URL (Masu.Live): a patch from the
+    # component's event would take the place of the event's reply.
+    if assigns.url && assigns.uri && Keyword.get(opts, :patch, true),
+      do: send(self(), {Masu.Live.Patch, Masu.Live.url(assigns.uri, assigns.id, params)})
+
+    socket
+  end
+
+  defp list_views(%{assigns: %{views: views, user: user} = assigns} = socket)
+       when views != nil and user != nil,
+       do: assign(socket, saved_views: views.list(views_key(assigns), user))
+
+  defp list_views(socket), do: socket
+
+  defp views_key(assigns), do: assigns.views_key || assigns.id
 
   defp source_opts(assigns),
     do: [repo: assigns.repo, repo_opts: assigns.repo_opts, grid: assigns.id]
@@ -253,7 +377,7 @@ defmodule Masu.Grid do
   # query without the column's own filters, so that the menu offers the
   # values the person may add.
   def handle_event("masu:values", %{"key" => key} = params, socket) when is_binary(key) do
-    %{source: source, query: query, columns: columns} = socket.assigns
+    %{source: source, query: query, all_columns: columns} = socket.assigns
 
     case Column.find(columns, key) do
       %Column{filterable: true} = column ->
@@ -281,7 +405,8 @@ defmodule Masu.Grid do
       if saved == [] do
         socket
       else
-        %{source: source, query: query, columns: columns, revision: revision} = socket.assigns
+        %{source: source, query: query, all_columns: columns, revision: revision} =
+          socket.assigns
 
         source =
           source
@@ -333,7 +458,7 @@ defmodule Masu.Grid do
   end
 
   def handle_event("masu:query", params, socket) when is_map(params) do
-    %{source: source, columns: columns, revision: revision} = socket.assigns
+    %{source: source, all_columns: columns, revision: revision} = socket.assigns
 
     case Query.from_wire(params, columns) do
       {:ok, query} ->
@@ -354,11 +479,92 @@ defmodule Masu.Grid do
           |> block(0, @first_block)
           |> Map.put("query", Query.to_wire(query))
 
-        {:reply, reply, share_view(socket)}
+        {:reply, reply, view_changed(socket)}
 
       {:error, reason} ->
         {:reply, %{"error" => reason, "revision" => revision}, socket}
     end
+  end
+
+  # The person moved, hid, pinned or resized columns. When the columns that
+  # show changed, the browser drops its rows, and the answer has those
+  # from `from`, in the new layout.
+  def handle_event("masu:layout", params, socket) when is_map(params) do
+    %{layout: layout, all_columns: all, columns: old, revision: revision} = socket.assigns
+    layout = Layout.change(layout, params, all)
+    columns = Layout.columns(layout, all)
+    moved? = Enum.map(columns, & &1.key) != Enum.map(old, & &1.key)
+
+    socket =
+      socket
+      |> assign(layout: layout, columns: columns)
+      |> then(
+        &if(moved?, do: assign(&1, revision: revision + 1, initial: nil, changed: []), else: &1)
+      )
+      |> view_changed()
+
+    from = if is_integer(params["from"]), do: max(params["from"], 0), else: 0
+
+    reply =
+      if moved?,
+        do: block(socket, from, @first_block),
+        else: %{"revision" => socket.assigns.revision}
+
+    {:reply, reply, socket}
+  end
+
+  # The views menu, and Masu.Test: a saved view, the grid's own, or one of
+  # params; saving and deleting a named view.
+  def handle_event("masu:view", %{"action" => "apply", "id" => id}, socket) do
+    case Enum.find(socket.assigns.saved_views, &(&1.id == id)) do
+      nil -> {:reply, %{"error" => "no such view"}, socket}
+      saved -> apply_params(socket, saved.params)
+    end
+  end
+
+  def handle_event("masu:view", %{"action" => "params", "params" => params}, socket)
+      when is_map(params),
+      do: apply_params(socket, params)
+
+  def handle_event("masu:view", %{"action" => "reset"}, socket),
+    do: apply_params(socket, %{})
+
+  def handle_event("masu:view", %{"action" => "save", "name" => name} = params, socket)
+      when is_binary(name) do
+    %{views: views, user: user, view_params: view_params} = socket.assigns
+
+    case String.trim(name) do
+      "" ->
+        {:reply, %{"error" => "A view needs a name."}, socket}
+
+      _name when is_nil(views) or is_nil(user) ->
+        {:reply, %{"error" => "This grid does not keep views."}, socket}
+
+      name ->
+        case views.save(
+               views_key(socket.assigns),
+               user,
+               name,
+               view_params,
+               params["shared"] == true
+             ) do
+          {:ok, saved} -> {:reply, %{"id" => saved.id}, list_views(socket)}
+          {:error, message} -> {:reply, %{"error" => message}, socket}
+        end
+    end
+  end
+
+  def handle_event("masu:view", %{"action" => "delete", "id" => id}, socket) when is_binary(id) do
+    %{views: views, user: user} = socket.assigns
+    if views && user, do: :ok = views.delete(views_key(socket.assigns), user, id)
+    {:reply, %{}, list_views(socket)}
+  end
+
+  defp apply_params(socket, params) do
+    %{all_columns: all, default_view: default} = socket.assigns
+    {view, dropped} = View.from_params(params, all, default)
+    socket = apply_view(socket, view, dropped)
+    {:reply, %{"revision" => socket.assigns.revision, "dropped" => dropped}, socket}
   end
 
   # A selected range goes to the others as its rows' ids (at most 500) and
@@ -591,6 +797,11 @@ defmodule Masu.Grid do
       "locks" => locks?(assigns),
       "presence" => assigns.presence != nil,
       "messages" => assigns.messages,
+      "catalog" => Enum.map(Layout.all(assigns.layout, assigns.all_columns), &catalog_entry/1),
+      "columnsMenu" => assigns.columns_menu,
+      "view" => assigns.view_params,
+      "views" => views_config(assigns),
+      "notice" => assigns.notice,
       "initial" =>
         assigns.initial && %{"from" => 0, "rows" => encode_rows(assigns.initial, assigns)}
     })
@@ -607,8 +818,37 @@ defmodule Masu.Grid do
       "sortable" => column.sortable,
       "filterable" => column.filterable,
       "editable" => column.editable,
-      "html" => column.slot != nil
+      "html" => column.slot != nil,
+      "pinned" => column.pinned && Atom.to_string(column.pinned)
     }
+  end
+
+  defp catalog_entry(%Column{} = column) do
+    %{
+      "key" => column.key,
+      "label" => column.label,
+      "type" => Atom.to_string(column.type),
+      "hidden" => column.hidden,
+      "pinned" => column.pinned && Atom.to_string(column.pinned),
+      "filterable" => column.filterable,
+      "width" => column.width
+    }
+  end
+
+  # The named views for the views menu; nil for a grid that keeps none.
+  defp views_config(%{views: nil}), do: nil
+  defp views_config(%{user: nil}), do: nil
+
+  defp views_config(assigns) do
+    for saved <- assigns.saved_views do
+      %{
+        "id" => saved.id,
+        "name" => saved.name,
+        "shared" => saved.shared,
+        "mine" => saved.mine,
+        "current" => saved.params == assigns.view_params
+      }
+    end
   end
 
   defp stringify(map), do: Map.new(map, fn {key, value} -> {to_string(key), value} end)

@@ -74,6 +74,11 @@ the active cell a line of it.
 | --- | --- |
 | `.masu` | the grid's element |
 | `.masu-toolbar`, `.masu-search` | the search box |
+| `.masu-toolbar-actions`, `.masu-toolbar-button`, `.masu-columns-button`, `.masu-views-button` | the toolbar's buttons (see [Layout and views](views.md)) |
+| `.masu-pinned`, `.masu-pinned-start`, `.masu-pinned-end`, `.masu-pinned-edge` | a cell of a pinned column, and of the last (or first) one, which draws the edge; it sticks at `--masu-pin-<n>` |
+| `.masu-moving`, `.masu-dragged`, `.masu-drop` | a column being moved: the grid, its header, and the line where it goes |
+| `.masu-panel`, `.masu-columns-panel`, `.masu-columns-item`, `.masu-columns-pin`, `.masu-columns-move` | the columns menu |
+| `.masu-views-panel`, `.masu-views-item`, `.masu-views-apply`, `.masu-views-shared`, `.masu-views-delete`, `.masu-views-form` | the views menu |
 | `.masu-grid` | the scroll box, with the grid role |
 | `.masu-head`, `.masu-header`, `.masu-hcell` | the header |
 | `.masu-sortable`, `.masu-sort`, `.masu-resizer` | a header that sorts, its mark, and its edge |

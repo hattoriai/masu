@@ -14,6 +14,7 @@ const column = (key: string, type: ColumnConfig["type"], label = key): ColumnCon
   filterable: true,
   editable: false,
   html: false,
+  pinned: null,
 });
 
 const messages: Record<string, string> = {

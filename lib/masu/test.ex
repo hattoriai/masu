@@ -184,6 +184,50 @@ defmodule Masu.Test do
   @spec search(struct(), String.t(), String.t()) :: struct()
   def search(view, id, text), do: query(view, id, %{"search" => text})
 
+  @doc """
+  The view of the grid `id`, as its params (see `Masu.View`): what differs
+  from the grid's own view. `%{}` is the grid's own view.
+  """
+  @spec view(struct(), String.t()) :: map()
+  def view(view, id), do: view |> config(id) |> Map.fetch!("view")
+
+  @doc """
+  Applies a view to the grid `id`, as a link or a saved view does: params
+  as `view/2` gives them (`%{}` for the grid's own view). Returns the
+  keys of the columns of the parts that no longer apply (see
+  `Masu.View.from_params/3`).
+  """
+  @spec apply_view(struct(), String.t(), map()) :: [String.t()]
+  def apply_view(view, id, params) do
+    view
+    |> event(id, "masu:view", %{"action" => "params", "params" => params})
+    |> Map.fetch!("dropped")
+  end
+
+  @doc """
+  Changes the layout of the grid `id`, as its columns menu, its headers
+  and their edges do: any of `order: keys` (every column, in order),
+  `hidden: keys`, `pinned: %{key => :start | :end}` and `widths: %{key =>
+  pixels}`. Returns the view.
+  """
+  @spec layout(struct(), String.t(), keyword()) :: struct()
+  def layout(view, id, changes) do
+    params =
+      Map.new(changes, fn
+        {:pinned, pins} ->
+          {"pinned", Map.new(pins, fn {key, pin} -> {to_string(key), to_string(pin)} end)}
+
+        {:widths, widths} ->
+          {"widths", Map.new(widths, fn {key, width} -> {to_string(key), width} end)}
+
+        {key, keys} when key in [:order, :hidden] ->
+          {Atom.to_string(key), Enum.map(keys, &to_string/1)}
+      end)
+
+    event(view, id, "masu:layout", params)
+    view
+  end
+
   defp query(view, id, changes) do
     current = view |> config(id) |> Map.fetch!("query")
     reply = event(view, id, "masu:query", Map.merge(current, changes))
