@@ -17,8 +17,11 @@ defmodule Masu.View do
         "cols" => "id,name,plan,city,revenue",
         "hide" => "seats",
         "pin" => "id:start,revenue:end",
-        "w" => "name:220"
+        "w" => "name:220",
+        "page" => "3"
       }
+
+  `"page"` is the page of a grid with `paging={:pages}`, from 1.
 
   Each part that is given replaces the grid's: `"sort" => ""` is no order,
   `"hide" => ""` hides no column, `"filter" => ""` has no filter.
@@ -26,19 +29,20 @@ defmodule Masu.View do
 
   alias Masu.{Column, Filter, Layout, Query, Sort}
 
-  @type t :: %__MODULE__{query: Query.t(), layout: Layout.t()}
+  @type t :: %__MODULE__{query: Query.t(), layout: Layout.t(), page: non_neg_integer()}
 
-  defstruct query: %Query{}, layout: %Layout{}
+  defstruct query: %Query{}, layout: %Layout{}, page: 0
 
   @doc """
   The params of a view: what differs from the grid's own view
   (`default`).
   """
   @spec to_params(t(), t()) :: %{String.t() => term()}
-  def to_params(%__MODULE__{query: query, layout: layout}, %__MODULE__{} = default) do
+  def to_params(%__MODULE__{query: query, layout: layout} = view, %__MODULE__{} = default) do
     %{query: dq, layout: dl} = default
 
     []
+    |> put_if(view.page != default.page, "page", fn -> Integer.to_string(view.page + 1) end)
     |> put_if(query.sorts != dq.sorts, "sort", fn -> Enum.map_join(query.sorts, ",", &sort/1) end)
     |> put_if(query.search != dq.search, "q", fn -> query.search || "" end)
     |> put_if(query.filters != dq.filters, "filter", fn -> filters(query.filters) end)
@@ -121,13 +125,23 @@ defmodule Masu.View do
 
     view = %__MODULE__{
       query: %Query{sorts: sorts, filters: filters, search: search, groups: groups},
-      layout: layout
+      layout: layout,
+      page: read_page(params["page"], default.page)
     }
 
     {view, Enum.uniq(dropped_sorts ++ dropped_filters)}
   end
 
   def from_params(_params, _columns, default), do: {default, []}
+
+  defp read_page(page, default) when is_binary(page) do
+    case Integer.parse(page) do
+      {n, ""} when n >= 1 -> n - 1
+      _other -> default
+    end
+  end
+
+  defp read_page(_page, default), do: default
 
   defp read_search(q, _default) when is_binary(q),
     do: q |> String.trim() |> then(&if(&1 == "", do: nil, else: &1))

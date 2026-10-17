@@ -179,6 +179,19 @@ defmodule Masu.Components do
     default: [],
     doc: "with `tree`: the ids of the rows that start open"
 
+  attr :count, :atom,
+    default: :exact,
+    values: [:exact, :deferred, :none],
+    doc:
+      "how the grid counts its rows: `:exact` with the query, `:deferred` after the first rows (in a task), `:none` only when the person goes to the end; see the Large tables guide"
+
+  attr :paging, :atom,
+    default: :scroll,
+    values: [:scroll, :pages],
+    doc: "`:pages` shows a page of rows at a time, with a pager below the grid, and the page in the view"
+
+  attr :page_size, :integer, default: 50, doc: "with `paging={:pages}`: the rows of a page"
+
   attr :row_id, :any,
     default: nil,
     doc: "a function that gives a row's id; the `id` of the row unless given"
@@ -286,6 +299,9 @@ defmodule Masu.Components do
       person={@person}
       on_save={@on_save}
       row_id={@row_id}
+      count={@count}
+      paging={@paging}
+      page_size={@page_size}
       sort={@sort}
       filters={@filters}
       searchable={@searchable}

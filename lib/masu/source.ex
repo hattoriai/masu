@@ -33,11 +33,22 @@ defmodule Masu.Source do
   """
   @callback prepare(state(), Query.t(), [Column.t()]) :: state()
 
-  @doc "How many rows the query has."
-  @callback count(state()) :: non_neg_integer()
+  @doc """
+  How many rows the query has: a number, `{:at_least, n}` when the
+  source knows only that there are at least `n` (a search engine's
+  "10,000+"), or `:unknown`. A grid whose source does not know scrolls
+  over the rows it read, and a block that comes back short says where
+  they end (see the [Large tables](limits.md) guide).
+  """
+  @callback count(state()) :: non_neg_integer() | {:at_least, non_neg_integer()} | :unknown
 
-  @doc "The rows from `offset` (from 0), at most `limit` of them."
-  @callback rows(state(), offset :: non_neg_integer(), limit :: pos_integer()) :: [term()]
+  @doc """
+  The rows from `offset` (from 0), at most `limit` of them; or
+  `{rows, count}`, when the source learned the count of the query with
+  them (a `total_count` of the same request), which the grid takes.
+  """
+  @callback rows(state(), offset :: non_neg_integer(), limit :: pos_integer()) ::
+              [term()] | {[term()], non_neg_integer()}
 
   @doc """
   Whether the source can sort and filter by a column. A database can sort
@@ -166,9 +177,31 @@ defmodule Masu.Source do
   def count(%__MODULE__{module: module, state: state}), do: module.count(state)
 
   @doc false
+  # The count as a number and whether it is exact: `{n, true}`, or a
+  # lower bound, `{n, false}`.
+  @spec counted(t()) :: {non_neg_integer(), boolean()}
+  def counted(source) do
+    case count(source) do
+      n when is_integer(n) and n >= 0 -> {n, true}
+      {:at_least, n} when is_integer(n) and n >= 0 -> {n, false}
+      :unknown -> {0, false}
+    end
+  end
+
+  @doc false
   @spec rows(t(), non_neg_integer(), pos_integer()) :: [term()]
-  def rows(%__MODULE__{module: module, state: state}, offset, limit),
-    do: module.rows(state, offset, limit)
+  def rows(source, offset, limit), do: source |> window(offset, limit) |> elem(0)
+
+  @doc false
+  # The rows from an offset, and the count the source learned with them,
+  # or nil.
+  @spec window(t(), non_neg_integer(), pos_integer()) :: {[term()], non_neg_integer() | nil}
+  def window(%__MODULE__{module: module, state: state}, offset, limit) do
+    case module.rows(state, offset, limit) do
+      {rows, count} when is_list(rows) and is_integer(count) -> {rows, count}
+      rows when is_list(rows) -> {rows, nil}
+    end
+  end
 
   @doc false
   @spec change(t(), [Masu.Live.change()], (term() -> term())) :: t()

@@ -74,7 +74,8 @@ defmodule Masu.Export do
 
   @doc """
   Writes an export to `path`. Options: `:progress`, a function of the
-  rows written and the rows there are, called after each block.
+  rows written and the rows there are (nil while the source does not
+  know), called after each block.
   """
   @spec write(t(), format(), Path.t(), keyword()) :: :ok
   def write(%__MODULE__{} = export, format, path, opts \\ []) when format in [:csv, :xlsx] do
@@ -115,11 +116,11 @@ defmodule Masu.Export do
       fn -> 0 end,
       fn rows, done ->
         done = done + length(rows)
-        fun.(min(done, total), total)
+        fun.(if(total, do: min(done, total), else: done), total)
         {[rows], done}
       end,
       fn done ->
-        fun.(total, total)
+        fun.(total || done, total || done)
         {[], done}
       end,
       fn _done -> :ok end
@@ -162,7 +163,13 @@ defmodule Masu.Export do
     |> Source.prepare(%{export.query | groups: []}, export.all_columns)
   end
 
-  defp count(export), do: export |> source() |> Source.count()
+  # The count, or nil when the source does not know it.
+  defp count(export) do
+    case export |> source() |> Source.counted() do
+      {n, true} -> n
+      {_n, false} -> nil
+    end
+  end
 
   defp csv_line(row, columns) do
     [Enum.map_join(columns, ",", &csv_value(&1, Column.get(&1, row))), "\r\n"]

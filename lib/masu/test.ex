@@ -81,6 +81,40 @@ defmodule Masu.Test do
   end
 
   @doc """
+  What the grid `id` knows of its count: `{:exact, n}`, or
+  `{:at_least, n}` while it does not know it (`count={:none}`, a count
+  not in yet, or a source that does not count). `total/2` gives `n`.
+  """
+  @spec count(struct(), String.t()) :: {:exact | :at_least, non_neg_integer()}
+  def count(view, id) do
+    reply = event(view, id, "masu:rows", %{"from" => 0, "count" => 0})
+    {if(reply["exact"], do: :exact, else: :at_least), reply["total"]}
+  end
+
+  @doc """
+  Asks the grid `id` for its count, as the person does when they go to
+  the end of a grid that does not know it (Ctrl+End): `{:exact, n}`, or
+  `{:at_least, n}` from a source that does not know it either.
+  """
+  @spec ask_count(struct(), String.t()) :: {:exact | :at_least, non_neg_integer()}
+  def ask_count(view, id) do
+    reply = event(view, id, "masu:count", %{})
+    {if(reply["exact"], do: :exact, else: :at_least), reply["total"]}
+  end
+
+  @doc """
+  Goes to a page of the grid `id` (`paging={:pages}`), from 1, as its
+  pager does, and gives the ids of its rows.
+  """
+  @spec page(struct(), String.t(), pos_integer()) :: [term()]
+  def page(view, id, page) when is_integer(page) and page >= 1 do
+    view
+    |> event(id, "masu:page", %{"page" => page - 1})
+    |> Map.fetch!("rows")
+    |> Enum.map(&hd/1)
+  end
+
+  @doc """
   The values that the filter menu of the column `key` offers: the values
   of the column among the rows of the query (without the column's own
   filters), each with its count, the most frequent first. `:search`

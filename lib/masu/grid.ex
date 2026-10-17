@@ -83,7 +83,12 @@ defmodule Masu.Grid do
        open_details: [],
        detail_rows: [],
        selection: %{all: false, ids: MapSet.new(), except: MapSet.new()},
-       trash: []
+       trash: [],
+       total: 0,
+       exact: true,
+       count_ref: 0,
+       page: 0,
+       initial_from: 0
      )}
   end
 
@@ -207,12 +212,12 @@ defmodule Masu.Grid do
     |> assign(
       saved_by: saved_by,
       source: source,
-      total: Source.count(source),
       revision: revision + 1,
       initial: nil,
       changed: changed,
       changed_by: changed_by
     )
+    |> recount(keep: true)
     |> refresh_details()
   end
 
@@ -249,24 +254,35 @@ defmodule Masu.Grid do
     socket
     |> assign(input: input, source: source, uri: uri, notice: notice(dropped, 1))
     |> put_view(view)
-    |> assign(total: Source.count(source))
+    |> recount()
     |> put_initial()
     |> list_views()
   end
 
   # The first rows, which the server renders and the browser starts with
   # (in a tree, with their places).
-  defp put_initial(%{assigns: %{source: source}} = socket) do
-    case Source.nodes(source, 0, @initial_rows) do
-      nil ->
-        assign(socket, initial: Source.rows(source, 0, @initial_rows), initial_nodes: nil)
+  defp put_initial(%{assigns: %{source: source} = assigns} = socket) do
+    {from, limit} =
+      if assigns.paging == :pages,
+        do: {assigns.page * assigns.page_size, assigns.page_size},
+        else: {0, @initial_rows}
 
-      nodes ->
-        assign(socket,
-          initial: Enum.map(nodes, &elem(&1, 0)),
-          initial_nodes: Enum.map(nodes, &elem(&1, 1))
-        )
-    end
+    socket =
+      case Source.nodes(source, from, limit) do
+        nil ->
+          {rows, known} = Source.window(source, from, limit)
+          socket = if known, do: put_count(socket, {known, true}), else: socket
+          assign(socket, initial: rows, initial_nodes: nil, initial_from: from)
+
+        nodes ->
+          assign(socket,
+            initial: Enum.map(nodes, &elem(&1, 0)),
+            initial_nodes: Enum.map(nodes, &elem(&1, 1)),
+            initial_from: from
+          )
+      end
+
+    learn(socket, from, length(socket.assigns.initial), limit)
   end
 
   defp first_view(assigns, all, default) do
@@ -299,11 +315,11 @@ defmodule Masu.Grid do
     |> assign(
       input: input,
       source: source,
-      total: Source.count(source),
       revision: socket.assigns.revision + 1,
       initial: nil,
       changed: []
     )
+    |> recount(keep: true)
     |> refresh_details()
   end
 
@@ -325,6 +341,7 @@ defmodule Masu.Grid do
     assign(socket,
       query: query,
       layout: layout,
+      page: if(socket.assigns.paging == :pages, do: view.page, else: 0),
       columns: Layout.columns(layout, socket.assigns.all_columns),
       view_params: View.to_params(view, socket.assigns.default_view)
     )
@@ -340,11 +357,12 @@ defmodule Masu.Grid do
     socket
     |> assign(
       source: source,
-      total: Source.count(source),
+      page: if(socket.assigns.paging == :pages, do: view.page, else: 0),
       revision: revision + 1,
       changed: [],
       notice: notice(dropped, revision + 1)
     )
+    |> recount()
     |> put_initial()
     |> put_view(view)
     |> refresh_details()
@@ -357,8 +375,8 @@ defmodule Masu.Grid do
   # The view changed: into the URL (`url`), the store (`views`), and to
   # the people who may follow this person (Masu.Presence).
   defp view_changed(socket, opts \\ []) do
-    %{query: query, layout: layout, default_view: default} = socket.assigns
-    params = View.to_params(%View{query: query, layout: layout}, default)
+    %{query: query, layout: layout, default_view: default, page: page} = socket.assigns
+    params = View.to_params(%View{query: query, layout: layout, page: page}, default)
     socket = assign(socket, view_params: params)
     assigns = socket.assigns
 
@@ -431,11 +449,45 @@ defmodule Masu.Grid do
   defp enum_values(_source, _column), do: nil
 
   @impl true
+  def handle_async(:masu_count, {:ok, {ref, counted}}, socket) do
+    if ref == socket.assigns.count_ref,
+      do: {:noreply, put_count(socket, counted)},
+      else: {:noreply, socket}
+  end
+
+  def handle_async(:masu_count, {:exit, _reason}, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_event("masu:rows", %{"from" => from, "count" => count}, socket)
       when is_integer(from) and is_integer(count) do
     from = max(from, 0)
     count = count |> max(0) |> min(@max_block)
-    {:reply, block(socket, from, count), socket}
+    {reply, socket} = block(socket, from, count)
+    {:reply, reply, socket}
+  end
+
+  # The count of a grid that does not know it (`count={:none}`, or a
+  # source that does not): asked for once, as the person goes to the end.
+  def handle_event("masu:count", _params, socket) do
+    socket = put_count(socket, Source.counted(socket.assigns.source))
+
+    {:reply,
+     %{
+       "total" => socket.assigns.total,
+       "exact" => socket.assigns.exact,
+       "revision" => socket.assigns.revision
+     }, socket}
+  end
+
+  # A page (`paging={:pages}`), from 0: its rows, and into the view (the
+  # URL, the store).
+  def handle_event("masu:page", %{"page" => page}, socket) when is_integer(page) do
+    %{page_size: size, total: total, exact: exact} = socket.assigns
+    last = if exact, do: max(div(max(total, 1) - 1, size), 0), else: page
+    page = page |> max(0) |> min(last)
+    socket = assign(socket, page: page)
+    {reply, socket} = block(socket, page * size, size)
+    {:reply, Map.put(reply, "page", page), view_changed(socket)}
   end
 
   # The values of a column for its filter menu: among the rows of the
@@ -605,21 +657,21 @@ defmodule Masu.Grid do
         source = Source.prepare(source, query, columns)
 
         socket =
-          assign(socket,
+          socket
+          |> assign(
             source: source,
             query: query,
-            total: Source.count(source),
+            page: 0,
             revision: revision + 1,
             initial: nil,
             changed: []
           )
+          |> recount()
 
         socket = refresh_details(socket)
-
-        reply =
-          socket
-          |> block(0, @first_block)
-          |> Map.put("query", Query.to_wire(query))
+        {from, count} = first_rows(socket.assigns)
+        {reply, socket} = block(socket, from, count)
+        reply = Map.put(reply, "query", Query.to_wire(query))
 
         {:reply, reply, view_changed(socket)}
 
@@ -732,10 +784,10 @@ defmodule Masu.Grid do
 
     from = if is_integer(params["from"]), do: max(params["from"], 0), else: 0
 
-    reply =
+    {reply, socket} =
       if moved?,
         do: block(socket, from, @first_block),
-        else: %{"revision" => socket.assigns.revision}
+        else: {%{"revision" => socket.assigns.revision}, socket}
 
     {:reply, reply, socket}
   end
@@ -824,7 +876,8 @@ defmodule Masu.Grid do
       "all" => selection.all,
       "ids" => MapSet.to_list(selection.ids),
       "except" => MapSet.to_list(selection.except),
-      "count" => selection_summary(assigns).count
+      "count" => selection_summary(assigns).count,
+      "exact" => assigns.exact
     }
   end
 
@@ -867,15 +920,16 @@ defmodule Masu.Grid do
       |> assign(
         query: query,
         source: source,
-        total: Source.count(source),
         revision: revision + 1,
         initial: nil,
         changed: []
       )
+      |> recount()
       |> refresh_details()
 
     from = if is_integer(from), do: max(from, 0), else: 0
-    {:reply, block(socket, from, @first_block), socket}
+    {reply, socket} = block(socket, from, @first_block)
+    {:reply, reply, socket}
   end
 
   # The rows of the open details, read again, with their places in the
@@ -928,18 +982,81 @@ defmodule Masu.Grid do
 
   defp share_view(socket), do: socket
 
+  # A block of rows, and what it says of the count (`learn/4`): the
+  # answer, and the socket that knows it.
   defp block(socket, from, count) do
-    %{source: source, total: total, revision: revision} = socket.assigns
+    %{source: source} = socket.assigns
 
-    rows =
+    {rows, socket} =
       cond do
-        count == 0 -> []
-        nodes = Source.nodes(source, from, count) -> encode_rows(nodes, socket.assigns)
-        true -> source |> Source.rows(from, count) |> encode_rows(socket.assigns)
+        count == 0 ->
+          {[], socket}
+
+        nodes = Source.nodes(source, from, count) ->
+          {encode_rows(nodes, socket.assigns), socket}
+
+        true ->
+          {rows, known} = Source.window(source, from, count)
+          socket = if known, do: put_count(socket, {known, true}), else: socket
+          {encode_rows(rows, socket.assigns), socket}
       end
 
-    %{"from" => from, "rows" => rows, "total" => total, "revision" => revision}
+    socket = learn(socket, from, length(rows), count)
+    %{total: total, exact: exact, revision: revision} = socket.assigns
+    {%{"from" => from, "rows" => rows, "total" => total, "exact" => exact, "revision" => revision},
+     socket}
   end
+
+  # The count (`count`): `:exact` counts with the query; `:deferred` reads
+  # the rows first, and counts in a task; `:none` counts when the person
+  # goes to the end (`masu:count`). A source may not know its count
+  # (`{:at_least, n}`, `:unknown`): the grid then knows the rows it read,
+  # and more (`learn/4`). `keep: true` keeps the count it had as a lower
+  # bound while it does not know (the same query, its rows changed).
+  defp recount(socket, opts \\ []) do
+    %{source: source, count_ref: ref} = socket.assigns
+    ref = ref + 1
+    known = if Keyword.get(opts, :keep, false), do: socket.assigns.total, else: 0
+    socket = assign(socket, count_ref: ref)
+
+    case socket.assigns.count do
+      :none ->
+        assign(socket, total: known, exact: false)
+
+      :deferred ->
+        socket = assign(socket, total: known, exact: false)
+
+        if connected?(socket),
+          do: start_async(socket, :masu_count, fn -> {ref, Source.counted(source)} end),
+          else: socket
+
+      _exact ->
+        put_count(socket, Source.counted(source))
+    end
+  end
+
+  defp put_count(socket, {n, true}), do: assign(socket, total: n, exact: true)
+  defp put_count(socket, {n, false}), do: assign(socket, total: max(n, socket.assigns.total), exact: false)
+
+  # Rows read from `from` (`got` of the `asked`) say where the rows end
+  # when there are fewer, and that there are at least as many as they
+  # reach. A block past the end (none, from a place past it) asks the
+  # source for its count.
+  defp learn(%{assigns: %{exact: true}} = socket, _from, _got, _asked), do: socket
+
+  defp learn(socket, from, 0, asked) when from > 0 and asked > 0,
+    do: put_count(assign(socket, total: 0), Source.counted(socket.assigns.source))
+
+  defp learn(socket, from, got, asked) when got < asked,
+    do: assign(socket, total: from + got, exact: true)
+
+  defp learn(socket, from, got, _asked),
+    do: assign(socket, total: max(socket.assigns.total, from + got))
+
+  # The first rows of a view: of its page (`paging={:pages}`), or of the
+  # top.
+  defp first_rows(%{paging: :pages, page: page, page_size: size}), do: {page * size, size}
+  defp first_rows(_assigns), do: {0, @first_block}
 
   # A row as the browser gets it: its id, its cells, then its read-only
   # cells (`locks?/1`), then its place in the tree (Masu.Tree).
@@ -1008,11 +1125,11 @@ defmodule Masu.Grid do
     socket
     |> assign(
       source: source,
-      total: Source.count(source),
       revision: revision + 1,
       initial: nil,
       changed: []
     )
+    |> recount(keep: true)
     |> refresh_details()
   end
 
@@ -1198,7 +1315,7 @@ defmodule Masu.Grid do
         tabindex="0"
         aria-label={@label}
         aria-labelledby={@label_id}
-        aria-rowcount={@total + 1}
+        aria-rowcount={if @exact, do: @total + 1, else: -1}
         aria-colcount={length(@columns)}
         aria-multiselectable="true"
         style={"--masu-row-height: #{@row_height}px; height: #{@height}"}
@@ -1223,7 +1340,7 @@ defmodule Masu.Grid do
               </div>
             </div>
           </div>
-          <div class="masu-body" role="rowgroup" style={"height: #{@total * @row_height}px"}>
+          <div class="masu-body" role="rowgroup" style={"height: #{body_rows(assigns) * @row_height}px"}>
             <div
               :for={{row, index} <- Enum.with_index(@initial || [])}
               class="masu-row"
@@ -1272,6 +1389,11 @@ defmodule Masu.Grid do
     """
   end
 
+  # The rows the body is tall for, before the browser takes over: a
+  # page's, or the count's.
+  defp body_rows(%{paging: :pages} = assigns), do: length(assigns.initial || [])
+  defp body_rows(assigns), do: assigns.total
+
   defp aria_sort(%Query{sorts: [%{key: key, direction: direction} | _]}, %Column{key: key}),
     do: if(direction == :asc, do: "ascending", else: "descending")
 
@@ -1284,6 +1406,10 @@ defmodule Masu.Grid do
       "columns" => Enum.map(assigns.columns, &column_config/1),
       "rowHeight" => assigns.row_height,
       "total" => assigns.total,
+      "exact" => assigns.exact,
+      "paging" => Atom.to_string(assigns.paging),
+      "pageSize" => assigns.page_size,
+      "page" => assigns.page,
       "revision" => assigns.revision,
       "query" => Query.to_wire(assigns.query),
       "locale" => assigns.locale,
@@ -1308,7 +1434,8 @@ defmodule Masu.Grid do
       "restores" => Masu.Edit.restores?(assigns),
       "detail" => assigns.detail != [],
       "details" => for({id, _row, index} <- assigns.detail_rows, do: [id, index]),
-      "initial" => assigns.initial && %{"from" => 0, "rows" => encode_initial(assigns)}
+      "initial" =>
+        assigns.initial && %{"from" => assigns.initial_from, "rows" => encode_initial(assigns)}
     })
   end
 
