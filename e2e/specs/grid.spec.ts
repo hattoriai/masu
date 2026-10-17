@@ -319,11 +319,14 @@ test.describe("editing", () => {
 });
 
 test.describe("two people", () => {
+  // Without presence, nothing stops Ada from editing the cell Alan types
+  // in: the server's compare-and-swap is what refuses his stale edit.
   test("an edit shows in the other browser, and an edit of a cell changed meanwhile is refused", async ({ browser }) => {
+    const room = `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const ada = await (await browser.newContext({ locale: "en-GB" })).newPage();
     const alan = await (await browser.newContext({ locale: "en-GB" })).newPage();
-    await openPage(ada, "/together");
-    await openPage(alan, "/together");
+    await openPage(ada, `/together?room=${room}&presence=0`);
+    await openPage(alan, `/together?room=${room}&presence=0`);
     const cell = (page: import("@playwright/test").Page, row: number, col: number) => page.locator(`#together-r${row}-c${col}`);
 
     // Alan starts to type in Ken's name; Ada saves it first.
@@ -348,5 +351,41 @@ test.describe("two people", () => {
 
     await ada.context().close();
     await alan.context().close();
+  });
+});
+
+test.describe("presence", () => {
+  test("each person sees the others, where they are, what they type, and what they save", async ({ browser }) => {
+    const room = `presence-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const open = async (name: string) => {
+      const page = await (await browser.newContext({ locale: "en-GB" })).newPage();
+      await openPage(page, `/together?as=${name}&room=${room}`);
+      return page;
+    };
+    const ada = await open("Ada");
+    const alan = await open("Alan");
+
+    await expect(ada.locator("#together .masu-person")).toHaveAttribute("title", "Alan");
+    await expect(alan.locator("#together .masu-person")).toHaveAttribute("title", "Ada");
+
+    await alan.locator("#together-r2-c1").click();
+    await expect(ada.locator("#together .masu-peer .masu-peer-label")).toHaveText("Alan");
+
+    await alan.keyboard.type("Al");
+    await expect(ada.locator("#together .masu-peer-editing .masu-peer-label")).toHaveText("Alan is typing");
+
+    await ada.locator("#together-r2-c1").dblclick();
+    await expect(ada.locator("#together .masu-editor")).toHaveCount(0);
+    await expect(ada.locator("#together .masu-status")).toHaveText("Alan is editing this cell");
+
+    await alan.keyboard.press("Enter");
+    const color = await ada.locator("#together .masu-person").evaluate((el) => (el as HTMLElement).style.getPropertyValue("--masu-peer-color"));
+    const flashed = ada.locator("#together .masu-changed");
+    await expect(flashed.first()).toBeAttached();
+    expect(await flashed.first().evaluate((el) => (el as HTMLElement).style.getPropertyValue("--masu-flash"))).toBe(color);
+
+    await alan.context().close();
+    await expect(ada.locator("#together .masu-person")).toHaveCount(0);
+    await ada.context().close();
   });
 });

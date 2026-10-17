@@ -87,6 +87,15 @@ defmodule Masu.Components do
     doc:
       "`{pubsub, topic}`: shows the rows that change on the topic as they change, see `Masu.Live`"
 
+  attr :presence, :atom,
+    default: nil,
+    doc:
+      "your app's `Phoenix.Presence` module: shows the other people who have the grid open, see `Masu.Presence`"
+
+  attr :user, :map,
+    default: nil,
+    doc: "with `presence`: this person, `%{id: ..., name: ..., color: ..., avatar: ...}`"
+
   attr :row_id, :any,
     default: nil,
     doc: "a function that gives a row's id; the `id` of the row unless given"
@@ -133,9 +142,18 @@ defmodule Masu.Components do
 
   slot :empty, doc: "what the grid shows when it has no rows"
 
+  slot :person,
+    doc:
+      "draws a person who has the grid open (`:let`), see `Masu.Presence`; initials in their color unless given"
+
   def data_grid(assigns) do
     if is_nil(assigns.rows) and is_nil(assigns.source) do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> needs rows or a source"
+    end
+
+    if assigns.presence && (is_nil(assigns.user) or is_nil(assigns.live)) do
+      raise ArgumentError,
+            "<.data_grid id=#{inspect(assigns.id)}> with presence needs live and user"
     end
 
     ~H"""
@@ -149,6 +167,9 @@ defmodule Masu.Components do
       changeset={@changeset}
       update={@update}
       row_editable={@row_editable}
+      presence={@presence}
+      user={@user}
+      person={@person}
       on_save={@on_save}
       row_id={@row_id}
       sort={@sort}

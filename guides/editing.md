@@ -112,6 +112,10 @@ MySQL; SQLite writes one transaction at a time), so two saves cannot both
 pass the comparison. A schema with `Ecto.Changeset.optimistic_lock/3`
 refuses a row whose version changed, with the same message.
 
+With [Collaboration](collaboration.md), a cell someone types in is
+locked for the others, so two people rarely type in one cell; the
+compare-and-swap is what holds when they do.
+
 An `update` function gets the row as it was compared; to save it with
 the same guarantee, save it in a transaction of your own, or with
 `optimistic_lock/3`.

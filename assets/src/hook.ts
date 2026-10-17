@@ -3,10 +3,11 @@
 // and gives the grid the server's later renders (`updated`).
 
 import { Grid } from "./grid";
-import type { Transport } from "./types";
+import type { Person, Transport } from "./types";
 
 interface HookContext {
   el: HTMLElement;
+  handleEvent(event: string, callback: (payload: Record<string, unknown>) => void): void;
   pushEvent(event: string, payload: object, onReply?: (reply: Record<string, unknown>, ref: number) => void): void;
   pushEventTo(
     target: string | HTMLElement,
@@ -32,6 +33,9 @@ export const Masu = {
       },
     };
     hook.grid = new Grid(hook.el, transport);
+    hook.handleEvent("masu:people", (payload) => {
+      if (payload.id === hook.el.id) hook.grid?.setPeople(payload.people as Person[]);
+    });
   },
 
   updated(this: MasuHook) {

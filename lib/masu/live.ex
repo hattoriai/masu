@@ -65,10 +65,13 @@ defmodule Masu.Live do
     do: Phoenix.PubSub.broadcast(pubsub, topic, {__MODULE__, topic, {:upsert, row}})
 
   @doc false
-  # As broadcast_upsert/3, to every process but `from`.
-  @spec broadcast_upsert_from(pid(), atom(), String.t(), term()) :: :ok | {:error, term()}
-  def broadcast_upsert_from(from, pubsub, topic, row),
-    do: Phoenix.PubSub.broadcast_from(pubsub, from, topic, {__MODULE__, topic, {:upsert, row}})
+  # As broadcast_upsert/3, to every process but `from`, with who saved
+  # the row (`%{name, color}`, or nil): its flash takes their color.
+  @spec broadcast_upsert_from(pid(), atom(), String.t(), term(), map() | nil) ::
+          :ok | {:error, term()}
+  def broadcast_upsert_from(from, pubsub, topic, row, by \\ nil),
+    do:
+      Phoenix.PubSub.broadcast_from(pubsub, from, topic, {__MODULE__, topic, {:upsert, row, by}})
 
   @doc """
   Broadcasts a row that was deleted, given as the row or its id: a grid
@@ -77,6 +80,20 @@ defmodule Masu.Live do
   @spec broadcast_delete(atom(), String.t(), term()) :: :ok | {:error, term()}
   def broadcast_delete(pubsub, topic, row_or_id),
     do: Phoenix.PubSub.broadcast(pubsub, topic, {__MODULE__, topic, {:delete, row_or_id}})
+
+  @doc false
+  # Subscribes the LiveView to the people of a topic it follows, once.
+  @spec follow_presence(atom(), String.t()) :: :ok
+  def follow_presence(pubsub, topic) do
+    key = {__MODULE__, :presence, topic}
+
+    unless Process.get(key) do
+      :ok = Phoenix.PubSub.subscribe(pubsub, Masu.Presence.topic(topic))
+      Process.put(key, true)
+    end
+
+    :ok
+  end
 
   @doc false
   # The grids of this LiveView that follow `topic` (a grid calls it when it
@@ -136,6 +153,19 @@ defmodule Masu.Live do
       # after every message already in the mailbox, so the changes that
       # come together are taken together.
       if pending == [], do: Phoenix.LiveView.send_update(Masu.Grid, id: grid, masu_changes: true)
+    end
+
+    {:halt, socket}
+  end
+
+  # The people of a grid's topic changed (Masu.Presence): the grids of the
+  # topic draw them again.
+  def __handle_info__(
+        %Phoenix.Socket.Broadcast{event: "presence_diff", topic: "masu:presence:" <> topic},
+        socket
+      ) do
+    for grid <- Map.get(Process.get(__MODULE__, %{}), topic, []) do
+      Phoenix.LiveView.send_update(Masu.Grid, id: grid, masu_presence: true)
     end
 
     {:halt, socket}

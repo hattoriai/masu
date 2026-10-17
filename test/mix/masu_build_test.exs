@@ -7,7 +7,7 @@ defmodule Mix.Tasks.Masu.BuildTest do
   @root Path.expand("../..", __DIR__)
   @static Path.join(@root, "priv/static")
   @files ~w(masu.esm.js masu.cjs.js masu.css masu-sumi.css)
-  @exports ~w(Masu)
+  @exports ~w(Masu configure)
 
   @moduletag :build
   @moduletag timeout: 600_000

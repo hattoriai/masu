@@ -46,7 +46,8 @@ defmodule Masu.Grid do
     "empty" => "No rows",
     "row" => "{count} row",
     "rows" => "{count} rows",
-    "loading" => "Loading"
+    "loading" => "Loading",
+    "people" => "Also here"
   }
 
   @impl true
@@ -58,11 +59,16 @@ defmodule Masu.Grid do
        revision: 0,
        initial: nil,
        followed: nil,
-       changed: []
+       changed: [],
+       changed_by: %{},
+       tracked: nil,
+       people: []
      )}
   end
 
   @impl true
+  def update(%{masu_presence: true}, socket), do: {:ok, refresh_people(socket)}
+
   def update(%{masu_changes: true}, socket) do
     case Masu.Live.take(socket.assigns.id) do
       [] -> {:ok, socket}
@@ -90,31 +96,73 @@ defmodule Masu.Grid do
   defp follow(socket) do
     if connected?(socket) do
       :ok = Masu.Live.follow(socket.assigns.id, socket.assigns.followed, socket.assigns.live)
-      assign(socket, followed: socket.assigns.live)
+      socket |> assign(followed: socket.assigns.live) |> track()
     else
       socket
     end
   end
 
+  # The people of the grid's topic (Masu.Presence): this LiveView's user
+  # is tracked once, and the grid draws the others.
+  defp track(%{assigns: %{presence: nil}} = socket), do: socket
+  defp track(%{assigns: %{live: nil}} = socket), do: socket
+
+  defp track(%{assigns: %{presence: presence, live: {pubsub, topic}, user: user}} = socket) do
+    if socket.assigns.tracked != topic do
+      if socket.assigns.tracked, do: Masu.Presence.untrack(presence, socket.assigns.tracked, user)
+      :ok = Masu.Live.follow_presence(pubsub, topic)
+      :ok = Masu.Presence.track(presence, topic, user)
+    end
+
+    socket |> assign(tracked: topic) |> refresh_people()
+  end
+
+  defp refresh_people(%{assigns: %{presence: presence, tracked: topic, user: user}} = socket)
+       when is_binary(topic) do
+    people = Masu.Presence.people(presence, topic, user)
+
+    socket
+    |> assign(people: people)
+    |> push_event("masu:people", %{
+      "id" => socket.assigns.id,
+      "people" => Enum.map(people, &Map.take(&1, [:id, :name, :color, :cell, :editing]))
+    })
+  end
+
+  defp refresh_people(socket), do: socket
+
   # Changes from the topic: the source takes them and applies the query
   # again; the browser asks again for the rows it shows, and highlights
   # the changed ones.
-  defp take_changes(socket, changes) do
+  defp take_changes(socket, by_changes) do
     %{source: source, query: query, columns: columns, revision: revision} = socket.assigns
     row_id = row_id(socket.assigns)
-    source = source |> Source.change(changes, row_id) |> Source.prepare(query, columns)
+
+    changes = Enum.map(by_changes, &without_by/1)
 
     changed =
       for {:upsert, row} <- changes, uniq: true, do: Value.to_wire(row_id.(row))
+
+    changed_by =
+      for {:upsert, row, %{color: color}} <- by_changes,
+          into: %{},
+          do: {to_string(Value.to_wire(row_id.(row))), color}
+
+    source = source |> Source.change(changes, row_id) |> Source.prepare(query, columns)
 
     assign(socket,
       source: source,
       total: Source.count(source),
       revision: revision + 1,
       initial: nil,
-      changed: changed
+      changed: changed,
+      changed_by: changed_by
     )
   end
+
+  # A change from a grid's edit says who saved it; the source does not need it.
+  defp without_by({:upsert, row, _by}), do: {:upsert, row}
+  defp without_by(change), do: change
 
   defp start(socket, input, columns) do
     source = Source.new(input, source_opts(socket.assigns))
@@ -221,7 +269,7 @@ defmodule Masu.Grid do
           |> Source.change(Enum.map(saved, &{:upsert, &1}), row_id)
           |> Source.prepare(query, columns)
 
-        broadcast(socket.assigns.live, saved)
+        broadcast(socket.assigns.live, saved, socket.assigns.user)
         if is_function(socket.assigns.on_save, 1), do: socket.assigns.on_save.(saved)
 
         assign(socket,
@@ -239,6 +287,14 @@ defmodule Masu.Grid do
        "rows" => encode_rows(saved, socket.assigns),
        "errors" => errors
      }, socket}
+  end
+
+  # Where this LiveView's user is in the grid, for the others (Masu.Presence).
+  def handle_event("masu:cursor", %{"cell" => cell, "editing" => editing}, socket)
+      when (is_nil(cell) or (is_list(cell) and length(cell) == 2)) and is_boolean(editing) do
+    %{presence: presence, tracked: topic, user: user} = socket.assigns
+    if presence && topic, do: :ok = Masu.Presence.move(presence, topic, user, cell, editing)
+    {:noreply, socket}
   end
 
   def handle_event("masu:query", params, socket) when is_map(params) do
@@ -307,10 +363,11 @@ defmodule Masu.Grid do
     end
   end
 
-  defp broadcast(nil, _rows), do: :ok
+  defp broadcast(nil, _rows, _user), do: :ok
 
-  defp broadcast({pubsub, topic}, rows) do
-    for row <- rows, do: Masu.Live.broadcast_upsert_from(self(), pubsub, topic, row)
+  defp broadcast({pubsub, topic}, rows, user) do
+    by = if user, do: %{name: Map.get(user, :name), color: Masu.Presence.color(user)}
+    for row <- rows, do: Masu.Live.broadcast_upsert_from(self(), pubsub, topic, row, by)
     :ok
   end
 
@@ -358,6 +415,27 @@ defmodule Masu.Grid do
       data-masu={config(assigns)}
       {@rest}
     >
+      <div :if={@presence} class="masu-people" role="group" aria-label={@messages["people"]}>
+        <span
+          :for={person <- Enum.take(@people, 5)}
+          class="masu-person"
+          style={"--masu-peer-color: #{person.color}"}
+          title={person.name}
+          data-person={person.id}
+        >
+          <%= if @person != [] do %>
+            {render_slot(@person, person)}
+          <% else %>
+            <img :if={person.avatar} src={person.avatar} alt={person.name} />
+            <span :if={!person.avatar} class="masu-initials" aria-label={person.name}>
+              {person.initials}
+            </span>
+          <% end %>
+        </span>
+        <span :if={length(@people) > 5} class="masu-person masu-people-more">
+          +{length(@people) - 5}
+        </span>
+      </div>
       <div id={"#{@id}-ui"} class="masu-ui" phx-update="ignore">
         <div :if={@searchable} class="masu-toolbar">
           <input
@@ -449,7 +527,9 @@ defmodule Masu.Grid do
       "locale" => assigns.locale,
       "searchable" => assigns.searchable,
       "changed" => assigns.changed,
+      "changedBy" => assigns.changed_by,
       "locks" => locks?(assigns),
+      "presence" => assigns.presence != nil,
       "messages" => assigns.messages,
       "initial" =>
         assigns.initial && %{"from" => 0, "rows" => encode_rows(assigns.initial, assigns)}

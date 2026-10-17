@@ -45,6 +45,13 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same refusal. `Masu.Test.edit/3` takes `{id, key, value, before}`.
 - `on_save`: a function called with the saved rows, in the LiveView's
   process, for an audit, a flash or the LiveView's own assigns.
+- Collaboration (`Masu.Presence`): `presence` and `user` on a grid with
+  `live`. The others who have the grid open show as avatars (a `:person`
+  slot draws them), each one's cell as a line in their color with their
+  name (by row id and column key, whatever each person's order and
+  filters), a cell someone types in as "Ada is typing" and locked for the
+  others, and the rows they save flash in their color. `configure/1` of
+  the bundle draws the labels; CSS for the rest.
 - Live rows: `live={{pubsub, topic}}`, the `Masu.Live` hook, and
   `Masu.Live.broadcast_upsert/3` and `broadcast_delete/3`. A grid takes
   the changes of its topic into the person's query, a batch at a time;

@@ -380,11 +380,19 @@ defmodule MasuDev.QuotesLive do
   end
 end
 
+defmodule MasuDev.Presence do
+  @moduledoc "Who has a grid open (Masu.Presence)."
+  use Phoenix.Presence, otp_app: :masu, pubsub_server: MasuDev.PubSub
+end
+
 defmodule MasuDev.TogetherLive do
   @moduledoc """
   Twenty customers that everyone who opens the page shares: the grids
   follow one topic, so an edit in one browser shows in the others, and two
-  edits of one cell are a conflict.
+  edits of one cell are a conflict. Each browser is a person (`?as=Ada`,
+  or a name of its own), whom the others see (Masu.Presence). `?room=`
+  gives a page of its own, as the browser tests do, and `?presence=0` a
+  page where no one sees the others.
   """
   use Phoenix.LiveView
 
@@ -394,9 +402,15 @@ defmodule MasuDev.TogetherLive do
 
   @impl true
   def mount(params, _session, socket) do
+    name = params["as"] || Enum.random(~w(Ada Alan Grace Edsger Barbara Donald Margaret Ken))
+    user = %{id: "#{name}-#{System.unique_integer([:positive])}", name: name}
+
     {:ok,
      assign(socket,
        rows: Enum.take(MasuDev.Customers.all(), 20),
+       user: user,
+       topic: "together:" <> (params["room"] || "main"),
+       presence: if(params["presence"] != "0", do: MasuDev.Presence),
        locale: params["locale"] || "en-GB"
      )}
   end
@@ -405,12 +419,16 @@ defmodule MasuDev.TogetherLive do
   def render(assigns) do
     ~H"""
     <h1 id="together-label">Together</h1>
+    <p>You are {@user.name}. Open this page in another browser to edit with someone.</p>
     <.data_grid
       id="together"
       rows={@rows}
       changeset={&MasuDev.Customers.changeset/2}
-      live={{MasuDev.PubSub, "together"}}
+      live={{MasuDev.PubSub, @topic}}
+      presence={@presence}
+      user={@user}
       label_id="together-label"
+      searchable
       height="30rem"
       locale={@locale}
     >
@@ -480,7 +498,7 @@ Task.async(fn ->
 
   {:ok, _pid} =
     Supervisor.start_link(
-      [{Phoenix.PubSub, name: MasuDev.PubSub}, MasuDev.Endpoint],
+      [{Phoenix.PubSub, name: MasuDev.PubSub}, MasuDev.Presence, MasuDev.Endpoint],
       strategy: :one_for_one
     )
 

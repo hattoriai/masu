@@ -4,6 +4,13 @@ Known gaps in Masu, each to become an issue. The first ones are the rest
 of the first release: a grid that a team coming from AG Grid or TanStack
 Table finds complete.
 
+## Collaboration: more of a shared sheet
+
+A click on an avatar goes to that person's cell (the server finds the
+row's place in this person's order). Each person's selected range, as a
+wash in their color. The name of who changed a cell meanwhile in the
+refusal ("Changed by Ada meanwhile"). Comments on a cell.
+
 ## Live rows: keep the row the person reads
 
 A live change keeps the scroll, so a row inserted above the screen moves

@@ -33,6 +33,7 @@
   --masu-cell-padding: 0 0.75rem;
   --masu-space: 0.5rem;
   --masu-field-height: 2.25rem;
+  --masu-avatar-size: 1.625rem;
   --masu-focus-ring: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent);
   --masu-transition: 120ms ease-out;
 }
@@ -347,7 +348,7 @@
 
 @keyframes masu-changed {
   from {
-    background: color-mix(in oklab, var(--masu-accent) 22%, transparent);
+    background: color-mix(in oklab, var(--masu-flash, var(--masu-accent)) 22%, transparent);
   }
   to {
     background: transparent;
@@ -626,4 +627,92 @@
 .masu-cell.masu-locked {
   color: var(--masu-muted);
   cursor: not-allowed;
+}
+
+/* The other people who have the grid open (Masu.Presence). Each element
+   has the person's color in --masu-peer-color. */
+.masu-people {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: var(--masu-field-height);
+  margin-bottom: var(--masu-space);
+}
+
+/* Beside the search box, when the grid has one. */
+.masu:has(.masu-toolbar) > .masu-people {
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+  z-index: 1;
+  margin: 0;
+}
+
+.masu-people:empty {
+  display: none;
+}
+
+.masu-person {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--masu-avatar-size);
+  height: var(--masu-avatar-size);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--masu-background), 0 0 0 3.5px var(--masu-peer-color, var(--masu-border));
+  background: var(--masu-peer-color, var(--masu-surface));
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.masu-person img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.masu-people-more {
+  background: var(--masu-surface);
+  color: var(--masu-muted);
+}
+
+/* A person's place: a line in their color on the cell, and their name. */
+.masu-peer {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  box-shadow: inset 0 0 0 2px var(--masu-peer-color);
+  pointer-events: none;
+  transition: transform 80ms ease-out, inset-inline-start 80ms ease-out;
+}
+
+.masu-peer-label {
+  position: absolute;
+  bottom: 100%;
+  inset-inline-end: 0;
+  max-width: 12rem;
+  padding: 0 0.375rem;
+  border-radius: 3px 3px 0 0;
+  background: var(--masu-peer-color);
+  color: #fff;
+  font-size: 0.6875rem;
+  line-height: 1.125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The first row's label goes inside the cell, under the header. */
+.masu-peer-top .masu-peer-label {
+  top: 0;
+  bottom: auto;
+  border-radius: 0 0 3px 3px;
+}
+
+/* A cell that the person is editing: no one else edits it meanwhile. */
+.masu-peer-editing {
+  background: color-mix(in oklab, var(--masu-peer-color) 10%, transparent);
 }

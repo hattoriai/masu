@@ -16,7 +16,17 @@ import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { nextSorts } from "./sorting";
 import { toTSV } from "./tsv";
-import type { BlockReply, CellValue, ColumnConfig, Config, QuerySpec, Row, Transport } from "./types";
+import type { BlockReply, CellValue, ColumnConfig, Config, Options, Person, QuerySpec, Row, Transport } from "./types";
+
+const options: Options = {};
+
+/**
+ * Options of every grid of the page: `peerLabel`, a function that draws
+ * the label of another person on their cell (Masu.Presence).
+ */
+export function configure(next: Options): void {
+  Object.assign(options, next);
+}
 
 const OVERSCAN = 8;
 const PREFETCH = 60;
@@ -25,6 +35,7 @@ const SEARCH_DELAY = 250;
 const MAX_COPY_ROWS = 10_000;
 const MAX_AUTO_WIDTH = 640;
 const FLASH = 1600;
+const CURSOR_DELAY = 150;
 
 interface RowElement extends HTMLDivElement {
   masuIndex?: number;
@@ -75,7 +86,12 @@ export class Grid {
   private redoStack: Edit[][] = [];
 
   /** The rows that changed (Masu.Live), each until its flash ends. */
-  private flash = new Map<string, number>();
+  private flash = new Map<string, { until: number; color: string | undefined }>();
+  /** The other people who have the grid open, and their marks. */
+  private people: Person[] = [];
+  private peerEls: HTMLElement[] = [];
+  private sentCursor = "null";
+  private cursorTimer: ReturnType<typeof setTimeout> | null = null;
   private requestTimer: ReturnType<typeof setTimeout> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private observer: ResizeObserver | null = null;
@@ -137,8 +153,10 @@ export class Grid {
       // LiveView): the person keeps their place; the rows that changed
       // flash as they are drawn.
       const now = performance.now();
-      for (const [id, until] of this.flash) if (until < now) this.flash.delete(id);
-      for (const id of config.changed ?? []) this.flash.set(String(id), now + FLASH);
+      for (const [id, flash] of this.flash) if (flash.until < now) this.flash.delete(id);
+      for (const id of config.changed ?? []) {
+        this.flash.set(String(id), { until: now + FLASH, color: config.changedBy?.[String(id)] });
+      }
       this.revision = config.revision;
       this.total = config.total;
       this.query = config.query;
@@ -164,6 +182,7 @@ export class Grid {
     if (this.frame !== null) cancelAnimationFrame(this.frame);
     if (this.requestTimer) clearTimeout(this.requestTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
+    if (this.cursorTimer) clearTimeout(this.cursorTimer);
   }
 
   // The query: a new order, filters or search, applied by the server.
@@ -256,6 +275,8 @@ export class Grid {
 
     this.markHeader(selection);
     this.updateActiveDescendant();
+    this.drawPeople();
+    this.reportCursor();
     this.cache.evict(this.cache.blockOf(first));
     this.planRequests(first, last);
   }
@@ -293,8 +314,11 @@ export class Grid {
     rowEl.classList.toggle("masu-loading", row === null);
     rowEl.setAttribute("aria-busy", row === null ? "true" : "false");
 
-    const flashing = row !== null && this.flashing(row[0]);
-    rowEl.classList.toggle("masu-changed", flashing);
+    const flash = row === null ? null : this.flashing(row[0]);
+    rowEl.classList.toggle("masu-changed", flash !== null);
+    // The flash of a row someone saved takes their color.
+    if (flash?.color) rowEl.style.setProperty("--masu-flash", flash.color);
+    else rowEl.style.removeProperty("--masu-flash");
 
     const cells = rowEl.children;
     this.columns.forEach((column, col) => {
@@ -329,12 +353,12 @@ export class Grid {
     });
   }
 
-  private flashing(id: unknown): boolean {
-    const until = this.flash.get(String(id));
-    if (until === undefined) return false;
-    if (performance.now() <= until) return true;
+  private flashing(id: unknown): { color: string | undefined } | null {
+    const flash = this.flash.get(String(id));
+    if (flash === undefined) return null;
+    if (performance.now() <= flash.until) return flash;
     this.flash.delete(String(id));
-    return false;
+    return null;
   }
 
   private markRow(rowEl: RowElement, index: number, selection: Rect | null): void {
@@ -874,6 +898,11 @@ export class Grid {
     const row = this.cache.get(cell.row) ?? this.stale?.get(cell.row);
     if (!column?.editable || !row || cell.row < 0 || this.locked(row, cell.col)) return;
     if (column.type === "boolean") return;
+    const editor = this.people.find((person) => person.editing && person.cell && cellKey(person.cell[0], person.cell[1]) === cellKey(row[0], column.key));
+    if (editor) {
+      this.announce(this.message("peer_editing", { label: editor.name ?? "" }));
+      return;
+    }
 
     this.active = { ...cell };
     this.anchor = null;
@@ -898,6 +927,7 @@ export class Grid {
     this.body.appendChild(input);
     input.focus();
     if (text === undefined && input.type === "text") input.setSelectionRange(input.value.length, input.value.length);
+    this.reportCursor();
   }
 
   private onEditorKey(event: KeyboardEvent): void {
@@ -947,6 +977,7 @@ export class Grid {
     editor.input.remove();
     this.gridEl.focus({ preventScroll: true });
     this.render();
+    this.reportCursor();
   }
 
   /**
@@ -1133,6 +1164,69 @@ export class Grid {
     this.render();
   }
 
+  // The other people who have the grid open (Masu.Presence): a line in
+  // their color on the cell they are on, where the row is on this
+  // person's screen (their order and filters are their own), with their
+  // name; a cell they edit opens no editor here.
+
+  setPeople(people: Person[]): void {
+    this.people = people;
+    this.drawPeople();
+  }
+
+  private drawPeople(): void {
+    for (const el of this.peerEls) el.remove();
+    this.peerEls = [];
+    if (this.people.length === 0) return;
+
+    const rowsById = new Map<string, number>();
+    for (const [index, rowEl] of this.rows) {
+      const data = rowEl.masuRow;
+      if (data) rowsById.set(JSON.stringify(data[0]), index);
+    }
+
+    for (const person of this.people) {
+      if (!person.cell) continue;
+      const index = rowsById.get(JSON.stringify(person.cell[0]));
+      const col = this.columns.findIndex((column) => column.key === person.cell![1]);
+      if (index === undefined || col < 0) continue;
+
+      const el = document.createElement("div");
+      el.className = `masu-peer${person.editing ? " masu-peer-editing" : ""}${index === 0 ? " masu-peer-top" : ""}`;
+      el.style.setProperty("--masu-peer-color", person.color);
+      el.style.transform = `translateY(${index * this.config.rowHeight}px)`;
+      el.style.insetInlineStart = `${this.widths.slice(0, col).reduce((a, b) => a + b, 0)}px`;
+      el.style.width = `${this.widths[col]}px`;
+      el.style.height = `${this.config.rowHeight}px`;
+      el.dataset.person = person.id;
+      el.setAttribute("aria-hidden", "true");
+
+      const label = document.createElement("span");
+      label.className = "masu-peer-label";
+      const custom = options.peerLabel?.(person);
+      if (custom instanceof HTMLElement) label.appendChild(custom);
+      else label.textContent = custom ?? (person.editing ? this.message("peer_typing", { label: person.name ?? "" }) : (person.name ?? ""));
+      el.appendChild(label);
+
+      this.body.appendChild(el);
+      this.peerEls.push(el);
+    }
+  }
+
+  /** Tells the others where this person is, when it changes, at most every 150 ms. */
+  private reportCursor(): void {
+    if (!this.config.presence || this.cursorTimer) return;
+    this.cursorTimer = setTimeout(() => {
+      this.cursorTimer = null;
+      const data = this.active.row >= 0 ? (this.cache.get(this.active.row) ?? this.stale?.get(this.active.row)) : undefined;
+      const cell = data ? [data[0], this.columns[this.active.col].key] : null;
+      const cursor = JSON.stringify([cell, this.editor !== null]);
+      if (cursor === this.sentCursor) return;
+      this.sentCursor = cursor;
+      this.transport.push("masu:cursor", { cell, editing: this.editor !== null });
+    }, CURSOR_DELAY);
+  }
+
   // Selection and copy.
 
   /** The cells a copy takes: the range, or the active cell. */
@@ -1279,6 +1373,8 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   not_editable: "{count} cells cannot be edited",
   saved: "{count} cells saved",
   more_errors: "({count} more)",
+  peer_editing: "{label} is editing this cell",
+  peer_typing: "{label} is typing",
 };
 
 // A funnel, drawn for Masu.

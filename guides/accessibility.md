@@ -46,6 +46,14 @@ A cell the server refused has `aria-invalid="true"` and the error as its
 title, and the live region says the error. In a column that edits, a cell
 has `aria-readonly`: `"true"` when the row's state makes it read-only.
 
+## Other people
+
+The avatars are a group named by `messages["people"]` ("Also here"),
+each with the person's name as its title and label. The lines and labels
+of other people's cells are hidden from screen readers (they move as the
+others move); a cell that another person edits says so when the person
+tries to edit it.
+
 ## Announcements
 
 A live region says how many rows a sort, a filter or a search gives

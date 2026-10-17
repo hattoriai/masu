@@ -28,11 +28,13 @@ defaults, so that a page with all three looks like one thing.
 | `--masu-accent`, `--masu-accent-text`, `--masu-focus-ring` | the focus |
 | `--masu-loading` | the bars of a row that is coming |
 | `--masu-invalid` | the line of a cell the server refused |
+| `--masu-avatar-size` | the avatars of the others (Collaboration) |
 | `--masu-radius`, `--masu-cell-padding`, `--masu-space`, `--masu-field-height` | shape and space |
 | `--masu-transition` | the speed of the small transitions |
 
-The grid sets `--masu-cols`, `--masu-width` and `--masu-row-height` on
-itself: the widths of the columns and the height of a row (the
+A changed row has the color of the person who saved it in
+`--masu-flash` (the accent unless someone saved it). The grid sets
+`--masu-cols`, `--masu-width` and `--masu-row-height` on itself: the widths of the columns and the height of a row (the
 `row_height` attribute).
 
 ## Dark mode without Sumi
@@ -85,4 +87,6 @@ the active cell a line of it.
 | `.masu-chips`, `.masu-chip`, `.masu-chip-text`, `.masu-chip-remove`, `.masu-chips-clear` | the filters above the grid |
 | `.masu-editable`, `.masu-editor`, `.masu-saving`, `.masu-invalid` | a cell that edits, its editor, a cell being saved, a cell refused |
 | `.masu-locked` | a cell that the row's state makes read-only, in a column that edits |
+| `.masu-people`, `.masu-person`, `.masu-initials`, `.masu-people-more` | the avatars of the others; each has `--masu-peer-color` |
+| `.masu-peer`, `.masu-peer-label`, `.masu-peer-editing`, `.masu-peer-top` | another person's cell, their name, while they type, on the first row; with `--masu-peer-color` |
 | `.masu-changed` | a row that changed on the grid's topic, for a moment (see [Live rows](live.md)) |

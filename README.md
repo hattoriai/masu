@@ -19,6 +19,10 @@ app:
 * live rows: a grid that follows a PubSub topic shows the rows that
   change on it as they change, in the place of each person's order and
   filters, with a short highlight;
+* collaboration, as in a shared spreadsheet: the avatars of the others
+  who have the grid open, their cells in their colors, a cell someone
+  types in locked for the others, and their saves flashing in their
+  color;
 * sorting by several columns, a search box, and a filter menu on each
   column, with the values of an enum and their counts, and the filters
   as chips above the grid;
@@ -40,6 +44,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Sources | `rows={@users}` for a list; `source={query} repo={Repo}` for Ecto, where a sort is an `ORDER BY`, a filter and the search a `WHERE`, and each block a `LIMIT` and `OFFSET`; `Masu.Source` for your own |
 | Editing | `changeset={&Order.changeset/2}`: a cell edits on a key typed, Enter, F2 or a double click; the edits of a row saved together with `Repo.update`, the errors on their cells, the old values back; paste of tab-separated text, fill down, Delete, undo and redo; read-only rows and cells by their state (`row_editable`, `editable={&...}`), checked on the server; a cell changed by someone else meanwhile refused (a compare-and-swap of each cell, in a transaction that locks the row); `update` for your own persistence and `on_save` to hear of each save; a row found again through the grid's own query |
 | Live rows | `live={{MyApp.PubSub, "orders"}}` and `Masu.Live.broadcast_upsert/3`: changes come into the person's query, a batch at a time, the scroll stays, the rows do not blink, the changed ones flash |
+| Collaboration | `presence={MyAppWeb.Presence} user={...}`: avatars (a `:person` slot of your own), each person's cell by row id and column key whatever the others' order and filters, "Ada is typing" and a lock on that cell, flashes in the saver's color; `configure({peerLabel})` and CSS for the rest |
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
 | Sorting | a click on a header; with Shift, by several columns, numbered in the headers; text without case, empty values last |
@@ -159,6 +164,8 @@ in the same order.
 * [Editing](guides/editing.md): cells saved through your changeset,
   paste, fill down and undo.
 * [Live rows](guides/live.md): a grid that follows a PubSub topic.
+* [Collaboration](guides/collaboration.md): who else has the grid open,
+  and where they are.
 * [Keyboard and copy](guides/keyboard.md): the keys, the selection, and
   what a copy gives.
 * [Testing](guides/testing.md): `Masu.Test` with `Phoenix.LiveViewTest`.

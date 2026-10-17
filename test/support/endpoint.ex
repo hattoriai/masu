@@ -12,6 +12,7 @@ defmodule MasuTest.Router do
 
   pipeline :browser do
     plug(:fetch_session)
+    plug(:fetch_query_params)
   end
 
   scope "/" do
@@ -25,6 +26,7 @@ defmodule MasuTest.Router do
     live("/edit/orders", MasuTest.EditOrdersLive)
     live("/edit/update", MasuTest.UpdateLive)
     live("/edit/locked", MasuTest.LockedLive)
+    live("/presence", MasuTest.PresenceLive)
   end
 end
 

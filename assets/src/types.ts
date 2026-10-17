@@ -61,6 +61,10 @@ export interface Config {
   changed: unknown[];
   /** Rows end with their read-only cells: `true`, or column indexes. */
   locks: boolean;
+  /** The rows that changed by someone's edit, with their color. */
+  changedBy: Record<string, string>;
+  /** The grid shows who else has it open (Masu.Presence). */
+  presence: boolean;
   messages: Record<string, string>;
   initial: { from: number; rows: Row[] } | null;
 }
@@ -76,4 +80,19 @@ export interface BlockReply {
 
 export interface Transport {
   push(event: string, payload: object, onReply?: (reply: Record<string, unknown>) => void): void;
+}
+
+/** Another person who has the grid open (Masu.Presence). */
+export interface Person {
+  id: string;
+  name: string | null;
+  color: string;
+  /** Where they are: a row's id and a column's key. */
+  cell: [unknown, string] | null;
+  editing: boolean;
+}
+
+export interface Options {
+  /** Draws the label of a person on their cell: text, or an element. */
+  peerLabel?: (person: Person) => string | HTMLElement;
 }
