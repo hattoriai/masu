@@ -82,6 +82,17 @@ grid's reason.
   `:value`, `:count`, `:level`, `:expanded` and `:totals`.
 * `totals(view, id)`: the row of totals, by column key.
 
+## Export and selection
+
+* `export(view, id, format, opts \\ [])`: exports as the Export menu
+  does, downloads the file through your router's export route, and gives
+  it, `{name, binary}`; `conn:` a conn with what the route's pipeline
+  wants (a signed-in user).
+* `export_url(view, id, format)`: the link the browser would get, to test
+  the route itself (that it refuses a person who is not signed in).
+* `select(view, id, ids, on \\ true)`, `select_all(view, id, on \\ true)`
+  and `selection(view, id)`.
+
 ## Trees and details
 
 * `nodes(view, id, opts)`: the rows of a tree, as maps of `:id`,

@@ -9,6 +9,7 @@ defmodule MasuTest.Router do
   use Phoenix.Router
 
   import Phoenix.LiveView.Router
+  import Masu.Router
 
   pipeline :browser do
     plug(:fetch_session)
@@ -31,6 +32,14 @@ defmodule MasuTest.Router do
     live("/tree", MasuTest.TreeLive)
     live("/details", MasuTest.DetailsLive)
     live("/groups", MasuTest.GroupsLive)
+    live("/export", MasuTest.ExportLive)
+    live("/select", MasuTest.SelectLive)
+  end
+
+  # In a scope: the grid's link goes through it.
+  scope "/admin" do
+    pipe_through(:browser)
+    masu_exports()
   end
 end
 

@@ -106,8 +106,17 @@ defmodule Masu.Source do
   """
   @callback totals(state()) :: %{String.t() => term()}
 
+  @doc """
+  Every row of a query but those of `except` (ids, as the browser has
+  them): the person selected every row (`Masu.Live.selected/1`). Gives
+  their ids, or, for a database, a query of them.
+  """
+  @callback select_all(state(), Query.t(), [Column.t()], except :: [term()], (term() -> term())) ::
+              {:ids, [term()]} | {:query, term()}
+
   @optional_callbacks supports?: 2,
                       totals: 1,
+                      select_all: 5,
                       change: 3,
                       values: 5,
                       fetch: 3,
@@ -199,6 +208,17 @@ defmodule Masu.Source do
   @spec nodes(t(), non_neg_integer(), pos_integer()) :: [{term(), map()}] | nil
   def nodes(%__MODULE__{module: module, state: state}, offset, limit) do
     if function_exported?(module, :nodes, 3), do: module.nodes(state, offset, limit)
+  end
+
+  @doc false
+  @spec select_all(t(), Query.t(), [Column.t()], [term()], (term() -> term())) ::
+          {:ids, [term()]} | {:query, term()}
+  def select_all(%__MODULE__{module: module, state: state}, query, columns, except, row_id) do
+    if function_exported?(module, :select_all, 5) do
+      module.select_all(state, query, columns, except, row_id)
+    else
+      raise ArgumentError, "the source #{inspect(module)} cannot give every row of a query"
+    end
   end
 
   @doc false

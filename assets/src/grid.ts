@@ -16,7 +16,7 @@ import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { moveKey, pins, scrollFor, visualLeft, type Pins } from "./layout";
 import { indexAt, rowTop, totalHeight, type Gap } from "./offsets";
-import { ColumnsPanel, ViewsPanel } from "./panels";
+import { ColumnsPanel, ExportPanel, ViewsPanel } from "./panels";
 import { nextSorts } from "./sorting";
 import { toTSV } from "./tsv";
 import { sameView } from "./view";
@@ -100,10 +100,20 @@ export class Grid {
   /** The toolbar's buttons and their menus. */
   private columnsButton: HTMLButtonElement | null = null;
   private viewsButton: HTMLButtonElement | null = null;
-  private panel: { kind: "columns"; panel: ColumnsPanel } | { kind: "views"; panel: ViewsPanel } | null = null;
+  private exportButton: HTMLButtonElement | null = null;
+  private panel:
+    | { kind: "columns"; panel: ColumnsPanel }
+    | { kind: "views"; panel: ViewsPanel }
+    | { kind: "export"; panel: ExportPanel }
+    | null = null;
   /** A block of a revision the grid does not have yet (a layout's answer). */
   private pendingBlock: BlockReply | null = null;
   private lastNotice = 0;
+  /** The rows selected (`selectable`), as JSON ids; every row of the query less `except` when `all`. */
+  private chosen = { all: false, ids: new Set<string>(), except: new Set<string>(), count: 0 };
+  /** The row of the last box clicked: the start of a Shift click's range. */
+  private lastChosen: number | null = null;
+  private selectionBar: HTMLElement | null = null;
   /** A press on a header: a click sorts, a drag moves the column. */
   private headerPress: { col: number; x: number; shift: boolean; moved: boolean; target: number | null } | null = null;
   private dropEl: HTMLElement | null = null;
@@ -187,6 +197,7 @@ export class Grid {
     this.renderHeader();
     this.applyWidths();
     this.body.replaceChildren();
+    this.readSelection();
     this.renderToolbar();
     this.renderTotals();
     this.listen();
@@ -230,6 +241,10 @@ export class Grid {
     const search = config.query.search ?? "";
     if (this.searchEl && !this.searchTimer && search !== (previous.query.search ?? "") && search !== this.searchEl.value.trim()) {
       this.searchEl.value = search;
+    }
+    if (this.readSelection()) {
+      this.renderHeader();
+      this.refreshRows();
     }
     this.renderToolbar();
     this.renderTotals();
@@ -517,9 +532,9 @@ export class Grid {
     return { level, children, expanded, position, size };
   }
 
-  /** The first cell of a row: its indent and arrow in a tree, the arrow of its detail. */
+  /** The first cell of a row: its indent and arrow in a tree, the arrow of its detail, its box. */
   private decorateFirstCell(cell: HTMLElement, row: Row | null): void {
-    if (!this.config.tree && !this.config.detail) return;
+    if (!this.config.tree && !this.config.detail && !this.config.selection) return;
     const node = row === null ? null : this.nodeOf(row);
     cell.classList.toggle("masu-tree-cell", node !== null);
     if (node) cell.style.setProperty("--masu-level", String(node.level));
@@ -555,6 +570,109 @@ export class Grid {
       twisty.dataset.state = node.children ? (node.expanded ? "open" : "closed") : "leaf";
       cell.prepend(twisty);
     }
+    if (this.config.selection && !isGroup(row)) {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "masu-select";
+      box.tabIndex = -1;
+      box.checked = this.isChosen(row[0]);
+      box.setAttribute("aria-label", this.message("select_row", {}));
+      cell.prepend(box);
+    }
+    cell.parentElement?.classList.toggle("masu-row-chosen", this.config.selection !== null && !isGroup(row) && this.isChosen(row[0]));
+  }
+
+  // Selection (`selectable`): the server holds it; the browser shows it
+  // at once, and sends each change.
+
+  /** Reads the selection of the config; whether it changed. */
+  private readSelection(): boolean {
+    const selection = this.config.selection;
+    const before = JSON.stringify([this.chosen.all, [...this.chosen.ids], [...this.chosen.except]]);
+    this.chosen = selection
+      ? {
+          all: selection.all,
+          ids: new Set(selection.ids.map((id) => JSON.stringify(id))),
+          except: new Set(selection.except.map((id) => JSON.stringify(id))),
+          count: selection.count,
+        }
+      : { all: false, ids: new Set(), except: new Set(), count: 0 };
+    this.renderSelectionBar();
+    return JSON.stringify([this.chosen.all, [...this.chosen.ids], [...this.chosen.except]]) !== before;
+  }
+
+  private isChosen(id: unknown): boolean {
+    const key = JSON.stringify(id);
+    return this.chosen.all ? !this.chosen.except.has(key) : this.chosen.ids.has(key);
+  }
+
+  /** Selects or takes out rows by their indexes (those the browser has, or loads). */
+  private choose(first: number, last: number, on: boolean): void {
+    const top = Math.min(first, last);
+    const bottom = Math.min(Math.max(first, last), top + MAX_EDITS - 1);
+    this.load(top, bottom, () => {
+      const ids: unknown[] = [];
+      for (let index = top; index <= bottom; index++) {
+        const row = this.cache.get(index);
+        if (row && !isGroup(row)) ids.push(row[0]);
+      }
+      if (ids.length === 0) return;
+      for (const id of ids) {
+        const key = JSON.stringify(id);
+        if (this.chosen.all) (on ? this.chosen.except.delete(key) : this.chosen.except.add(key));
+        else on ? this.chosen.ids.add(key) : this.chosen.ids.delete(key);
+      }
+      this.refreshRows();
+      // The header's box: every row, some, or none.
+      this.renderHeader();
+      this.transport.push("masu:select", { ids, on }, (reply) => {
+        if (typeof reply?.count === "number") this.announce(this.message("chosen", { count: reply.count as number }));
+      });
+    });
+  }
+
+  /** The box of a row was clicked (Shift: the range from the last one). */
+  private onBox(index: number, shift: boolean): void {
+    const row = this.cache.get(index) ?? this.stale?.get(index);
+    if (!row) return;
+    const on = !this.isChosen(row[0]);
+    if (shift && this.lastChosen !== null) this.choose(this.lastChosen, index, on);
+    else this.choose(index, index, on);
+    this.lastChosen = index;
+  }
+
+  /** Every row of the query, or none. */
+  private chooseAll(on: boolean): void {
+    this.chosen = { all: on, ids: new Set(), except: new Set(), count: on ? this.total : 0 };
+    this.refreshRows();
+    this.renderHeader();
+    this.transport.push("masu:select", { all: on }, (reply) => {
+      if (typeof reply?.count === "number") this.announce(this.message("chosen", { count: reply.count as number }));
+    });
+  }
+
+  /** "1,234 selected", with Clear, above the grid while rows are selected. */
+  private renderSelectionBar(): void {
+    if (!this.config.selection || this.chosen.count === 0) {
+      this.selectionBar?.remove();
+      this.selectionBar = null;
+      return;
+    }
+    if (!this.selectionBar) {
+      this.selectionBar = document.createElement("div");
+      this.selectionBar.className = "masu-selection-bar";
+      this.uiEl.appendChild(this.selectionBar);
+    }
+    const text = document.createElement("span");
+    text.textContent = this.message(this.chosen.all && this.chosen.except.size === 0 ? "chosen_all" : "chosen", {
+      count: this.chosen.count,
+    });
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "masu-selection-clear";
+    clear.textContent = this.message("clear_selection", {});
+    clear.addEventListener("click", () => this.chooseAll(false));
+    this.selectionBar.replaceChildren(text, clear);
   }
 
   /** The ids of the rows whose detail is open (as JSON). */
@@ -739,6 +857,17 @@ export class Grid {
       cell.dataset.key = column.key;
       cell.dataset.col = String(col);
       this.pin(cell, col);
+
+      if (col === 0 && this.config.selection) {
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.className = "masu-select-all";
+        box.tabIndex = -1;
+        box.checked = this.chosen.all && this.chosen.except.size === 0;
+        box.indeterminate = !box.checked && (this.chosen.all || this.chosen.ids.size > 0);
+        box.setAttribute("aria-label", this.message("select_all", {}));
+        cell.appendChild(box);
+      }
 
       const label = document.createElement("span");
       label.className = "masu-label";
@@ -1084,7 +1213,21 @@ export class Grid {
     });
     this.on(this.gridEl, "click", (event) => {
       if (this.inDetail(event.target)) return;
-      const button = (event.target as HTMLElement).closest<HTMLElement>(".masu-filter-button");
+      const target = event.target as HTMLElement;
+      // The boxes: the server holds the selection, the box shows it.
+      if (target.closest(".masu-select-all")) {
+        event.preventDefault();
+        // Every row, unless every row is selected: then none.
+        this.chooseAll(!(this.chosen.all && this.chosen.except.size === 0));
+        return;
+      }
+      if (target.closest(".masu-select")) {
+        event.preventDefault();
+        const cell = this.cellAt(target);
+        if (cell) this.onBox(cell.row, event.shiftKey);
+        return;
+      }
+      const button = target.closest<HTMLElement>(".masu-filter-button");
       if (!button) return;
       const col = Number(button.dataset.col);
       if (this.menu?.col === col) this.closeMenu(true);
@@ -1221,6 +1364,13 @@ export class Grid {
     const data = this.cache.get(row) ?? this.stale?.get(row);
     if (!data) return false;
 
+    // Space on the first column selects the row, or takes it out.
+    if (this.config.selection && event.key === " " && col === 0 && !event.altKey && !isGroup(data)) {
+      event.preventDefault();
+      this.onBox(row, event.shiftKey);
+      return true;
+    }
+
     if (event.altKey && this.config.detail) {
       if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
         event.preventDefault();
@@ -1287,6 +1437,12 @@ export class Grid {
 
   private onMouseDown(event: MouseEvent): void {
     const target = event.target as HTMLElement;
+    // A box (the click selects); the focus stays on the grid.
+    if (target.closest(".masu-select, .masu-select-all")) {
+      event.preventDefault();
+      this.gridEl.focus({ preventScroll: true });
+      return;
+    }
     // The arrow of a tree's row, and of a detail.
     const arrow = target.closest<HTMLElement>(".masu-twisty, .masu-detail-toggle");
     if (arrow) {
@@ -1328,6 +1484,14 @@ export class Grid {
     if (!cell) return;
     event.preventDefault();
     this.gridEl.focus({ preventScroll: true });
+    // Ctrl (⌘) and a click selects the row, or takes it out.
+    if (this.config.selection && (event.ctrlKey || event.metaKey)) {
+      this.active = cell;
+      this.anchor = null;
+      this.onBox(cell.row, false);
+      this.render();
+      return;
+    }
     if (event.shiftKey) {
       if (!this.anchor) this.anchor = this.active.row >= 0 ? { ...this.active } : cell;
     } else {
@@ -1519,8 +1683,8 @@ export class Grid {
 
   /** The toolbar's buttons: the columns menu and the views menu. */
   private renderToolbar(): void {
-    const wanted = this.config.columnsMenu || this.config.views !== null;
-    if (!wanted && !this.columnsButton && !this.viewsButton) return;
+    const wanted = this.config.columnsMenu || this.config.views !== null || (this.config.export ?? []).length > 0;
+    if (!wanted && !this.columnsButton && !this.viewsButton && !this.exportButton) return;
 
     let toolbar = this.uiEl.querySelector<HTMLElement>(":scope > .masu-toolbar");
     if (!toolbar) {
@@ -1535,6 +1699,13 @@ export class Grid {
       toolbar.appendChild(actions);
     }
 
+    // A menu the grid no longer has (an `export` that turned false: the
+    // person is no longer an admin, say) goes, with its panel.
+    if (!this.config.columnsMenu && this.columnsButton) this.columnsButton = this.dropButton("columns", this.columnsButton);
+    if (this.config.views === null && this.viewsButton) this.viewsButton = this.dropButton("views", this.viewsButton);
+    if ((this.config.export ?? []).length === 0 && this.exportButton)
+      this.exportButton = this.dropButton("export", this.exportButton);
+
     if (this.config.columnsMenu && !this.columnsButton) {
       this.columnsButton = toolbarButton(this.message("columns_menu", {}), "masu-columns-button", COLUMNS_ICON);
       this.columnsButton.addEventListener("click", () => this.togglePanel("columns"));
@@ -1544,6 +1715,11 @@ export class Grid {
       this.viewsButton = toolbarButton(this.message("views_menu", {}), "masu-views-button", VIEWS_ICON);
       this.viewsButton.addEventListener("click", () => this.togglePanel("views"));
       actions.appendChild(this.viewsButton);
+    }
+    if ((this.config.export ?? []).length > 0 && !this.exportButton) {
+      this.exportButton = toolbarButton(this.message("export_menu", {}), "masu-export-button", EXPORT_ICON);
+      this.exportButton.addEventListener("click", () => this.togglePanel("export"));
+      actions.appendChild(this.exportButton);
     }
     if (this.viewsButton) {
       // The button says which named view shows, if one does: the person's
@@ -1560,14 +1736,30 @@ export class Grid {
     if (this.panel?.kind === "views") this.panel.panel.refresh();
   }
 
-  private togglePanel(kind: "columns" | "views"): void {
+  private togglePanel(kind: "columns" | "views" | "export"): void {
     const open = this.panel?.kind;
     this.closePanel(false);
     if (open === kind) return;
     this.closeMenu(false);
     const messages = this.messages();
 
-    if (kind === "columns") {
+    if (kind === "export") {
+      if (this.exportButton?.dataset.busy) return;
+      const panel = new ExportPanel(
+        {
+          root: this.uiEl,
+          messages,
+          formats: this.config.export ?? [],
+          start: (format) => {
+            this.closePanel(true);
+            this.startExport(format);
+          },
+          close: () => this.closePanel(true),
+        },
+        this.exportButton!,
+      );
+      this.panel = { kind, panel };
+    } else if (kind === "columns") {
       const panel = new ColumnsPanel(
         {
           root: this.uiEl,
@@ -1613,12 +1805,48 @@ export class Grid {
     });
   }
 
+  private dropButton(kind: "columns" | "views" | "export", button: HTMLButtonElement): null {
+    if (this.panel?.kind === kind) this.closePanel(false);
+    button.remove();
+    return null;
+  }
+
   private closePanel(focus: boolean): void {
     if (!this.panel) return;
     const { kind, panel } = this.panel;
     this.panel = null;
     panel.destroy();
-    if (focus) (kind === "columns" ? this.columnsButton : this.viewsButton)?.focus();
+    if (focus) ({ columns: this.columnsButton, views: this.viewsButton, export: this.exportButton })[kind]?.focus();
+  }
+
+  // Export (Masu.Export): the server answers with a link, good once, to
+  // the file on the router's export route (Masu.Router); the browser
+  // downloads it from there as the rows are read, with its own progress.
+  // Nothing of the file goes over the socket.
+
+  private startExport(format: string): void {
+    const button = this.exportButton;
+    if (!button) return;
+    button.dataset.busy = "true";
+    button.setAttribute("aria-busy", "true");
+    this.transport.push("masu:export", { format }, (reply) => {
+      delete button.dataset.busy;
+      button.removeAttribute("aria-busy");
+      if (typeof reply?.url !== "string") {
+        this.announce(this.message("export_failed", {}));
+        return;
+      }
+      // A link with `download` downloads where it is, with no tab to open
+      // (a pop-up blocker stops a window opened after a round trip).
+      const link = document.createElement("a");
+      link.href = reply.url;
+      link.download = "";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      this.announce(this.message("export_started", {}));
+    });
   }
 
   /** Says once that part of a view no longer applies (Masu.View). */
@@ -2495,6 +2723,16 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   ungroup_by: "Stop grouping by {label}",
   grouped_by: "Grouped by {label}",
   totals: "Total",
+  select_row: "Select the row",
+  select_all: "Select every row",
+  chosen: "{count} selected",
+  chosen_all: "All {count} selected",
+  clear_selection: "Clear",
+  export_menu: "Export",
+  export_csv: "CSV",
+  export_xlsx: "Excel (XLSX)",
+  export_started: "The export is downloading",
+  export_failed: "The export failed",
   detail_hidden: "Details hidden",
   view_reset: "The grid's own view",
   view_name: "Name this view",
@@ -2511,6 +2749,10 @@ const COLUMNS_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="2" y="2.5" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 2.5v11M10 2.5v11" stroke="currentColor" stroke-width="1.4"/></svg>';
 const VIEWS_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.5 5.5 8 2.5l5.5 3L8 8.5z M2.5 8.5 8 11.5l5.5-3 M2.5 11 8 14l5.5-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+
+// A tray with an arrow down, drawn for Masu.
+const EXPORT_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M8 2.5v7M5 6.5l3 3 3-3M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 // A funnel, drawn for Masu.
 const FILTER_ICON =

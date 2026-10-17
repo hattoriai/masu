@@ -111,6 +111,10 @@ export interface Config {
   totals: Record<string, CellValue> | null;
   /** The person may group the rows by a column (not a tree). */
   groupable: boolean;
+  /** The formats of the Export menu ("csv", "xlsx"); empty without one. */
+  export: string[];
+  /** The rows selected (`selectable`): some ids, or every row of the query less some; null when rows do not select. */
+  selection: { all: boolean; ids: unknown[]; except: unknown[]; count: number } | null;
 }
 
 export interface BlockReply {

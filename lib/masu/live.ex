@@ -80,6 +80,47 @@ defmodule Masu.Live do
       else: {:halt, socket}
   end
 
+  @doc """
+  The export of the grid `grid` of this LiveView (`Masu.Export`): its
+  rows as they are now (the person's order, filters and search), with
+  the columns that show. Call it in the LiveView; write it anywhere.
+  """
+  @spec export(String.t()) :: Masu.Export.t()
+  def export(grid), do: Map.fetch!(grid!(grid), :export)
+
+  @doc """
+  The rows selected in the grid `grid` of this LiveView (`selectable`):
+  `{:ids, ids}`, or, when the person selected every row of the query,
+  `{:query, query}` for an Ecto source (an `Ecto.Query` of the rows, with
+  the person's filters and search, less the rows they took out of it) and
+  `{:ids, ids}` of every such row for a list.
+
+      def handle_event("archive", _params, socket) do
+        case Masu.Live.selected("orders") do
+          {:ids, ids} -> Orders.archive(ids)
+          {:query, query} -> Repo.update_all(query, set: [archived: true])
+        end
+
+        {:noreply, socket}
+      end
+  """
+  @spec selected(String.t()) :: {:ids, [term()]} | {:query, term()}
+  def selected(grid), do: grid!(grid).selected.()
+
+  defp grid!(grid) do
+    Process.get({__MODULE__, :grid, grid}) ||
+      raise ArgumentError, "no grid #{inspect(grid)} in this LiveView"
+  end
+
+  @doc false
+  # What a grid gives its LiveView: its export and its selection, as they
+  # are at its last render.
+  @spec put_grid(String.t(), map()) :: :ok
+  def put_grid(grid, data) do
+    Process.put({__MODULE__, :grid, grid}, data)
+    :ok
+  end
+
   @doc false
   # The params of the grid `grid` in the URL (`?orders[sort]=...`), or nil,
   # and the URL. Registers the grid, which hears of later params.

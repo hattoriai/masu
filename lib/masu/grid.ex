@@ -35,6 +35,7 @@ defmodule Masu.Grid do
   use Phoenix.LiveComponent
 
   alias Masu.{Column, Group, Layout, Query, Source, Tree, Value, View}
+  alias Masu.Export.{Download, Ticket}
   alias Phoenix.HTML.Safe
 
   @max_block 500
@@ -78,7 +79,8 @@ defmodule Masu.Grid do
        saved_views: [],
        initial_nodes: nil,
        open_details: [],
-       detail_rows: []
+       detail_rows: [],
+       selection: %{all: false, ids: MapSet.new(), except: MapSet.new()}
      )}
   end
 
@@ -543,6 +545,47 @@ defmodule Masu.Grid do
     end
   end
 
+  # The Export menu: a link to the file, for the browser to download from
+  # the router's export route (Masu.Router), with a token of a ticket that
+  # holds the export, good once. The file is not written here, nor sent
+  # over the socket.
+  def handle_event("masu:export", %{"format" => format}, socket) when format in ["csv", "xlsx"] do
+    format = String.to_existing_atom(format)
+    %{id: id, export: allowed} = socket.assigns
+
+    cond do
+      format not in export_formats(socket.assigns) ->
+        {:reply, %{"error" => "format"}, socket}
+
+      not function_exported?(socket.router || Masu, :__masu_export_path__, 0) ->
+        raise ArgumentError,
+              "the grid #{id} has export=#{inspect(allowed)}, and its LiveView's router has no " <>
+                "export route: add `masu_exports \"/masu/exports\"` (import Masu.Router) to it"
+
+      true ->
+        export = %{export_of(socket.assigns) | name: "#{id}-#{Date.utc_today()}"}
+        {:ok, ticket} = Ticket.start(self(), %{export: export, format: format})
+        token = Download.token(socket.endpoint, ticket)
+        path = socket.endpoint.path(socket.router.__masu_export_path__() <> "/" <> token)
+        {:reply, %{"url" => path}, socket}
+    end
+  end
+
+  # Rows selected (`selectable`): some rows by their ids (`on` or off), or
+  # every row of the query (`all`), or none. A selection of every row is
+  # of the query as it is when it is read (Masu.Live.selected/1), less the
+  # rows taken out of it.
+  def handle_event("masu:select", params, socket) when is_map(params) do
+    %{selection: selection} = socket.assigns
+
+    selection = change_selection(selection, params)
+
+    socket = assign(socket, selection: selection)
+    summary = selection_summary(socket.assigns)
+    if is_function(socket.assigns.on_select, 1), do: socket.assigns.on_select.(summary)
+    {:reply, %{"count" => summary.count}, socket}
+  end
+
   # A row of a tree opened or closed (`open`), or every row beside it
   # that has children (`siblings`, the `*` key). The rows below it move:
   # the answer has the rows from `from`.
@@ -659,6 +702,76 @@ defmodule Masu.Grid do
     %{views: views, user: user} = socket.assigns
     if views && user, do: :ok = views.delete(views_key(socket.assigns), user, id)
     {:reply, %{}, list_views(socket)}
+  end
+
+  # How many rows are selected, and whether they are every row of the query.
+  defp change_selection(_selection, %{"all" => all}) when is_boolean(all),
+    do: %{all: all, ids: MapSet.new(), except: MapSet.new()}
+
+  defp change_selection(selection, %{"ids" => ids, "on" => on})
+       when is_list(ids) and is_boolean(on) do
+    ids = Enum.take(ids, 10_000)
+
+    case {selection.all, on} do
+      {true, true} ->
+        %{selection | except: Enum.reduce(ids, selection.except, &MapSet.delete(&2, &1))}
+
+      {true, false} ->
+        %{selection | except: Enum.reduce(ids, selection.except, &MapSet.put(&2, &1))}
+
+      {false, true} ->
+        %{selection | ids: Enum.reduce(ids, selection.ids, &MapSet.put(&2, &1))}
+
+      {false, false} ->
+        %{selection | ids: Enum.reduce(ids, selection.ids, &MapSet.delete(&2, &1))}
+    end
+  end
+
+  defp change_selection(selection, _params), do: selection
+
+  defp selection_summary(%{selection: %{all: true, except: except}, total: total}),
+    do: %{all: true, count: max(total - MapSet.size(except), 0)}
+
+  defp selection_summary(%{selection: %{ids: ids}}), do: %{all: false, count: MapSet.size(ids)}
+
+  defp selection_config(%{selectable: false}), do: nil
+
+  defp selection_config(%{selection: selection} = assigns) do
+    %{
+      "all" => selection.all,
+      "ids" => MapSet.to_list(selection.ids),
+      "except" => MapSet.to_list(selection.except),
+      "count" => selection_summary(assigns).count
+    }
+  end
+
+  defp export_formats(%{export: true}), do: [:csv, :xlsx]
+  defp export_formats(%{export: formats}) when is_list(formats), do: formats
+  defp export_formats(_assigns), do: []
+
+  # The rows selected, as Masu.Live.selected/1 gives them.
+  defp selected(%{selection: %{all: true, except: except}} = assigns) do
+    Source.select_all(
+      assigns.source,
+      assigns.query,
+      assigns.all_columns,
+      MapSet.to_list(except),
+      row_id(assigns)
+    )
+  end
+
+  defp selected(%{selection: %{ids: ids}}), do: {:ids, MapSet.to_list(ids)}
+
+  # What the grid gives its LiveView (Masu.Live.export/1).
+  defp export_of(assigns) do
+    %Masu.Export{
+      input: assigns.input,
+      opts: source_opts(assigns),
+      query: assigns.query,
+      columns: assigns.columns,
+      all_columns: assigns.all_columns,
+      name: assigns.id
+    }
   end
 
   # The same view with its rows again (a tree's rows opened or closed).
@@ -827,6 +940,13 @@ defmodule Masu.Grid do
 
   @impl true
   def render(assigns) do
+    # The grid as its LiveView may read it (Masu.Live.export/1).
+    :ok =
+      Masu.Live.put_grid(assigns.id, %{
+        export: export_of(assigns),
+        selected: fn -> selected(assigns) end
+      })
+
     assigns =
       assigns
       |> assign(:messages, Map.merge(@messages, stringify(assigns.messages)))
@@ -989,6 +1109,8 @@ defmodule Masu.Grid do
       "tree" => assigns.tree != nil or assigns.query.groups != [],
       "totals" => totals(assigns),
       "groupable" => assigns.tree == nil,
+      "export" => Enum.map(export_formats(assigns), &Atom.to_string/1),
+      "selection" => selection_config(assigns),
       "detail" => assigns.detail != [],
       "details" => for({id, _row, index} <- assigns.detail_rows, do: [id, index]),
       "initial" => assigns.initial && %{"from" => 0, "rows" => encode_initial(assigns)}

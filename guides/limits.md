@@ -43,10 +43,25 @@ are open at most.
 
 ## A deep OFFSET
 
-An Ecto source reads a block with `LIMIT` and `OFFSET`. Deep in a table
-of millions of rows, the database reads every row before the offset, and
-a block takes longer. Paging by key (after the last row's sort values)
-is in the backlog.
+An Ecto source reads the block after a block it read by key (see
+[Export, selection and large tables](export.md)), but a jump into the
+middle of a table of millions of rows (the scrollbar dragged) is an
+`OFFSET`, which the database counts row by row. A grouped Ecto grid
+reads an open group's rows by `OFFSET`. Paging by key is tested on
+SQLite; the order of `NULL`s it assumes for PostgreSQL is PostgreSQL's
+default.
+
+## Export
+
+An export downloads from the app's export route (`Masu.Router`), not
+over the LiveView's socket, as its rows are read: a block of 500 rows at
+a time, from an Ecto source by key. Its link is good once, for five
+minutes, and from the LiveView that made it while it runs. On several
+nodes, the download must reach a node connected to the LiveView's
+(distributed Erlang). An XLSX file is zipped as it is written, with no
+ZIP64: its sheet stays under 4 GB, and it has Excel's 1,048,576 rows at
+most (a CSV export has every row). An XLSX file's dates before 1900 are
+numbers Excel does not show as dates.
 
 ## Empty values in a database
 

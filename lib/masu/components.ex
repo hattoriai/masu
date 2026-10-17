@@ -119,6 +119,20 @@ defmodule Masu.Components do
     doc:
       "with `presence`: whether the person's order, filters and search go to the others, who see them when they follow the person"
 
+  attr :selectable, :boolean,
+    default: false,
+    doc:
+      "rows with a box to select them, and every row of the query at once; see `Masu.Live.selected/1`"
+
+  attr :on_select, :any,
+    default: nil,
+    doc: "a function called with `%{count: n, all: boolean}` when the selection changes"
+
+  attr :export, :any,
+    default: false,
+    doc:
+      "an Export menu: `true` for CSV and XLSX, or a list of `:csv` and `:xlsx`; `false` (the default) has none, and the server exports nothing; see `Masu.Export`"
+
   attr :group_by, :any,
     default: [],
     doc:
@@ -220,6 +234,9 @@ defmodule Masu.Components do
       share_view={@share_view}
       tree={@tree}
       group_by={@group_by}
+      export={@export}
+      selectable={@selectable}
+      on_select={@on_select}
       expanded={@expanded}
       detail={@detail}
       url={@url}

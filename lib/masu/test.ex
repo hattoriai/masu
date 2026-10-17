@@ -296,6 +296,70 @@ defmodule Masu.Test do
   end
 
   @doc """
+  Selects rows of the grid `id` (`selectable`) by their ids, as their
+  boxes do, or, with `false`, takes them out. Returns the view.
+  """
+  @spec select(struct(), String.t(), [term()], boolean()) :: struct()
+  def select(view, id, ids, on \\ true) do
+    event(view, id, "masu:select", %{"ids" => ids, "on" => on})
+    view
+  end
+
+  @doc "Selects every row of the query of the grid `id` (or, with `false`, none). Returns the view."
+  @spec select_all(struct(), String.t(), boolean()) :: struct()
+  def select_all(view, id, on \\ true) do
+    event(view, id, "masu:select", %{"all" => on})
+    view
+  end
+
+  @doc """
+  The selection of the grid `id`: `%{all: boolean, ids: [...], except:
+  [...], count: n}`.
+  """
+  @spec selection(struct(), String.t()) :: map()
+  def selection(view, id) do
+    selection = view |> config(id) |> Map.fetch!("selection")
+
+    %{
+      all: selection["all"],
+      ids: selection["ids"],
+      except: selection["except"],
+      count: selection["count"]
+    }
+  end
+
+  @doc """
+  Exports the grid `id` as its Export menu does (`Masu.Export`), and
+  downloads the file from the link the browser gets, through the
+  endpoint and the router's export route (`Masu.Router`): `{name,
+  binary}`. A `conn` (`Phoenix.ConnTest.build_conn/0`, with what the
+  route's pipeline wants of it, a signed-in user) is given with `:conn`.
+  """
+  @spec export(struct(), String.t(), :csv | :xlsx, keyword()) :: {String.t(), binary()}
+  def export(view, id, format, opts \\ []) do
+    url = export_url(view, id, format)
+    conn = Keyword.get_lazy(opts, :conn, &Phoenix.ConnTest.build_conn/0)
+    conn = Phoenix.ConnTest.dispatch(conn, view.endpoint, :get, url, nil)
+
+    if conn.status != 200,
+      do: flunk("the export of the grid #{id} answered #{conn.status}: #{conn.resp_body}")
+
+    [disposition] = Plug.Conn.get_resp_header(conn, "content-disposition")
+    [_all, name] = Regex.run(~r/filename="([^"]*)"/, disposition)
+    {name, conn.resp_body}
+  end
+
+  @doc """
+  The link the Export menu of the grid `id` gives the browser, for a
+  test of the route itself: that it wants a signed-in user, say.
+  """
+  @spec export_url(struct(), String.t(), :csv | :xlsx) :: String.t()
+  def export_url(view, id, format) do
+    reply = event(view, id, "masu:export", %{"format" => Atom.to_string(format)})
+    reply["url"] || flunk("the grid #{id} did not export: #{reply["error"]}")
+  end
+
+  @doc """
   The view of the grid `id`, as its params (see `Masu.View`): what differs
   from the grid's own view. `%{}` is the grid's own view.
   """

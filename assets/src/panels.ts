@@ -298,3 +298,30 @@ export class ViewsPanel extends Panel {
     this.list.hidden = items.length === 0;
   }
 }
+
+export interface ExportHost {
+  root: HTMLElement;
+  messages: Record<string, string>;
+  formats: string[];
+  start(format: string): void;
+  close(): void;
+}
+
+/** The Export menu: a button for each format. */
+export class ExportPanel extends Panel {
+  constructor(host: ExportHost, anchor: HTMLElement) {
+    super(host.root, anchor, host.messages.export_menu ?? "Export", host.messages, () => host.close());
+    this.el.classList.add("masu-export-panel");
+    for (const format of host.formats) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "masu-panel-action masu-export-format";
+      button.dataset.format = format;
+      button.textContent = this.message(`export_${format}`);
+      button.addEventListener("click", () => host.start(format));
+      this.el.appendChild(button);
+    }
+    this.place(host.root);
+    this.el.querySelector<HTMLElement>("button")?.focus();
+  }
+}
