@@ -85,6 +85,13 @@ export interface Config {
   columns: ColumnConfig[];
   rowHeight: number;
   total: number;
+  /** The total is the query's count; else the rows read, and maybe more. */
+  exact?: boolean;
+  /** "scroll", or "pages" (`paging={:pages}`): a page of rows at a time. */
+  paging?: "scroll" | "pages";
+  pageSize: number;
+  /** The page, from 0. */
+  page: number;
   revision: number;
   query: QuerySpec;
   locale: string | null;
@@ -120,7 +127,7 @@ export interface Config {
   /** The formats of the Export menu ("csv", "xlsx"); empty without one. */
   export: string[];
   /** The rows selected (`selectable`): some ids, or every row of the query less some; null when rows do not select. */
-  selection: { all: boolean; ids: unknown[]; except: unknown[]; count: number } | null;
+  selection: { all: boolean; ids: unknown[]; except: unknown[]; count: number; exact?: boolean } | null;
   /** The person adds rows (`create`). */
   creates?: boolean;
   /** The person deletes rows (`delete`, `deletable`). */
@@ -133,6 +140,7 @@ export interface BlockReply {
   from: number;
   rows: Row[];
   total: number;
+  exact?: boolean;
   revision: number;
   query?: QuerySpec;
   error?: string;

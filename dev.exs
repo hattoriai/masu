@@ -155,6 +155,7 @@ defmodule MasuDev.Layouts do
           {"Details", "/details"},
           {"Groups", "/groups"},
           {"Tasks", "/tasks"},
+          {"Pages", "/pages"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -761,6 +762,105 @@ defmodule MasuDev.TasksLive do
   end
 end
 
+defmodule MasuDev.Engine do
+  @moduledoc """
+  A source as a search engine is: it pages by offset and limit, and does
+  not count (`:unknown`), as Lotus asks with `count: :none`. Its rows are
+  the customers, slowly: 150 ms a block.
+  """
+  @behaviour Masu.Source
+
+  @impl true
+  def init(_opts, _grid_opts), do: %{rows: MasuDev.Customers.all()}
+
+  @impl true
+  def prepare(state, _query, _columns), do: state
+
+  @impl true
+  def count(_state), do: :unknown
+
+  @impl true
+  def rows(%{rows: rows}, offset, limit) do
+    Process.sleep(150)
+    Enum.slice(rows, offset, limit)
+  end
+
+  @impl true
+  def supports?(_state, _column), do: false
+end
+
+defmodule MasuDev.PagesLive do
+  @moduledoc """
+  Large tables without a count, and with pages: a search engine's rows,
+  which the grid scrolls over as they come, and a report that pages, with
+  its page in the URL.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  on_mount(Masu.Live)
+
+  @impl true
+  def mount(_params, _session, socket) do
+    notes = for id <- 1..12, do: %{id: id, text: "Note #{id}"}
+    {:ok, assign(socket, customers: MasuDev.Customers.all(), notes: notes)}
+  end
+
+  @impl true
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="engine-label">A search engine's rows, not counted</h1>
+    <.data_grid id="engine" source={{MasuDev.Engine, []}} label_id="engine-label" height="18rem">
+      <:col field={:id} type={:integer} width={90} label="ID" />
+      <:col field={:name} width={190} />
+      <:col field={:city} />
+      <:col field={:revenue} type={:decimal} />
+    </.data_grid>
+    <h1 id="report-label">A report, by pages</h1>
+    <.data_grid
+      id="report"
+      rows={@customers}
+      paging={:pages}
+      page_size={25}
+      url
+      label_id="report-label"
+      height="18rem"
+    >
+      <:col field={:id} type={:integer} width={90} label="ID" />
+      <:col field={:name} width={190} />
+      <:col field={:plan} type={:enum} />
+      <:col field={:revenue} type={:decimal} />
+    </.data_grid>
+    <h1 id="notes-label">Notes, by pages, that a person adds to</h1>
+    <.data_grid
+      id="notes"
+      rows={@notes}
+      paging={:pages}
+      page_size={5}
+      changeset={&note/2}
+      struct={fn -> %{id: System.unique_integer([:positive]) + 100, text: nil} end}
+      deletable
+      label_id="notes-label"
+      height="14rem"
+    >
+      <:col field={:text} width={320} />
+    </.data_grid>
+    """
+  end
+
+  def note(note, params) do
+    import Ecto.Changeset
+
+    {note, %{text: :string}}
+    |> cast(params, [:text])
+    |> validate_required([:text])
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -786,6 +886,7 @@ defmodule MasuDev.Router do
     live("/details", MasuDev.DetailsLive)
     live("/groups", MasuDev.GroupsLive)
     live("/tasks", MasuDev.TasksLive)
+    live("/pages", MasuDev.PagesLive)
     masu_exports()
   end
 end

@@ -82,6 +82,14 @@ grid's reason.
   `:value`, `:count`, `:level`, `:expanded` and `:totals`.
 * `totals(view, id)`: the row of totals, by column key.
 
+## Counts and pages
+
+* `count(view, id)`: `{:exact, n}`, or `{:at_least, n}` while the grid
+  does not know its count; `total/2` gives `n`.
+* `ask_count(view, id)`: asks for the count, as Ctrl+End does.
+* `page(view, id, page)`: goes to a page (from 1) of a grid with
+  `paging={:pages}`, and gives the ids of its rows.
+
 ## New and deleted rows
 
 * `add_rows(view, id, rows)`: adds rows as "+ New row" does, each a map

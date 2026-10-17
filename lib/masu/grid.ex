@@ -55,7 +55,13 @@ defmodule Masu.Grid do
     "people" => "Also here",
     "follow" => "Follow {label}",
     "view_dropped" => "Part of this view no longer applies: {label}",
-    "detail" => "Details"
+    "detail" => "Details",
+    "pages" => "Pages",
+    "page" => "Page",
+    "of_pages" => "of {count}",
+    "previous" => "Previous",
+    "next" => "Next",
+    "range" => "{first}–{last} of {count}"
   }
 
   @impl true
@@ -477,6 +483,18 @@ defmodule Masu.Grid do
        "exact" => socket.assigns.exact,
        "revision" => socket.assigns.revision
      }, socket}
+  end
+
+  # The pager: a page from 1 (its buttons, its field).
+  def handle_event("masu:goto", %{"page" => page}, socket) do
+    case Integer.parse(to_string(page)) do
+      {page, _rest} when socket.assigns.paging == :pages ->
+        {:reply, _reply, socket} = handle_event("masu:page", %{"page" => page - 1}, socket)
+        {:noreply, socket}
+
+      _other ->
+        {:noreply, socket}
+    end
   end
 
   # A page (`paging={:pages}`), from 0: its rows, and into the view (the
@@ -1003,8 +1021,14 @@ defmodule Masu.Grid do
 
     socket = learn(socket, from, length(rows), count)
     %{total: total, exact: exact, revision: revision} = socket.assigns
-    {%{"from" => from, "rows" => rows, "total" => total, "exact" => exact, "revision" => revision},
-     socket}
+
+    {%{
+       "from" => from,
+       "rows" => rows,
+       "total" => total,
+       "exact" => exact,
+       "revision" => revision
+     }, socket}
   end
 
   # The count (`count`): `:exact` counts with the query; `:deferred` reads
@@ -1024,19 +1048,25 @@ defmodule Masu.Grid do
         assign(socket, total: known, exact: false)
 
       :deferred ->
-        socket = assign(socket, total: known, exact: false)
-
-        if connected?(socket),
-          do: start_async(socket, :masu_count, fn -> {ref, Source.counted(source)} end),
-          else: socket
+        socket |> assign(total: known, exact: false) |> count_later(ref, source)
 
       _exact ->
         put_count(socket, Source.counted(source))
     end
   end
 
+  # The count in a task, in the connected LiveView; its answer is taken
+  # if no other count came after it (`count_ref`).
+  defp count_later(socket, ref, source) do
+    if connected?(socket),
+      do: start_async(socket, :masu_count, fn -> {ref, Source.counted(source)} end),
+      else: socket
+  end
+
   defp put_count(socket, {n, true}), do: assign(socket, total: n, exact: true)
-  defp put_count(socket, {n, false}), do: assign(socket, total: max(n, socket.assigns.total), exact: false)
+
+  defp put_count(socket, {n, false}),
+    do: assign(socket, total: max(n, socket.assigns.total), exact: false)
 
   # Rows read from `from` (`got` of the `asked`) say where the rows end
   # when there are fewer, and that there are at least as many as they
@@ -1383,10 +1413,90 @@ defmodule Masu.Grid do
           </div>
         </div>
       </div>
+      <nav :if={@paging == :pages} class="masu-pager" aria-label={@messages["pages"]}>
+        <span class="masu-pager-range">{pager_range(assigns)}</span>
+        <button
+          type="button"
+          class="masu-pager-previous"
+          phx-click="masu:goto"
+          phx-value-page={@page}
+          phx-target={@myself}
+          disabled={@page == 0}
+        >
+          {@messages["previous"]}
+        </button>
+        <form class="masu-pager-form" phx-submit="masu:goto" phx-target={@myself}>
+          <label>
+            {@messages["page"]}
+            <input
+              type="number"
+              name="page"
+              min="1"
+              max={last_page(assigns) && last_page(assigns) + 1}
+              value={@page + 1}
+              inputmode="numeric"
+            />
+          </label>
+          <span :if={last_page(assigns)}>{pager_of(assigns)}</span>
+        </form>
+        <button
+          type="button"
+          class="masu-pager-next"
+          phx-click="masu:goto"
+          phx-value-page={@page + 2}
+          phx-target={@myself}
+          disabled={not next_page?(assigns)}
+        >
+          {@messages["next"]}
+        </button>
+      </nav>
       <div id={"#{@id}-status"} class="masu-status" role="status" aria-live="polite" phx-update="ignore">
       </div>
     </div>
     """
+  end
+
+  # The pager (`paging={:pages}`): "1–50 of 1,234", or of "1,000+" while
+  # the count is not known; the last page, when it is; a next page while
+  # the page is full.
+  defp pager_range(%{page: page, page_size: size, total: total, exact: exact} = assigns) do
+    first = page * size
+    shown = min(size, max(total - first, 0))
+    shown = if exact, do: shown, else: max(shown, length(assigns.initial || []))
+
+    if shown == 0 do
+      assigns.messages["empty"]
+    else
+      of = if exact, do: number(total), else: number(total) <> "+"
+
+      assigns.messages["range"]
+      |> String.replace("{first}", number(first + 1))
+      |> String.replace("{last}", number(first + shown))
+      |> String.replace("{count}", of)
+    end
+  end
+
+  defp pager_of(assigns),
+    do: String.replace(assigns.messages["of_pages"], "{count}", number(last_page(assigns) + 1))
+
+  defp last_page(%{exact: true, total: total, page_size: size}),
+    do: max(div(max(total, 1) - 1, size), 0)
+
+  defp last_page(_assigns), do: nil
+
+  defp next_page?(%{exact: true} = assigns), do: assigns.page < last_page(assigns)
+
+  defp next_page?(%{total: total, page: page, page_size: size}),
+    do: total >= (page + 1) * size
+
+  # A number with its thousands, as the pager shows it (the browser's
+  # locale is the browser's; the pager's is plain).
+  defp number(n) do
+    n
+    |> Integer.to_string()
+    |> String.reverse()
+    |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
+    |> String.reverse()
   end
 
   # The rows the body is tall for, before the browser takes over: a

@@ -1011,3 +1011,65 @@ test.describe("new and deleted rows, and editors", () => {
     await expect(grid(page, "tasks")).toHaveAttribute("aria-activedescendant", "tasks-r31-c0");
   });
 });
+
+test.describe("rows without a count, and pages", () => {
+  test.beforeEach(async ({ page }) => {
+    await openPage(page, "/pages");
+  });
+
+  test("a source that does not count: the grid scrolls over the rows it read, and grows", async ({ page }) => {
+    const engine = grid(page, "engine");
+    await expect(engine).toHaveAttribute("aria-rowcount", "-1");
+    const height = () => page.locator("#engine .masu-body").evaluate((el) => parseFloat((el as HTMLElement).style.height));
+    // The rows read (a block, read ahead), and a block more.
+    await expect.poll(height).toBe(36 * 200);
+
+    await engine.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect.poll(height).toBeGreaterThan(36 * 200);
+    await expect(page.locator('#engine .masu-row[aria-rowindex="201"]')).toContainText("200");
+    await expect(engine).toHaveAttribute("aria-rowcount", "-1");
+  });
+
+  test("a grid of pages: the pager goes from page to page, and the page goes into the URL", async ({ page }) => {
+    const pager = page.locator("#report .masu-pager");
+    await expect(pager.locator(".masu-pager-range")).toHaveText("1–25 of 100,000");
+    await expect(pager.getByRole("button", { name: "Previous" })).toBeDisabled();
+    // The page's rows, and no more: its last is the 25th.
+    await grid(page, "report").evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(page.locator('#report .masu-row[aria-rowindex="26"]')).toContainText("25");
+    await expect(page.locator('#report .masu-row[aria-rowindex="27"]')).toHaveCount(0);
+
+    await pager.getByRole("button", { name: "Next" }).click();
+    await expect(pager.locator(".masu-pager-range")).toHaveText("26–50 of 100,000");
+    await expect(page).toHaveURL(/report%5Bpage%5D=2|report\[page\]=2/);
+    await expect(page.locator('#report .masu-row[aria-rowindex="27"]')).toContainText("26");
+    await expect(grid(page, "report")).toHaveJSProperty("scrollTop", 0);
+
+    await pager.getByLabel("Page").fill("4000");
+    await pager.getByLabel("Page").press("Enter");
+    await expect(pager.locator(".masu-pager-range")).toHaveText("99,976–100,000 of 100,000");
+    await expect(pager.getByRole("button", { name: "Next" })).toBeDisabled();
+
+    // The keys stay on the page: ↑ from its first row goes to the header.
+    await page.locator('#report .masu-row[aria-rowindex="99977"] .masu-cell').first().click();
+    await page.keyboard.press("ArrowUp");
+    await expect(grid(page, "report")).toHaveAttribute("aria-activedescendant", "report-h0");
+
+    await page.reload();
+    await expect(page.locator("#report .masu-pager-range")).toHaveText("99,976–100,000 of 100,000");
+  });
+
+  test("in a grid of pages, a new row goes on the last page", async ({ page }) => {
+    const range = page.locator("#notes .masu-pager-range");
+    await expect(range).toHaveText("1–5 of 12");
+    await page.locator("#notes-r0-c0").click();
+    await page.keyboard.press("Control+Enter");
+    await expect(range).toHaveText("11–12 of 12");
+    await expect(page.locator("#notes .masu-draft")).toHaveCount(1);
+    await page.keyboard.type("Thirteen");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#notes > .masu-status")).toHaveText("Row added");
+    await expect(range).toHaveText("11–13 of 13");
+    await expect(page.locator("#notes-r12-c0")).toHaveText("Thirteen");
+  });
+});

@@ -74,6 +74,14 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `on_select`. An Ecto source reads the next block by key, not by
   `OFFSET`. `Masu.Test.export/4`, `export_url/3`, `select/4`, `select_all/3` and
   `selection/2`.
+- Counts and pages: `count={:deferred}` counts after the first rows, in
+  a task; `count={:none}` counts when the person goes to the end. A
+  source's `count/1` may give `{:at_least, n}` or `:unknown`, and
+  `rows/3` `{rows, count}`: the grid scrolls over the rows it read and
+  grows, `aria-rowcount="-1"`, "1,000+ rows". An Ecto source counts only
+  when asked. `paging={:pages}` and `page_size`: a page at a time, with a
+  pager, the page in the view and the URL. `Masu.Test.count/2`,
+  `ask_count/2`, `page/3`.
 - New and deleted rows: `create` (or `changeset` with `struct`) adds a
   "+ New row" row, Ctrl+Enter and Insert; a new row is a draft until the
   person leaves it, with its errors on its cells; a paste past the last

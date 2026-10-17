@@ -92,6 +92,7 @@ the active cell a line of it.
 | `.masu-chips`, `.masu-chip`, `.masu-chip-text`, `.masu-chip-remove`, `.masu-chips-clear` | the filters above the grid |
 | `.masu-editable`, `.masu-editor`, `.masu-saving`, `.masu-invalid` | a cell that edits, its editor, a cell being saved, a cell refused |
 | `.masu-choices`, `.masu-choice` | an enum's editor: the list of its values, and each |
+| `.masu-pager`, `.masu-pager-range`, `.masu-pager-previous`, `.masu-pager-next`, `.masu-pager-form` | the pager of a grid of pages |
 | `.masu-add-row`, `.masu-draft` | the row "+ New row", and a new row not saved yet |
 | `.masu-confirm`, `.masu-confirm-ok`, `.masu-confirm-cancel`, `.masu-danger` | a question above the grid (delete rows, add the rest of a paste), and an answer that deletes |
 | `.masu-locked` | a cell that the row's state makes read-only, in a column that edits |

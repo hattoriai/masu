@@ -33,6 +33,8 @@ export function configure(next: Options): void {
 }
 
 const OVERSCAN = 8;
+/** The rows more than it knows that a grid without a count scrolls over: a block. */
+const GROW = 100;
 const PREFETCH = 60;
 const REQUEST_DELAY = 40;
 const SEARCH_DELAY = 250;
@@ -68,6 +70,10 @@ export class Grid {
   /** The row of totals (Masu.Group). */
   private footEl: HTMLElement | null = null;
   private total: number;
+  /** The count is the query's; else the rows read, and maybe more. */
+  private exact = true;
+  /** The count was asked for (`masu:count`) in this revision. */
+  private countAsked = false;
   private revision: number;
   private query: QuerySpec;
   private cache = new BlockCache();
@@ -140,6 +146,8 @@ export class Grid {
    */
   private drafts: Draft[] = [];
   private draftCount = 0;
+  /** On its way to the last page, to add a row there. */
+  private toLastPage = false;
   /** The draft the active cell was on, saved when it leaves it. */
   private activeDraft: string | null = null;
   /** A question above the grid: delete rows, add the rest of a paste. */
@@ -181,6 +189,7 @@ export class Grid {
     this.columns = this.config.columns;
     this.widths = this.columns.map((column) => column.width);
     this.total = this.config.total;
+    this.exact = this.config.exact !== false;
     this.revision = this.config.revision;
     this.query = this.config.query;
 
@@ -262,6 +271,19 @@ export class Grid {
     this.showNotice();
     this.measureDetails();
 
+    // A count that came in (count={:deferred}), with the same rows.
+    if (config.revision === this.revision && (config.total !== this.total || (config.exact !== false) !== this.exact)) {
+      this.setTotal(config.total, config.exact !== false);
+    }
+    // Another page (the pager): its rows, from its top.
+    if (this.paged() && config.page !== previous.page) {
+      this.gridEl.scrollTop = 0;
+      this.active = { row: this.active.row < 0 ? -1 : this.base(), col: this.active.col };
+      this.anchor = null;
+      this.clearRows();
+      this.urgent = true;
+    }
+
     if (config.revision > this.revision) {
       // New rows from the server (a live change, or new rows of the
       // LiveView): the person keeps their place; the rows that changed
@@ -272,7 +294,8 @@ export class Grid {
         this.flash.set(String(id), { until: now + FLASH, color: config.changedBy?.[String(id)] });
       }
       this.revision = config.revision;
-      this.setTotal(config.total);
+      this.countAsked = false;
+      this.setTotal(config.total, config.exact !== false);
       this.query = config.query;
       // The rows of the older revision stay on the screen until the new
       // ones come, so that the grid does not blink as its rows change;
@@ -341,7 +364,8 @@ export class Grid {
         return;
       }
       this.revision = answer.revision;
-      this.setTotal(answer.total);
+      this.countAsked = false;
+      this.setTotal(answer.total, answer.exact !== false);
       this.query = answer.query ?? query;
       this.cache.clear();
       this.stale = null;
@@ -369,21 +393,27 @@ export class Grid {
 
   private render(): void {
     const rh = this.config.rowHeight;
-    const count = this.rowCount();
-    setStyle(this.body, "height", `${totalHeight(count, rh, this.gaps)}px`);
-    setAttribute(this.gridEl, "aria-rowcount", String(count + 1));
+    // The rows the body holds: every row, or a page's (`paging`).
+    const base = this.base();
+    const count = this.end() - base;
+    const gaps = this.localGaps();
+    setStyle(this.body, "height", `${totalHeight(count, rh, gaps)}px`);
+    // -1 while the count is not known (ARIA).
+    setAttribute(this.gridEl, "aria-rowcount", this.exact ? String(this.rowCount() + 1) : "-1");
     setAttribute(this.gridEl, "aria-colcount", String(this.columns.length));
     if (this.emptyEl) this.emptyEl.hidden = this.total > 0 || this.drafts.length > 0;
     this.leaveDraft();
 
     const headHeight = this.head.offsetHeight;
-    const { first, last } =
-      this.gaps.length === 0
+    const local =
+      gaps.length === 0
         ? visibleRows(this.gridEl.scrollTop, this.gridEl.clientHeight - headHeight, rh, count, OVERSCAN)
         : {
-            first: Math.max(0, indexAt(this.gridEl.scrollTop, rh, this.gaps) - OVERSCAN),
-            last: Math.min(count - 1, indexAt(this.gridEl.scrollTop + this.gridEl.clientHeight - headHeight, rh, this.gaps) + OVERSCAN),
+            first: Math.max(0, indexAt(this.gridEl.scrollTop, rh, gaps) - OVERSCAN),
+            last: Math.min(count - 1, indexAt(this.gridEl.scrollTop + this.gridEl.clientHeight - headHeight, rh, gaps) + OVERSCAN),
           };
+    const first = local.first + base;
+    const last = local.last + base;
 
     for (const [index, rowEl] of this.rows) {
       if (index < first || index > last) {
@@ -424,7 +454,10 @@ export class Grid {
     this.drawPeople();
     this.reportCursor();
     this.cache.evict(this.cache.blockOf(first));
-    this.planRequests(first, Math.min(last, this.total - 1));
+    this.planRequests(first, Math.min(last, this.span() - 1));
+    // At the end of the rows it knows, a grid that does not know its
+    // count asks for it, once.
+    if (!this.exact && !this.paged() && count > 0 && local.last >= this.span() - 1) this.askCount();
   }
 
   private clearRows(): void {
@@ -683,7 +716,8 @@ export class Grid {
       this.uiEl.appendChild(this.selectionBar);
     }
     const text = document.createElement("span");
-    text.textContent = this.message(this.chosen.all && this.chosen.except.size === 0 ? "chosen_all" : "chosen", {
+    const all = this.chosen.all && this.chosen.except.size === 0;
+    text.textContent = this.message(all ? (this.config.selection.exact === false ? "chosen_all_more" : "chosen_all") : "chosen", {
       count: this.chosen.count,
     });
     const clear = document.createElement("button");
@@ -709,12 +743,12 @@ export class Grid {
 
   /** The top of a row, under the details open above it. */
   private rowTop(index: number): number {
-    return rowTop(index, this.config.rowHeight, this.gaps);
+    return rowTop(index - this.base(), this.config.rowHeight, this.localGaps());
   }
 
   /** The row at the top of the screen. */
   private indexAtTop(): number {
-    return indexAt(this.gridEl.scrollTop, this.config.rowHeight, this.gaps);
+    return indexAt(this.gridEl.scrollTop, this.config.rowHeight, this.localGaps()) + this.base();
   }
 
   /** The first row the screen shows whole: where one who follows this person starts. */
@@ -1159,13 +1193,13 @@ export class Grid {
 
   private planRequests(first: number, last: number): void {
     if (this.requestTimer) clearTimeout(this.requestTimer);
-    if (this.cache.missing(first - PREFETCH, last + PREFETCH, this.total).length === 0) {
+    if (this.cache.missing(first - PREFETCH, last + PREFETCH, this.span()).length === 0) {
       this.stale = null;
       return;
     }
     const ask = () => {
       this.requestTimer = null;
-      for (const block of this.cache.missing(first - PREFETCH, last + PREFETCH, this.total)) this.request(block);
+      for (const block of this.cache.missing(first - PREFETCH, last + PREFETCH, this.span())) this.request(block);
     };
     if (this.urgent) {
       this.urgent = false;
@@ -1191,7 +1225,7 @@ export class Grid {
       if (cache !== this.cache) cache.failed(block);
       this.cache.store(answer.from, answer.rows);
       if (answer.rows.length === 0) this.cache.failed(block);
-      if (answer.total !== this.total) this.setTotal(answer.total);
+      if (answer.total !== this.total || (answer.exact !== false) !== this.exact) this.setTotal(answer.total, answer.exact !== false);
       this.schedule();
       then?.();
     });
@@ -1199,7 +1233,7 @@ export class Grid {
 
   /** Asks for the rows from `first` to `last` that the cache lacks, then calls `done`. */
   private load(first: number, last: number, done: () => void): void {
-    const blocks = this.cache.missing(first, last, this.total);
+    const blocks = this.cache.missing(first, last, this.span());
     if (blocks.length === 0) {
       done();
       return;
@@ -1377,13 +1411,25 @@ export class Grid {
     }
 
     const target = move(this.active, event.key, mod, {
-      rows: this.rowCount(),
+      rows: this.end(),
       cols: this.columns.length,
       page: this.pageRows(),
       rtl: getComputedStyle(this.gridEl).direction === "rtl",
     });
     if (!target) return;
     event.preventDefault();
+    // A page's rows: above its first, the header.
+    if (target.row >= 0 && target.row < this.base()) target.row = this.active.row === this.base() ? -1 : this.base();
+    // Ctrl+End where the count is not known: it is asked for first.
+    if (!this.exact && mod && (event.key === "End" || event.key === "ArrowDown") && !this.countAsked) {
+      this.askCount(() => {
+        this.active = { row: this.end() - 1, col: target.col };
+        this.anchor = null;
+        this.ensureVisible(this.active);
+        this.render();
+      });
+      return;
+    }
 
     if (event.shiftKey && target.row >= 0) {
       if (!this.anchor) this.anchor = this.active.row >= 0 ? { ...this.active } : { row: 0, col: this.active.col };
@@ -2334,19 +2380,19 @@ export class Grid {
     const selection = this.selection() ?? { top: 0, left: 0, bottom: 0, right: 0 };
     const matrix = fromTSV(text);
     // On the new rows: their values, and more new rows for more lines.
-    if (selection.top >= this.total && this.config.creates) {
+    if (selection.top >= this.span() && this.config.creates) {
       this.pasteIntoDrafts(matrix, selection);
       return;
     }
     // Lines past the last row: new rows, if the person wants them.
     const single = matrix.length === 1 && matrix[0].length === 1;
-    const overflow = single ? 0 : Math.min(matrix.length - (this.total - selection.top), MAX_NEW_ROWS);
+    const overflow = single || !this.exact ? 0 : Math.min(matrix.length - (this.total - selection.top), MAX_NEW_ROWS);
     if (overflow > 0 && this.config.creates) {
       this.confirm(this.message("paste_add", { count: overflow }), this.message("add_rows", {}), () =>
         this.addPastedRows(matrix.slice(matrix.length - overflow), selection.left),
       );
     }
-    const placed = placePaste(matrix, selection, this.total, this.columns.length).slice(0, MAX_EDITS);
+    const placed = placePaste(matrix, selection, this.span(), this.columns.length).slice(0, MAX_EDITS);
     if (placed.length === 0) return;
     const bottom = Math.max(...placed.map((p) => p.row));
     const right = Math.max(...placed.map((p) => p.col));
@@ -2411,22 +2457,71 @@ export class Grid {
 
   /** The rows the grid draws: the query's, the drafts, the row that adds one. */
   private rowCount(): number {
-    return this.total + this.drafts.length + (this.config.creates ? 1 : 0);
+    return this.span() + this.drafts.length + (this.config.creates ? 1 : 0);
   }
 
   /** The index of the row that adds one, or -1. */
   private addIndex(): number {
-    return this.config.creates ? this.total + this.drafts.length : -1;
+    return this.config.creates ? this.span() + this.drafts.length : -1;
   }
 
   /** The row at an index: the query's (as the browser has it), or a draft's. */
   private dataAt(index: number): Row | undefined {
-    if (index < this.total) return this.cache.get(index) ?? this.stale?.get(index);
-    return this.drafts[index - this.total]?.row;
+    if (index < this.span()) return this.cache.get(index) ?? this.stale?.get(index);
+    return this.drafts[index - this.span()]?.row;
   }
 
   private draftAt(index: number): Draft | undefined {
-    return index >= this.total ? this.drafts[index - this.total] : undefined;
+    return index >= this.span() ? this.drafts[index - this.span()] : undefined;
+  }
+
+  /**
+   * The rows of the query the grid scrolls over: its count, or, while the
+   * count is not known, the rows read and a block more (a page more), which
+   * grow as blocks come back full.
+   */
+  private span(): number {
+    if (this.exact) return this.total;
+    return this.paged() ? Math.max(this.total, this.base() + this.config.pageSize) : this.total + GROW;
+  }
+
+  private paged(): boolean {
+    return this.config.paging === "pages";
+  }
+
+  /** The first row the body holds: 0, or the page's first. */
+  private base(): number {
+    return this.paged() ? this.config.page * this.config.pageSize : 0;
+  }
+
+  /** The index after the last row the body holds: every row's, or the page's (the last page with the new rows). */
+  private end(): number {
+    const count = this.rowCount();
+    if (!this.paged()) return count;
+    const pageEnd = this.base() + this.config.pageSize;
+    return this.exact && pageEnd >= this.total ? count : Math.min(pageEnd, count);
+  }
+
+  /** The open details of the rows the body holds, by their place in it. */
+  private localGaps(): Gap[] {
+    const base = this.base();
+    if (base === 0 && !this.paged()) return this.gaps;
+    const end = this.end();
+    return this.gaps.filter((gap) => gap.index >= base && gap.index < end).map((gap) => ({ index: gap.index - base, height: gap.height }));
+  }
+
+  /** Asks the server for the count (once a revision), then `then`. */
+  private askCount(then?: () => void): void {
+    if (this.countAsked || this.exact) {
+      then?.();
+      return;
+    }
+    this.countAsked = true;
+    this.transport.push("masu:count", {}, (reply) => {
+      if (reply.revision === this.revision && typeof reply.total === "number") this.setTotal(reply.total, reply.exact !== false);
+      this.render();
+      then?.();
+    });
   }
 
   /** Whether the person may edit the cell of `col` of a row (a draft: of a column a new row takes). */
@@ -2441,11 +2536,12 @@ export class Grid {
    * A new count of the query's rows, which moves the drafts: the active
    * cell stays on the draft, or the row that adds one, it was on.
    */
-  private setTotal(total: number): void {
+  private setTotal(total: number, exact = this.exact): void {
     const draft = this.draftAt(this.active.row);
     const adding = this.active.row >= 0 && this.active.row === this.addIndex();
     this.total = total;
-    if (draft) this.active = { row: this.total + this.drafts.indexOf(draft), col: this.active.col };
+    this.exact = exact;
+    if (draft) this.active = { row: this.span() + this.drafts.indexOf(draft), col: this.active.col };
     else if (adding) this.active = { row: this.addIndex(), col: this.active.col };
   }
 
@@ -2458,7 +2554,7 @@ export class Grid {
       for (const column of this.columns) this.errors.delete(cellKey(d.id, column.key));
     }
     this.drafts = this.drafts.filter((d) => !ids.has(d.id));
-    if (draft && !ids.has(draft.id)) this.active = { row: this.total + this.drafts.indexOf(draft), col: this.active.col };
+    if (draft && !ids.has(draft.id)) this.active = { row: this.span() + this.drafts.indexOf(draft), col: this.active.col };
     else if (draft || adding) this.active = { row: Math.max(0, Math.min(this.addIndex(), this.rowCount() - 1)), col: this.active.col };
     this.activeDraft = this.draftAt(this.active.row)?.id ?? null;
     this.anchor = null;
@@ -2485,13 +2581,29 @@ export class Grid {
   /** A new row, under the others; the one the person was on saves. */
   private addDraft(): void {
     if (!this.config.creates) return;
+    // In a grid of pages, new rows are on the last page: it goes there first.
+    if (this.paged() && this.end() < this.rowCount()) {
+      if (this.toLastPage) return;
+      this.toLastPage = true;
+      this.askCount(() => {
+        const last = Math.max(0, Math.ceil(this.total / this.config.pageSize) - 1);
+        this.transport.push("masu:page", { page: last }, () => {
+          // The page comes with the server's render; the new row after it.
+          setTimeout(() => {
+            this.toLastPage = false;
+            if (this.end() === this.rowCount()) this.addDraft();
+          }, 0);
+        });
+      });
+      return;
+    }
     const current = this.draftAt(this.active.row);
     if (current) this.saveDrafts([current.id]);
     const draft = this.newDraft();
     this.drafts.push(draft);
     const editable = this.columns.findIndex((column) => column.creatable);
     const col = this.columns[this.active.col]?.creatable ? this.active.col : Math.max(0, editable);
-    this.active = { row: this.total + this.drafts.length - 1, col };
+    this.active = { row: this.span() + this.drafts.length - 1, col };
     this.activeDraft = draft.id;
     this.anchor = null;
     this.gridEl.focus({ preventScroll: true });
@@ -2571,7 +2683,7 @@ export class Grid {
       const refused = saving.find((draft) => !saved.has(draft.id));
       if (showRefused && refused) {
         const col = this.columns.findIndex((column) => this.errors.has(cellKey(refused.id, column.key)));
-        this.active = { row: this.total + this.drafts.indexOf(refused), col: Math.max(0, col) };
+        this.active = { row: this.span() + this.drafts.indexOf(refused), col: Math.max(0, col) };
         this.activeDraft = refused.id;
         this.anchor = null;
         this.ensureVisible(this.active);
@@ -2586,7 +2698,7 @@ export class Grid {
 
   /** Lines of a paste on the new rows: their values, and more new rows. */
   private pasteIntoDrafts(matrix: string[][], selection: Rect): void {
-    const first = selection.top - this.total;
+    const first = selection.top - this.span();
     const lines = matrix.slice(0, MAX_NEW_ROWS);
     while (this.drafts.length < first + lines.length) this.drafts.push(this.newDraft());
     this.fillDrafts(this.drafts.slice(first, first + lines.length), lines, selection.left);
@@ -2633,13 +2745,13 @@ export class Grid {
     if (!range) return;
     // New rows in the range just go.
     const drafts = new Set<string>();
-    for (let index = Math.max(range.top, this.total); index <= range.bottom; index++) {
+    for (let index = Math.max(range.top, this.span()); index <= range.bottom; index++) {
       const draft = this.draftAt(index);
       if (draft) drafts.add(draft.id);
     }
     if (drafts.size > 0) this.discardDrafts(drafts);
-    if (!this.config.deletes || range.top >= this.total) return;
-    const bottom = Math.min(range.bottom, this.total - 1, range.top + MAX_NEW_ROWS - 1);
+    if (!this.config.deletes || range.top >= this.span()) return;
+    const bottom = Math.min(range.bottom, this.span() - 1, range.top + MAX_NEW_ROWS - 1);
     this.load(range.top, bottom, () => {
       const ids: unknown[] = [];
       for (let index = range.top; index <= bottom; index++) {
@@ -3182,7 +3294,7 @@ export class Grid {
   }
 
   private announceCount(): void {
-    this.announce(this.message("rows", { count: this.total }));
+    this.announce(this.message(this.exact ? "rows" : "rows_more", { count: this.total }));
   }
 
   private announceCopy(count: number): void {
@@ -3312,6 +3424,8 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   chosen: "{count} selected",
   chosen_all: "All {count} selected",
   clear_selection: "Clear",
+  rows_more: "{count}+ rows",
+  chosen_all_more: "All {count}+ selected",
   new_row: "New row",
   draft_discarded: "New row discarded",
   row_added: "Row added",

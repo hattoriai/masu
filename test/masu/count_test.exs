@@ -85,6 +85,21 @@ defmodule Masu.CountTest do
       assert view(view, "pages")["page"] == nil
     end
 
+    test "the pager says where the page is, and goes to another" do
+      view = open()
+      assert view |> element("#pages .masu-pager-range") |> render() =~ "1–50 of 237"
+      assert view |> element("#pages .masu-pager-form") |> render() =~ "of 5"
+      assert view |> element("#pages .masu-pager-previous[disabled]") |> has_element?()
+
+      view |> element("#pages .masu-pager-next") |> render_click()
+      assert view |> element("#pages .masu-pager-range") |> render() =~ "51–100 of 237"
+      assert view(view, "pages")["page"] == "2"
+
+      view |> element("#pages .masu-pager-form") |> render_submit(%{"page" => "5"})
+      assert view |> element("#pages .masu-pager-range") |> render() =~ "201–237 of 237"
+      assert view |> element("#pages .masu-pager-next[disabled]") |> has_element?()
+    end
+
     test "a link opens its page" do
       {:ok, view, html} = live(build_conn(), "/counts?pages[page]=3")
       assert html =~ ~s(&quot;page&quot;:2)

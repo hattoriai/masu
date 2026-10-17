@@ -39,7 +39,8 @@ The database does the work:
   with no sort reads its rows in the order of the primary key (or of its
   own `order_by`);
 * a filter and the search are a `WHERE`, added to the query's own;
-* the count is a `count(*)` of the query;
+* the count is a `count(*)` of the query, when the grid asks for it
+  (see `count` in [Export, selection and large tables](export.md));
 * each block is one `LIMIT` and `OFFSET`.
 
 The query may have its own `where`, `join` and `preload`. A column sorts
@@ -87,7 +88,13 @@ end
 ```
 
 `prepare/3` gets the query with every key and value already checked
-against the grid's columns. The optional `supports?/2` says whether the
+against the grid's columns.
+
+A source need not know its count: `count/1` may give `{:at_least, n}`
+(a search engine's "10,000+") or `:unknown`, and the grid scrolls over
+the rows it read, and grows as it reads more. `rows/3` may give
+`{rows, count}`, when the count came with the rows (a `total_count` of
+the same request), and the grid takes it. The optional `supports?/2` says whether the
 source can sort and filter by a column; the grid turns off the others.
 
 A source of a tree implements `nodes/3` and `siblings/2` too: see

@@ -38,7 +38,7 @@ defmodule Masu.Source do
   source knows only that there are at least `n` (a search engine's
   "10,000+"), or `:unknown`. A grid whose source does not know scrolls
   over the rows it read, and a block that comes back short says where
-  they end (see the [Large tables](limits.md) guide).
+  they end (see the [Export, selection and large tables](export.md) guide).
   """
   @callback count(state()) :: non_neg_integer() | {:at_least, non_neg_integer()} | :unknown
 
@@ -173,7 +173,7 @@ defmodule Masu.Source do
     do: %{source | state: module.prepare(state, query, columns)}
 
   @doc false
-  @spec count(t()) :: non_neg_integer()
+  @spec count(t()) :: non_neg_integer() | {:at_least, non_neg_integer()} | :unknown
   def count(%__MODULE__{module: module, state: state}), do: module.count(state)
 
   @doc false
