@@ -83,6 +83,14 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   class or `data-theme="dark"`; Tailwind in the Theming guide, and Lotus
   Web's results table as its worked example, compared pixel for pixel in
   e2e.
+- Columns not known in advance, as a query tool's results: rows as
+  lists of values (`field={2}` reads a place of a list), `type={:auto}`
+  (the type of the values of the first block of rows), `columns` on a
+  grid with no `:col` slots, and `c:Masu.Source.columns/1`. Rows of
+  other columns keep the person's view of the columns there still and
+  name the rest (`Masu.Query`'s sorts, filters and groups too); an
+  order the person did not change follows the new columns.
+  `Masu.Column.infer/1`.
 - The filters a source runs: the optional `c:Masu.Source.filters/2`
   gives the operators a source filters a column by. The filter menu,
   the chips, the menu of a cell, a view's params and `Masu.Test.filter/3`

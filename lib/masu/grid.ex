@@ -97,7 +97,9 @@ defmodule Masu.Grid do
        header_actions: [],
        cell_actions: [],
        cell_menu: [],
-       action_panel: nil
+       action_panel: nil,
+       column_specs: nil,
+       types: %{}
      )}
   end
 
@@ -136,13 +138,20 @@ defmodule Masu.Grid do
         cell_actions: Action.all(Map.get(assigns, :cell_action, []), :cell)
       )
 
-    columns = Enum.map(assigns.col, &Column.new/1)
+    slots = Enum.map(Map.get(assigns, :col, []), &Column.new/1)
 
     socket =
       cond do
-        is_nil(socket.assigns.source) -> start(socket, assigns.input, columns)
-        assigns.input != socket.assigns.input -> restart(socket, assigns.input, columns)
-        true -> relayout(socket, supported(socket.assigns.source, columns, socket.assigns))
+        is_nil(socket.assigns.source) ->
+          start(socket, assigns.input, slots)
+
+        assigns.input != socket.assigns.input ->
+          restart(socket, assigns.input, slots)
+
+        true ->
+          %{source: source, types: types} = socket.assigns
+          {columns, types} = columns_for(socket.assigns, slots, source, types)
+          socket |> assign(types: types) |> relayout(supported(source, columns, socket.assigns))
       end
 
     {:ok, follow(socket)}
@@ -243,8 +252,10 @@ defmodule Masu.Grid do
 
   # The grid's first view: of the URL (`url`), else the person's last
   # (`views`), else the grid's own, of its attributes.
-  defp start(socket, input, columns) do
+  defp start(socket, input, slots) do
     source = Source.new(input, source_opts(socket.assigns))
+    {columns, types} = columns_for(socket.assigns, slots, source, %{})
+    socket = assign(socket, types: types)
     all = supported(source, columns, socket.assigns)
 
     query =
@@ -320,29 +331,110 @@ defmodule Masu.Grid do
   defp last_view(_assigns), do: nil
 
   # New rows (or a new query of the LiveView): the person's view stays,
-  # and the browser drops the rows it has.
-  defp restart(socket, input, columns) do
+  # and the browser drops the rows it has. New rows may have other
+  # columns (a query tool's): the view keeps what is of the columns that
+  # are there still, and names the others.
+  defp restart(socket, input, slots) do
     source = Source.new(input, source_opts(socket.assigns))
+    {columns, types} = columns_for(socket.assigns, slots, source, %{})
+    socket = assign(socket, types: types)
     all = supported(source, columns, socket.assigns)
-    source = Source.prepare(source, socket.assigns.query, all)
+    {query, dropped} = Query.fit(socket.assigns.query, all)
+    {default_query, _dropped} = Query.fit(socket.assigns.default_view.query, all)
+    source = Source.prepare(source, query, all)
+    revision = socket.assigns.revision + 1
 
     socket
+    |> assign(default_view: %{socket.assigns.default_view | query: default_query})
     |> relayout(all)
     |> assign(
       input: input,
       source: source,
-      revision: socket.assigns.revision + 1,
+      query: query,
+      revision: revision,
       initial: nil,
       changed: []
     )
+    |> fitted(dropped, revision)
     |> recount(keep: true)
     |> refresh_details()
+  end
+
+  defp fitted(socket, [], _revision), do: socket
+
+  defp fitted(socket, dropped, revision),
+    do: socket |> assign(notice: notice(dropped, revision)) |> view_changed(patch: false)
+
+  # The grid's columns: its `:col` slots, else its `columns`, else its
+  # source's (c:Masu.Source.columns/1). A column of `type={:auto}` takes
+  # the type of its values, which `types` has, by key, when the grid
+  # learned it before; else the grid reads a block of the source for it.
+  defp columns_for(assigns, slots, source, types) do
+    columns =
+      if slots != [] do
+        slots
+      else
+        specs =
+          assigns.column_specs || Source.columns(source) ||
+            raise(
+              ArgumentError,
+              "<.data_grid id=#{inspect(assigns.id)}> has no columns: give it :col slots, " <>
+                "`columns`, or a source with columns/1"
+            )
+
+        specs |> Enum.with_index() |> Enum.map(fn {spec, place} -> spec_column(spec, place) end)
+      end
+
+    learn_types(columns, source, types, assigns.block_size)
+  end
+
+  # A column of `columns` (or a source's): a key, or a :col's attributes.
+  # Without a field, the value at its place of a row that is a list;
+  # without a type, the type of its values.
+  defp spec_column(key, place) when is_binary(key) or is_atom(key),
+    do: spec_column(%{key: to_string(key)}, place)
+
+  defp spec_column(attrs, place) when is_list(attrs), do: attrs |> Map.new() |> spec_column(place)
+
+  defp spec_column(attrs, place) when is_map(attrs) do
+    attrs = Map.put_new(attrs, :type, :auto)
+
+    if Map.has_key?(attrs, :field) or Map.has_key?(attrs, :value),
+      do: Column.new(attrs),
+      else: attrs |> Map.put(:field, place) |> Column.new()
+  end
+
+  defp learn_types(columns, source, types, block_size) do
+    missing = Enum.filter(columns, &(&1.type == :auto and not Map.has_key?(types, &1.key)))
+
+    types =
+      if missing == [] do
+        types
+      else
+        plain = Enum.map(columns, &Column.typed(&1, :text))
+        rows = source |> Source.prepare(%Query{}, plain) |> Source.rows(0, block_size)
+
+        Enum.reduce(missing, types, fn column, types ->
+          Map.put(types, column.key, Column.infer(Enum.map(rows, &Column.get(column, &1))))
+        end)
+      end
+
+    {Enum.map(columns, &Column.typed(&1, Map.get(types, &1.key, :text))), types}
   end
 
   # The columns again (the LiveView rendered the grid again): the person's
   # layout, fitted to them.
   defp relayout(socket, all) do
-    layout = Layout.fit(socket.assigns.layout, all)
+    %{layout: layout, default_view: default} = socket.assigns
+
+    # An order the person did not change is the columns' own: a query
+    # tool's new columns come in theirs.
+    layout =
+      if layout.order == default.layout.order,
+        do: %{layout | order: Enum.map(all, & &1.key)},
+        else: layout
+
+    layout = Layout.fit(layout, all)
     default = %{socket.assigns.default_view | layout: Layout.new(all)}
 
     assign(socket,
@@ -436,7 +528,7 @@ defmodule Masu.Grid do
     creates? = creates?(assigns)
 
     Enum.map(columns, fn column ->
-      field? = column.editable != false and is_nil(column.value) and not is_nil(column.field)
+      field? = column.editable != false and named_field?(column)
 
       column = %{
         column
@@ -455,6 +547,14 @@ defmodule Masu.Grid do
   defp with_filter_ops(column, nil), do: column
   defp with_filter_ops(column, []), do: %{column | filter_ops: [], filterable: false}
   defp with_filter_ops(column, ops), do: %{column | filter_ops: ops}
+
+  # A field of a map or struct: not a function, nor a place in a row that
+  # is a list.
+  defp named_field?(%Column{value: nil, field: field}) when is_atom(field) and field != nil,
+    do: true
+
+  defp named_field?(%Column{value: nil, field: field}) when is_binary(field), do: true
+  defp named_field?(%Column{}), do: false
 
   defp creates?(assigns) do
     is_function(Map.get(assigns, :create), 1) or

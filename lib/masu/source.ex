@@ -72,6 +72,17 @@ defmodule Masu.Source do
   @callback filters(state(), Column.t()) :: [Masu.Filter.op()]
 
   @doc """
+  The source's columns, for a grid with no `:col` slots: a query tool's,
+  whose columns are known when its query runs. Each is a key (a string),
+  or a keyword list or map of a `:col`'s attributes (`key`, `label`,
+  `type`, `field`, `width`...). A column without a `field` reads the row
+  at its place: its rows are lists of values in the columns' order. A
+  column without a `type` is `:auto`: the grid learns it from the values
+  (see `Masu.Column`).
+  """
+  @callback columns(state()) :: [String.t() | keyword() | map()]
+
+  @doc """
   Takes changes into the source's rows (see `Masu.Live`): `{:upsert, row}`
   and `{:delete, row_or_id}`, oldest first, with the grid's function that
   gives a row's id. The grid calls `prepare/3` after it.
@@ -141,6 +152,7 @@ defmodule Masu.Source do
 
   @optional_callbacks supports?: 2,
                       filters: 2,
+                      columns: 1,
                       totals: 1,
                       select_all: 5,
                       change: 3,
@@ -285,6 +297,13 @@ defmodule Masu.Source do
   @spec siblings(t(), term()) :: [term()]
   def siblings(%__MODULE__{module: module, state: state}, id) do
     if function_exported?(module, :siblings, 2), do: module.siblings(state, id), else: []
+  end
+
+  @doc false
+  # The source's columns (c:columns/1), or nil.
+  @spec columns(t()) :: [String.t() | keyword() | map()] | nil
+  def columns(%__MODULE__{module: module, state: state}) do
+    if function_exported?(module, :columns, 1), do: module.columns(state)
   end
 
   @doc false

@@ -66,7 +66,15 @@ defmodule Masu.Components do
   [Menus of your own](menus.md) guide.
   """
   attr :id, :string, required: true, doc: "the id of the grid"
-  attr :rows, :list, default: nil, doc: "the rows, maps or structs"
+
+  attr :rows, :list,
+    default: nil,
+    doc: "the rows: maps or structs, or lists of values (see `columns`)"
+
+  attr :columns, :list,
+    default: nil,
+    doc:
+      "for a grid with no `:col` slots: its columns, each a key, or a keyword list or map of a `:col`'s attributes; without a `field`, a column reads the row at its place (rows as lists), and without a `type`, it takes the type of its values (`:auto`); see the Columns guide"
 
   attr :source, :any,
     default: nil,
@@ -260,7 +268,7 @@ defmodule Masu.Components do
   attr :class, :any, default: nil, doc: "classes for the grid element"
   attr :rest, :global, doc: "attributes for the grid element"
 
-  slot :col, required: true, doc: "a column" do
+  slot :col, doc: "a column; without any, the columns are `columns`, or the source's" do
     attr :field, :any
     attr :value, :any
     attr :key, :string
@@ -335,6 +343,7 @@ defmodule Masu.Components do
       module={Masu.Grid}
       id={@id}
       input={if is_nil(@rows), do: @source, else: @rows}
+      column_specs={@columns}
       repo={@repo}
       repo_opts={@repo_opts}
       live={@live}

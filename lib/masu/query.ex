@@ -179,6 +179,30 @@ defmodule Masu.Query do
     end
   end
 
+  @doc false
+  # The query on other columns (the source's changed): the sorts, filters
+  # and groups of the columns that are there still, and the keys of those
+  # that are not.
+  @spec fit(t(), [Column.t()]) :: {t(), [String.t()]}
+  def fit(%__MODULE__{} = query, columns) do
+    {filters, dropped} =
+      Enum.reduce(query.filters, {[], []}, fn filter, {ok, dropped} ->
+        case Filter.cast(filter, columns) do
+          {:ok, filter} -> {[filter | ok], dropped}
+          {:error, _reason} -> {ok, [filter.key | dropped]}
+        end
+      end)
+
+    sorts = check_sorts(query.sorts, columns)
+    groups = groups(query.groups, columns)
+
+    dropped =
+      Enum.reverse(dropped) ++
+        Enum.map(query.sorts -- sorts, & &1.key) ++ (query.groups -- groups)
+
+    {%{query | filters: Enum.reverse(filters), sorts: sorts, groups: groups}, Enum.uniq(dropped)}
+  end
+
   defp check_sorts(sorts, columns) do
     sorts
     |> Enum.filter(fn %Sort{key: key} ->
