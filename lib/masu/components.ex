@@ -208,7 +208,8 @@ defmodule Masu.Components do
 
   attr :row_id, :any,
     default: nil,
-    doc: "a function that gives a row's id; the `id` of the row unless given"
+    doc:
+      "a function that gives a row's id; the `id` of the row unless given, or its place in the query for a row without one in a grid that needs no ids. `:position`: the place in the query, always, for a read-only grid of rows with no id; see the Sources guide"
 
   attr :sort, :list,
     default: [],
@@ -272,6 +273,7 @@ defmodule Masu.Components do
     end
 
     check_blocks!(assigns)
+    check_row_id!(assigns)
 
     if assigns.views && is_nil(assigns.user) do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with views needs user"
@@ -357,4 +359,29 @@ defmodule Masu.Components do
               "from 1 to max_block (#{max}); raise max_block for larger pages"
     end
   end
+
+  # A row's place is not its id from one query to the next: what needs
+  # an id that stays does not take it.
+  defp check_row_id!(%{row_id: :position, id: id} = assigns) do
+    case Masu.Grid.stable_id_features(assigns) do
+      [] ->
+        :ok
+
+      features ->
+        raise ArgumentError,
+              "<.data_grid id=#{inspect(id)}> has row_id={:position}, and #{Enum.join(features, ", ")}, " <>
+                "which needs a row's id to stay the same from one query to the next: give `row_id` a function " <>
+                "of a row that gives its id"
+    end
+  end
+
+  defp check_row_id!(%{row_id: row_id, id: id})
+       when not is_nil(row_id) and not is_function(row_id, 1),
+       do:
+         raise(
+           ArgumentError,
+           "<.data_grid id=#{inspect(id)}> row_id is a function of a row, or :position"
+         )
+
+  defp check_row_id!(_assigns), do: :ok
 end

@@ -25,6 +25,36 @@ sort by their exact value.
 When the LiveView gives the grid new rows, the grid keeps the person's
 order, filters and search, and applies them to the new rows.
 
+## Row ids
+
+A grid knows each row by its id: the row's `id` unless `row_id` gives
+another, a function of the row:
+
+```heex
+<.data_grid id="orders" rows={@orders} row_id={& &1.number}>
+```
+
+The rows of a report or an ad-hoc query often have no id. A grid that
+needs none (it shows rows, sorts, filters, pages, copies and exports
+them) knows such a row by its place in the query. `row_id={:position}`
+says so for every row, whatever ids the rows have.
+
+A place is not an id from one query to the next: the first row of one
+order is not the first of another. What needs a row's id to stay the
+same needs a real one, and a grid with `row_id={:position}`, or a row
+without an id, refuses it, saying so:
+
+| Feature | Why it needs an id that stays |
+| --- | --- |
+| `changeset`, `update` | an edit saves the row it was made on |
+| `create`, `struct` | a new row takes its place among the others by its id |
+| `delete`, `deletable` | a delete, and its undo, are of rows by their ids |
+| `selectable` | the selection stays as the order and filters change |
+| `live` | a change from the topic replaces the row with its id |
+| `presence` | another person's cell is on a row, in each person's own order |
+| `:detail` | an open detail stays with its row |
+| `tree` | a row's parent is named by its id |
+
 ## An Ecto query or schema
 
 ```heex
