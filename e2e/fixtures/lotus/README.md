@@ -8,6 +8,9 @@ table, pixel for pixel.
   (`lib/lotus/web/live/queries/results_component.ex`), with its columns'
   widths fixed so that both tables have the same geometry.
 * `table.css`: Lotus Web's CSS for it, built from its sources.
+* `Inter.woff2`: Lotus Web's font (`assets/fonts/Inter.woff2`, Inter by
+  Rasmus Andersson, SIL Open Font License 1.1). The spec loads it in both
+  pages, so that the tables are drawn in the same font on any machine.
 
 To build `table.css` again, from a checkout of lotus_web, with Tailwind 3
 and its forms and typography plugins installed (`NODE_PATH`):
@@ -22,4 +25,4 @@ JS
 npx tailwindcss --config=/tmp/ref.config.js --input=/tmp/app.css --output=/tmp/table.css
 ```
 
-then remove its `@font-face` rules.
+then remove its `@font-face` rules (the spec loads the font itself).
