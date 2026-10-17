@@ -26,6 +26,8 @@ export interface ColumnConfig {
   align: "start" | "center" | "end";
   sortable: boolean;
   filterable: boolean;
+  /** The operators its source filters it by (Masu.Source's `filters/2`); null: every operator of its type. */
+  filters?: string[] | null;
   editable: boolean;
   /** A new row takes a value in it (`create`). */
   creatable?: boolean;

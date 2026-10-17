@@ -64,6 +64,38 @@ defmodule Masu.Filter do
   @spec ops() :: [op()]
   def ops, do: @ops
 
+  @doc "The operators of a filter on a column of `type`: those of text only for text and enums."
+  @spec ops(Column.type()) :: [op()]
+  def ops(type) when type in [:text, :enum], do: @ops
+  def ops(_type), do: @ops -- @text_ops
+
+  @doc false
+  # The operators a column offers, of those its source runs (`direct`):
+  # those of its type, and `:between`, which Masu runs as `:gte` and
+  # `:lte` (expand/2).
+  @spec offered([op()], Column.type()) :: [op()]
+  def offered(direct, type) do
+    ops = Enum.filter(ops(type), &(&1 in direct))
+
+    if :between not in ops and :gte in ops and :lte in ops,
+      do: ops ++ [:between],
+      else: ops
+  end
+
+  @doc false
+  # A filter as filters of the operators a source runs (`direct`): itself,
+  # or `:between` as `:gte` and `:lte`. A filter the source cannot run is
+  # refused before it gets here (cast/2).
+  @spec expand(t(), [op()]) :: [t()]
+  def expand(%__MODULE__{op: op} = filter, direct) do
+    if op == :between and op not in direct do
+      [from, to] = filter.value
+      [%{filter | op: :gte, value: from}, %{filter | op: :lte, value: to}]
+    else
+      [filter]
+    end
+  end
+
   @doc "A filter on the column with `key`."
   @spec new(String.t() | atom(), op(), term()) :: t()
   def new(key, op, value \\ nil) when op in @ops,
@@ -94,6 +126,12 @@ defmodule Masu.Filter do
 
   defp check_op(%Column{type: type}, op) when op in @text_ops and type not in [:text, :enum],
     do: {:error, "#{op} is for text, not #{type}"}
+
+  defp check_op(%Column{filter_ops: ops, key: key}, op) when is_list(ops) do
+    if op in ops,
+      do: :ok,
+      else: {:error, "the source of the column #{inspect(key)} does not filter by #{op}"}
+  end
 
   defp check_op(_column, _op), do: :ok
 

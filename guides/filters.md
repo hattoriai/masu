@@ -18,6 +18,9 @@ each with its button that takes it away.
 A column has one filter in the menu; the filters of several columns all
 apply. The grid's search applies with them.
 
+A source of your own may run fewer: the menu then offers those (see
+[The filters a source runs](sources.md#the-filters-a-source-runs)).
+
 ## The values of an enum
 
 An enum's menu lists its values among the rows of the person's other

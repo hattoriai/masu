@@ -129,3 +129,44 @@ source can sort and filter by a column; the grid turns off the others.
 
 A source of a tree implements `nodes/3` and `siblings/2` too: see
 [Trees and details](trees.md).
+
+### The filters a source runs
+
+A source that Masu does not translate itself (an API, a search engine,
+another query tool) often runs fewer filters than Masu has. The optional
+`filters/2` gives those it runs for a column:
+
+```elixir
+@impl true
+def filters(_state, %Masu.Column{key: "notes"}), do: []
+def filters(_state, _column), do: [:eq, :neq, :gt, :lt, :gte, :lte, :contains, :is_nil, :not_nil]
+```
+
+The grid then offers only those: the filter menu of each column, the
+chips, the menu of a cell (`cell_menu`), a view's params from a link or
+a saved view (a filter the source does not run is dropped and named, as
+a filter of a column that is gone), and `Masu.Test.filter/3`. The server
+refuses the others, so `prepare/3` never gets them. `[]` is a column it
+does not filter by. Without `filters/2`, a column has every filter of
+its type.
+
+Masu runs "between" as "at least" and "at most" for a source that has
+those and not it: the person sees one filter, and the source gets two.
+An enum whose source has no "is one of" (`:in`) filters by one value,
+"is" or "is not", from a list of its `values`.
+
+What each operator means, and what it is in SQL:
+
+| Operator | Means | SQL |
+| --- | --- | --- |
+| `:eq`, `:neq` | equal, or not, to the value; `:neq` keeps the rows with no value | `=`, `<>` (or `IS DISTINCT FROM`) |
+| `:gt`, `:gte`, `:lt`, `:lte` | greater or less than the value | `>`, `>=`, `<`, `<=` |
+| `:between` | from the first value to the second, both in | `BETWEEN` |
+| `:in` | one of a list of values | `IN (...)` |
+| `:contains`, `:not_contains` | has the text, without case | `ILIKE '%x%'`, `NOT ILIKE '%x%'` |
+| `:starts_with`, `:ends_with` | starts or ends with the text, without case | `ILIKE 'x%'`, `ILIKE '%x'` |
+| `:is_nil`, `:not_nil` | no value, or any value | `IS NULL`, `IS NOT NULL` |
+
+The text operators are for `:text` and `:enum` columns only. A source
+whose LIKE has case (and a `%` or `_` in the value) escapes and lowers
+as it can; it says it runs `:contains` only if it does.

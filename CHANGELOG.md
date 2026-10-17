@@ -83,6 +83,14 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   class or `data-theme="dark"`; Tailwind in the Theming guide, and Lotus
   Web's results table as its worked example, compared pixel for pixel in
   e2e.
+- The filters a source runs: the optional `c:Masu.Source.filters/2`
+  gives the operators a source filters a column by. The filter menu,
+  the chips, the menu of a cell, a view's params and `Masu.Test.filter/3`
+  offer only those, and the server refuses the others (a link's or a
+  saved view's are dropped and named). Masu runs "between" as "at least"
+  and "at most" for a source without it; an enum without "is one of"
+  filters by one of its values. `Masu.Filter.ops/1`. The Sources guide
+  maps each operator to SQL.
 - Menus of your own (`Masu.Action`): `:header_action` items in each
   column's header menu, and a menu on each cell, opened by a right
   click, the context-menu key or Shift+F10, as an ARIA menu. `cell_menu`

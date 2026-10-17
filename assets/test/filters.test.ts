@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arity, describe, inputType, makeFilter, opsFor, replaceFilter } from "../src/filters";
+import { allows, arity, describe, inputType, makeFilter, opsFor, replaceFilter } from "../src/filters";
 import type { ColumnConfig } from "../src/types";
 
 const column = (key: string, type: ColumnConfig["type"], label = key): ColumnConfig => ({
@@ -39,6 +39,24 @@ test("each type offers its operators, the first the default", () => {
   assert.equal(inputType("decimal"), "number");
   assert.equal(arity("between"), 2);
   assert.equal(arity("not_nil"), 0);
+});
+
+test("a source's operators: those of the type it runs, and an enum by one value without 'is one of'", () => {
+  // Lotus's: = ≠ > < ≥ ≤ LIKE, null, not null; Masu adds between.
+  const lotus = ["eq", "neq", "gt", "lt", "gte", "lte", "contains", "starts_with", "ends_with", "is_nil", "not_nil", "between"];
+  assert.deepEqual(opsFor("text", lotus), ["contains", "eq", "neq", "starts_with", "ends_with", "is_nil", "not_nil"]);
+  assert.deepEqual(opsFor("integer", lotus), ["eq", "neq", "gt", "gte", "lt", "lte", "between", "is_nil", "not_nil"]);
+  assert.deepEqual(opsFor("enum", lotus), ["eq", "neq", "is_nil", "not_nil"]);
+  assert.deepEqual(opsFor("enum", ["in", "eq"]), ["in"]);
+  assert.deepEqual(opsFor("text", null), opsFor("text"));
+
+  const status = { ...column("status", "enum"), filters: ["eq", "is_nil"] };
+  assert.equal(allows(status, "eq"), true);
+  assert.equal(allows(status, "in"), false);
+  assert.equal(allows(status, "neq"), false);
+  assert.equal(allows(column("status", "enum"), "in"), true);
+  assert.equal(allows(column("status", "enum"), "neq"), true);
+  assert.equal(allows(column("born", "date"), "contains"), false);
 });
 
 test("makeFilter() reads the inputs, and makes nothing of empty ones", () => {

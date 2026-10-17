@@ -22,8 +22,35 @@ export type Op =
 const NUMBER_OPS: Op[] = ["eq", "neq", "gt", "gte", "lt", "lte", "between", "is_nil", "not_nil"];
 const TIME_OPS: Op[] = ["eq", "gt", "gte", "lt", "lte", "between", "is_nil", "not_nil"];
 
-/** The operators a column's menu offers, the first the default. */
-export function opsFor(type: ColumnType): Op[] {
+/**
+ * The operators a column's menu offers, the first the default: those of
+ * its type, of the ones its source runs (`allowed`, Masu.Source's
+ * `filters/2`) when it says. An enum whose source has no "is one of"
+ * filters by one value.
+ */
+export function opsFor(type: ColumnType, allowed?: string[] | null): Op[] {
+  const ops = typeOps(type);
+  if (!allowed) return ops;
+  const offered = ops.filter((op) => allowed.includes(op));
+  if (type === "enum" && !allowed.includes("in")) {
+    return [...(["eq", "neq"] as Op[]).filter((op) => allowed.includes(op)), ...offered];
+  }
+  return offered;
+}
+
+const TEXT_OPS: Op[] = ["contains", "not_contains", "starts_with", "ends_with"];
+
+/**
+ * Whether the server filters a column by an operator: one of those its
+ * source runs, when it says; else any but those of text, for a column
+ * that is not text (as Masu.Filter checks it).
+ */
+export function allows(column: ColumnConfig, op: Op): boolean {
+  if (column.filters) return column.filters.includes(op);
+  return column.type === "text" || column.type === "enum" || !TEXT_OPS.includes(op);
+}
+
+function typeOps(type: ColumnType): Op[] {
   switch (type) {
     case "text":
       return ["contains", "eq", "neq", "starts_with", "ends_with", "not_contains", "is_nil", "not_nil"];

@@ -446,10 +446,15 @@ defmodule Masu.Grid do
       }
 
       if Source.supports?(source, column),
-        do: column,
+        do: with_filter_ops(column, Source.filter_ops(source, column)),
         else: %{column | sortable: false, filterable: false, searchable: false}
     end)
   end
+
+  # The operators its source filters a column by; none: it does not filter.
+  defp with_filter_ops(column, nil), do: column
+  defp with_filter_ops(column, []), do: %{column | filter_ops: [], filterable: false}
+  defp with_filter_ops(column, ops), do: %{column | filter_ops: ops}
 
   defp creates?(assigns) do
     is_function(Map.get(assigns, :create), 1) or
@@ -1749,6 +1754,7 @@ defmodule Masu.Grid do
       "align" => Atom.to_string(column.align),
       "sortable" => column.sortable,
       "filterable" => column.filterable,
+      "filters" => column.filter_ops && Enum.map(column.filter_ops, &Atom.to_string/1),
       "editable" => column.editable,
       "creatable" => column.creatable,
       "values" => column.values && Enum.map(column.values, &Value.to_wire/1),

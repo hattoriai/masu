@@ -100,6 +100,8 @@ defmodule MasuDev.Customers do
 
   defp pick(list, n), do: Enum.at(list, rem(n, length(list)))
 
+  def cities, do: @cities
+
   @types %{
     name: :string,
     email: :string,
@@ -158,6 +160,7 @@ defmodule MasuDev.Layouts do
           {"Pages", "/pages"},
           {"Look", "/look"},
           {"Menus", "/menus"},
+          {"Some filters", "/limited"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -1024,6 +1027,55 @@ defmodule MasuDev.MenusLive do
   end
 end
 
+defmodule MasuDev.LimitedSource do
+  @moduledoc """
+  A source that filters as Lotus Web does: `= ≠ > < ≥ ≤`, LIKE
+  (`contains`, `starts_with`, `ends_with`), null and not null. It runs a
+  list; Masu runs "between" as `≥` and `≤` for it.
+  """
+  @behaviour Masu.Source
+
+  alias Masu.Source.List, as: ListSource
+
+  @impl true
+  def init(opts, grid_opts), do: ListSource.init(Keyword.fetch!(opts, :rows), grid_opts)
+
+  @impl true
+  def filters(_state, _column),
+    do: [:eq, :neq, :gt, :lt, :gte, :lte, :contains, :starts_with, :ends_with, :is_nil, :not_nil]
+
+  @impl true
+  defdelegate prepare(state, query, columns), to: ListSource
+  @impl true
+  defdelegate count(state), to: ListSource
+  @impl true
+  defdelegate rows(state, offset, limit), to: ListSource
+end
+
+defmodule MasuDev.LimitedLive do
+  @moduledoc "A source that runs some filters only (MasuDev.LimitedSource): the menus offer those."
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket),
+    do: {:ok, assign(socket, rows: Enum.take(MasuDev.Customers.all(), 500))}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="limited-label">Some filters</h1>
+    <.data_grid id="limited" source={{MasuDev.LimitedSource, rows: @rows}} label_id="limited-label" height="24rem" cell_menu>
+      <:col field={:name} />
+      <:col field={:city} type={:enum} values={MasuDev.Customers.cities()} />
+      <:col field={:seats} type={:integer} />
+      <:col field={:signed_up} type={:date} />
+    </.data_grid>
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -1052,6 +1104,7 @@ defmodule MasuDev.Router do
     live("/pages", MasuDev.PagesLive)
     live("/look", MasuDev.LookLive)
     live("/menus", MasuDev.MenusLive)
+    live("/limited", MasuDev.LimitedLive)
     masu_exports()
   end
 end
