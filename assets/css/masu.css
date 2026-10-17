@@ -1266,6 +1266,113 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
+.masu-selection-delete,
+.masu-confirm button {
+  border: 1px solid var(--masu-border);
+  border-radius: var(--masu-radius);
+  padding: 0.125rem 0.625rem;
+  background: var(--masu-background);
+  color: var(--masu-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.masu-danger {
+  border-color: color-mix(in oklab, var(--masu-invalid) 45%, var(--masu-border));
+  color: var(--masu-invalid);
+}
+
+.masu-confirm .masu-confirm-ok:not(.masu-danger) {
+  border-color: var(--masu-accent);
+  background: var(--masu-accent);
+  color: var(--masu-accent-text);
+}
+
+.masu-confirm .masu-confirm-ok.masu-danger {
+  border-color: var(--masu-invalid);
+  background: var(--masu-invalid);
+  color: var(--masu-accent-text);
+}
+
+.masu-selection-delete:focus-visible,
+.masu-confirm button:focus-visible {
+  outline: none;
+  box-shadow: var(--masu-focus-ring);
+}
+
+/* A question above the grid: delete rows, add the rest of a paste. */
+.masu-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: var(--masu-space);
+  border: 1px solid var(--masu-border);
+  border-radius: var(--masu-radius);
+  padding: 0.375rem 0.625rem;
+  background: var(--masu-surface);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.masu-confirm > span {
+  margin-inline-end: auto;
+}
+
+/* An enum's editor: its values, under the cell. */
+.masu-choices {
+  position: absolute;
+  top: 0;
+  z-index: 6;
+  margin: 0;
+  padding: 0.25rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--masu-border);
+  border-radius: var(--masu-radius);
+  background: var(--masu-background);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  font-size: var(--masu-font-size);
+}
+
+.masu-choice {
+  padding: 0.25rem 0.5rem;
+  border-radius: calc(var(--masu-radius) - 2px);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.masu-choice:hover {
+  background: var(--masu-row-hover);
+}
+
+.masu-choice[aria-selected="true"] {
+  background: var(--masu-selection);
+}
+
+.masu-editor[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 2px var(--masu-invalid);
+}
+
+/* New rows (`create`): the row that adds one, and the drafts. */
+.masu-add-row .masu-cell {
+  color: var(--masu-muted);
+  cursor: pointer;
+}
+
+.masu-add-row:hover .masu-cell:first-child {
+  color: var(--masu-accent);
+}
+
+.masu-draft .masu-cell {
+  background-image: linear-gradient(var(--masu-row-hover), var(--masu-row-hover));
+}
+
+.masu-draft .masu-cell:first-child {
+  box-shadow: inset 2px 0 0 var(--masu-accent);
+}
+
 .masu-export-button[aria-busy="true"] {
   cursor: progress;
 }

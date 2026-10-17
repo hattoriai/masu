@@ -153,3 +153,47 @@ function localDateTime(value: string): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
+
+/**
+ * What is wrong with a value for a column, before it goes to the server:
+ * the name of a message ("invalid_number"), or null. An empty value is
+ * the server's to judge (a required field). An enum with `values` takes
+ * one of them.
+ */
+export function invalid(type: ColumnType, sent: string | boolean | null, values?: CellValue[] | null): string | null {
+  if (sent === null || typeof sent === "boolean") return null;
+  switch (type) {
+    case "integer":
+      return /^-?\d+$/.test(sent) ? null : "invalid_integer";
+    case "number":
+      return /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(sent) ? null : "invalid_number";
+    case "decimal":
+      return /^-?\d+(\.\d+)?$/.test(sent) ? null : "invalid_number";
+    case "date": {
+      const m = /^(-?\d{4,})-(\d{2})-(\d{2})$/.exec(sent);
+      if (!m) return "invalid_date";
+      const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+      return date.getUTCMonth() === Number(m[2]) - 1 && date.getUTCDate() === Number(m[3]) ? null : "invalid_date";
+    }
+    case "time":
+      return /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?$/.test(sent) ? null : "invalid_time";
+    case "datetime":
+      return Number.isNaN(new Date(sent).getTime()) ? "invalid_datetime" : null;
+    case "enum":
+      return values && values.length > 0 && !values.some((value) => String(value) === sent) ? "invalid_value" : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The values of an enum's editor that match what the person typed: those
+ * that start with it first, then those that have it, in their order.
+ */
+export function matching(values: string[], text: string): string[] {
+  const query = text.trim().toLowerCase();
+  if (query === "") return values;
+  const starts = values.filter((value) => value.toLowerCase().startsWith(query));
+  const has = values.filter((value) => !value.toLowerCase().startsWith(query) && value.toLowerCase().includes(query));
+  return [...starts, ...has];
+}

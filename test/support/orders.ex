@@ -89,6 +89,11 @@ defmodule MasuTest.Orders do
 
       :ok = MasuTest.Accounts.setup!(Repo)
 
+      # Tasks that a grid adds and deletes (Masu.Edit), of their own.
+      Repo.query!(
+        "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT, points DECIMAL)"
+      )
+
       # Items with empty values and repeated ones, for paging by key.
       Repo.query!("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, score INTEGER)")
 
@@ -129,5 +134,25 @@ defmodule MasuTest.Item do
   schema "items" do
     field(:name, :string)
     field(:score, :integer)
+  end
+end
+
+defmodule MasuTest.Task do
+  @moduledoc "A task, which a grid adds and deletes."
+  use Ecto.Schema
+
+  import Ecto.Changeset
+
+  schema "tasks" do
+    field(:title, :string)
+    field(:status, Ecto.Enum, values: [:todo, :doing, :done])
+    field(:points, :decimal)
+  end
+
+  def changeset(task, params) do
+    task
+    |> cast(params, [:title, :status, :points])
+    |> validate_required([:title])
+    |> validate_number(:points, greater_than_or_equal_to: 0)
   end
 end

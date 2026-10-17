@@ -82,6 +82,13 @@ grid's reason.
   `:value`, `:count`, `:level`, `:expanded` and `:totals`.
 * `totals(view, id)`: the row of totals, by column key.
 
+## New and deleted rows
+
+* `add_rows(view, id, rows)`: adds rows as "+ New row" does, each a map
+  of column keys to values; `{:ok, ids}`, or `{:error, results}`.
+* `delete_rows(view, id, ids_or_selection)` and `restore_rows(view, id,
+  undo)`: deletes rows (or `:selection`), and brings them back.
+
 ## Export and selection
 
 * `export(view, id, format, opts \\ [])`: exports as the Export menu

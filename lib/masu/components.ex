@@ -46,7 +46,10 @@ defmodule Masu.Components do
     * `sortable`, `filterable` and `searchable` - `false` to turn off,
       `searchable` is on for text and enums;
     * `editable` - in a grid that edits: `false` for a read-only column, or
-      a function of the row that says whether its cell edits.
+      a function of the row that says whether its cell edits;
+    * `values` - the values of an `:enum` column, which its editor offers;
+    * `decimals` - the digits after the point of a `:decimal` or `:number`
+      column, whatever the value has.
 
   A `:col` with content renders each cell, with the row as `:let`:
 
@@ -73,6 +76,35 @@ defmodule Masu.Components do
     default: nil,
     doc:
       "a function of a row and params that saves them: `{:ok, row}` or `{:error, changeset_or_message}`; instead of `changeset`"
+
+  attr :create, :any,
+    default: nil,
+    doc:
+      "a function of params that inserts a new row: `{:ok, row}` or `{:error, changeset_or_message}`; the person adds rows, see the Editing guide"
+
+  attr :struct, :any,
+    default: nil,
+    doc:
+      "with `changeset`: the struct of a new row (or a function that gives it), which the changeset casts and the repo inserts; the person adds rows"
+
+  attr :delete, :any,
+    default: nil,
+    doc:
+      "a function of a row that deletes it: `:ok`, `{:ok, row}` or `{:error, changeset_or_message}`; the person deletes rows"
+
+  attr :deletable, :any,
+    default: nil,
+    doc:
+      "`true` to delete rows with the repo of an Ecto source (or from a list), or a function of a row that says whether it deletes"
+
+  attr :restore, :any,
+    default: nil,
+    doc:
+      "with `delete`: a function of a deleted row that brings it back (an undo); a grid that deletes with the repo inserts it again"
+
+  attr :on_delete, :any,
+    default: nil,
+    doc: "a function called with the rows deleted, in the LiveView's process"
 
   attr :row_editable, :any,
     default: nil,
@@ -189,6 +221,8 @@ defmodule Masu.Components do
     attr :filterable, :boolean
     attr :searchable, :boolean
     attr :editable, :any
+    attr :values, :list
+    attr :decimals, :integer
     attr :hidden, :boolean
     attr :pinned, :atom
     attr :aggregate, :any
@@ -228,6 +262,12 @@ defmodule Masu.Components do
       live={@live}
       changeset={@changeset}
       update={@update}
+      create={@create}
+      struct={@struct}
+      delete={@delete}
+      deletable={@deletable}
+      restore={@restore}
+      on_delete={@on_delete}
       row_editable={@row_editable}
       presence={@presence}
       user={@user}

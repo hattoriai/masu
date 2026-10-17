@@ -154,6 +154,7 @@ defmodule MasuDev.Layouts do
           {"Tree", "/tree"},
           {"Details", "/details"},
           {"Groups", "/groups"},
+          {"Tasks", "/tasks"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -697,6 +698,69 @@ defmodule MasuDev.TogetherLive do
   end
 end
 
+defmodule MasuDev.TasksLive do
+  @moduledoc """
+  Tasks that a person adds and deletes: "+ New row" (or Ctrl+Enter),
+  Ctrl+Delete with a question, and Ctrl+Z to bring rows back. The status
+  is an enum with its values, the estimate shows one decimal.
+  """
+  use Phoenix.LiveView
+
+  import Ecto.Changeset
+  import Masu.Components
+
+  @statuses ~w(todo doing review done)
+  @types %{title: :string, status: :string, estimate: :decimal, due: :date, urgent: :boolean}
+
+  @impl true
+  def mount(_params, _session, socket) do
+    tasks =
+      for id <- 1..30 do
+        %{
+          id: id,
+          title: "Task #{id}",
+          status: Enum.at(@statuses, rem(id, 4)),
+          estimate: Decimal.new(rem(id * 7, 13)) |> Decimal.div(2),
+          due: Date.add(~D[2026-11-01], id),
+          urgent: rem(id, 6) == 0
+        }
+      end
+
+    {:ok, assign(socket, tasks: tasks, statuses: @statuses)}
+  end
+
+  def changeset(task, params) do
+    {task, @types}
+    |> cast(params, Map.keys(@types))
+    |> validate_required([:title])
+    |> validate_inclusion(:status, @statuses)
+    |> validate_number(:estimate, greater_than_or_equal_to: 0)
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="tasks-label">Tasks</h1>
+    <.data_grid
+      id="tasks"
+      rows={@tasks}
+      changeset={&changeset/2}
+      struct={fn -> %{id: System.unique_integer([:positive]) + 1000, title: nil, status: "todo", estimate: nil, due: nil, urgent: false} end}
+      deletable={&(&1.status != "done")}
+      selectable
+      label_id="tasks-label"
+      height="28rem"
+    >
+      <:col field={:title} width={240} />
+      <:col field={:status} type={:enum} values={@statuses} />
+      <:col field={:estimate} type={:decimal} decimals={1} />
+      <:col field={:due} type={:date} />
+      <:col field={:urgent} type={:boolean} />
+    </.data_grid>
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -721,6 +785,7 @@ defmodule MasuDev.Router do
     live("/tree", MasuDev.TreeLive)
     live("/details", MasuDev.DetailsLive)
     live("/groups", MasuDev.GroupsLive)
+    live("/tasks", MasuDev.TasksLive)
     masu_exports()
   end
 end

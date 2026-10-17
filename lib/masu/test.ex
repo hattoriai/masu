@@ -129,6 +129,73 @@ defmodule Masu.Test do
   end
 
   @doc """
+  Adds rows to the grid `id`, as the person does with "New row" or a
+  paste below the last row: each a map of column keys (or atoms) to
+  values, as the browser sends them. The grid saves each through its
+  `create`, or its `changeset` of its `struct`.
+
+  Returns `{:ok, ids}` when every row was saved, or `{:error, results}`,
+  a result for each row: `{:ok, id}` or `{:error, [{key, message}]}` (a
+  key of nil for an error of the row).
+  """
+  @spec add_rows(struct(), String.t(), map() | [map()]) ::
+          {:ok, [term()]} | {:error, [{:ok, term()} | {:error, [{String.t() | nil, String.t()}]}]}
+  def add_rows(view, id, rows) do
+    rows = rows |> List.wrap() |> Enum.map(&Map.new(&1, fn {k, v} -> {to_string(k), v} end))
+
+    case event(view, id, "masu:create", %{"rows" => rows}) do
+      %{"error" => error} ->
+        flunk("the grid #{id} did not add rows: #{error}")
+
+      %{"results" => results} ->
+        results =
+          Enum.map(results, fn
+            %{"id" => id} ->
+              {:ok, id}
+
+            %{"errors" => errors} ->
+              {:error, Enum.map(errors, fn [key, message] -> {key, message} end)}
+          end)
+
+        if Enum.all?(results, &match?({:ok, _}, &1)),
+          do: {:ok, Enum.map(results, &elem(&1, 1))},
+          else: {:error, results}
+    end
+  end
+
+  @doc """
+  Deletes the rows `ids` of the grid `id`, or, with `:selection`, the
+  rows selected (`select/4`, `select_all/3`), as the person does with
+  Ctrl+Delete. Returns `{:ok, undo}`, with the token that brings them back
+  (`restore_rows/3`; nil when the grid cannot), or `{:error, errors, undo}`
+  with `{row_id, message}` for each row that was not deleted.
+  """
+  @spec delete_rows(struct(), String.t(), [term()] | :selection) ::
+          {:ok, String.t() | nil} | {:error, [{term(), String.t()}], String.t() | nil}
+  def delete_rows(view, id, ids) do
+    payload = if ids == :selection, do: %{"selection" => true}, else: %{"ids" => ids}
+
+    case event(view, id, "masu:delete", payload) do
+      %{"error" => error} -> flunk("the grid #{id} did not delete: #{error}")
+      %{"errors" => [], "undo" => undo} -> {:ok, undo}
+      %{"errors" => errors, "undo" => undo} -> {:error, Enum.map(errors, &List.to_tuple/1), undo}
+    end
+  end
+
+  @doc """
+  Brings back the rows of a delete (its `undo` token, `delete_rows/3`), as
+  the person does with Ctrl+Z. Returns `{:ok, ids}`.
+  """
+  @spec restore_rows(struct(), String.t(), String.t()) :: {:ok, [term()]} | {:error, term()}
+  def restore_rows(view, id, undo) do
+    case event(view, id, "masu:restore", %{"undo" => undo}) do
+      %{"error" => error} -> {:error, error}
+      %{"ids" => ids, "errors" => []} -> {:ok, ids}
+      %{"errors" => errors} -> {:error, Enum.map(errors, &List.to_tuple/1)}
+    end
+  end
+
+  @doc """
   The place (from 0) of the row `row_id` in the grid's current order, or
   `nil` when its query leaves the row out: where the grid scrolls to
   follow another person to it.

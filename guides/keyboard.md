@@ -26,7 +26,10 @@ cell, as in a spreadsheet.
 | Ctrl+V | pastes tab-separated text from the active cell |
 | Ctrl+D | fills the selection down with its first row |
 | Delete, Backspace | empties the editable cells of the selection |
-| Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y | undoes and redoes an edit |
+| Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y | undoes and redoes an edit, or a delete |
+| Ctrl+Enter, Insert | adds a new row, in a grid that adds rows (see [Editing](editing.md)) |
+| Escape on a new row | lets it go |
+| Ctrl+Delete (⌘⌫) | deletes the rows of the selection, after a question, in a grid that deletes rows |
 
 In a grid that reads right to left, ← and → swap.
 

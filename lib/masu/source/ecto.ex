@@ -209,6 +209,17 @@ if Code.ensure_loaded?(Ecto.Query) do
       {:query, if(except == [], do: ecto, else: where(ecto, [r], field(r, ^key) not in ^except))}
     end
 
+    @doc false
+    # The ids of the first `limit` rows of a query of `select_all/5`.
+    @spec ids_of(map(), Ecto.Query.t(), pos_integer()) :: [term()]
+    def ids_of(%{primary_key: [key]} = state, query, limit) do
+      query
+      |> exclude(:select)
+      |> select([r], field(r, ^key))
+      |> limit(^limit)
+      |> state.repo.all(state.repo_opts)
+    end
+
     # The groups of a column under a path, with their counts and totals.
     defp groups_of(state, filtered, path, %Column{key: key, field: f} = column, columns, sorts) do
       aggregates = aggregate_selects(columns)
@@ -615,6 +626,19 @@ if Code.ensure_loaded?(Ecto.Query) do
 
       result
     end
+
+    @doc false
+    # The values of an `Ecto.Enum` field of the source's schema, as the
+    # wire has them; nil for any other field.
+    @spec enum_values(map(), atom()) :: [String.t()] | nil
+    def enum_values(%{base: %Ecto.Query{from: %{source: {_table, schema}}}}, field)
+        when is_atom(schema) and schema != nil and is_atom(field) do
+      schema |> Ecto.Enum.values(field) |> Enum.map(&Atom.to_string/1)
+    rescue
+      ArgumentError -> nil
+    end
+
+    def enum_values(_state, _field), do: nil
 
     @locking [Ecto.Adapters.Postgres, Ecto.Adapters.MyXQL]
 

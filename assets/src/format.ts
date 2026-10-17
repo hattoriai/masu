@@ -12,7 +12,16 @@ const ISO_DATE = /^(-?\d{4,})-(\d{2})-(\d{2})$/;
 const ISO_TIME = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/;
 const ZONED = /(Z|[+-]\d{2}:?\d{2})$/;
 
-export function formatter(type: ColumnType, locale: string | undefined): Formatter {
+export function formatter(type: ColumnType, locale: string | undefined, decimals?: number | null): Formatter {
+  // A column of `decimals` digits shows them all, whatever the value has.
+  if ((type === "decimal" || type === "number") && typeof decimals === "number") {
+    const nf = new Intl.NumberFormat(locale, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    return (value) => {
+      if (typeof value === "number") return nf.format(value);
+      if (typeof value !== "string" || !/^-?\d+(\.\d+)?$/.test(value)) return plain(value);
+      return nf.format(value as unknown as number);
+    };
+  }
   switch (type) {
     case "integer": {
       const nf = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });

@@ -27,6 +27,12 @@ export interface ColumnConfig {
   sortable: boolean;
   filterable: boolean;
   editable: boolean;
+  /** A new row takes a value in it (`create`). */
+  creatable?: boolean;
+  /** The values of an enum, which its editor offers; null when the column's values are any. */
+  values?: CellValue[] | null;
+  /** The digits after the point a number shows, whatever the value has. */
+  decimals?: number | null;
   /** The server renders the cell's HTML (with the value, `[html, value]`, when editable). */
   html: boolean;
   /** Kept in view while the others scroll sideways. */
@@ -115,6 +121,12 @@ export interface Config {
   export: string[];
   /** The rows selected (`selectable`): some ids, or every row of the query less some; null when rows do not select. */
   selection: { all: boolean; ids: unknown[]; except: unknown[]; count: number } | null;
+  /** The person adds rows (`create`). */
+  creates?: boolean;
+  /** The person deletes rows (`delete`, `deletable`). */
+  deletes?: boolean;
+  /** A delete can be undone. */
+  restores?: boolean;
 }
 
 export interface BlockReply {

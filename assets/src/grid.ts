@@ -10,7 +10,7 @@
 
 import { BlockCache } from "./blocks";
 import { describe, replaceFilter } from "./filters";
-import { fromTSV, inputText, placePaste, sendValue, shownValue } from "./parse";
+import { fromTSV, inputText, invalid, matching, placePaste, sendValue, shownValue } from "./parse";
 import { FilterMenu } from "./menu";
 import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
@@ -132,8 +132,18 @@ export class Grid {
   private errors = new Map<string, string>();
   /** The cells being saved, by cellKey(). */
   private saving = new Set<string>();
-  private undoStack: Edit[][] = [];
-  private redoStack: Edit[][] = [];
+  private undoStack: Step[] = [];
+  private redoStack: Step[] = [];
+  /**
+   * New rows not saved yet (`create`), after the rows of the query, then
+   * the row that adds one: each saves when the person leaves it.
+   */
+  private drafts: Draft[] = [];
+  private draftCount = 0;
+  /** The draft the active cell was on, saved when it leaves it. */
+  private activeDraft: string | null = null;
+  /** A question above the grid: delete rows, add the rest of a paste. */
+  private confirmEl: HTMLElement | null = null;
 
   /** The rows that changed (Masu.Live), each until its flash ends. */
   private flash = new Map<string, { until: number; color: string | undefined }>();
@@ -226,6 +236,7 @@ export class Grid {
         widthsChanged && sent.get(column.key) !== column.width ? column.width : (widths.get(column.key) ?? column.width),
       );
       this.makeFormatters();
+      for (const draft of this.drafts) draft.row = this.draftRow(draft);
       this.renderHeader();
       this.applyWidths();
       this.clearRows();
@@ -261,7 +272,7 @@ export class Grid {
         this.flash.set(String(id), { until: now + FLASH, color: config.changedBy?.[String(id)] });
       }
       this.revision = config.revision;
-      this.total = config.total;
+      this.setTotal(config.total);
       this.query = config.query;
       // The rows of the older revision stay on the screen until the new
       // ones come, so that the grid does not blink as its rows change;
@@ -330,7 +341,7 @@ export class Grid {
         return;
       }
       this.revision = answer.revision;
-      this.total = answer.total;
+      this.setTotal(answer.total);
       this.query = answer.query ?? query;
       this.cache.clear();
       this.stale = null;
@@ -358,18 +369,20 @@ export class Grid {
 
   private render(): void {
     const rh = this.config.rowHeight;
-    setStyle(this.body, "height", `${totalHeight(this.total, rh, this.gaps)}px`);
-    setAttribute(this.gridEl, "aria-rowcount", String(this.total + 1));
+    const count = this.rowCount();
+    setStyle(this.body, "height", `${totalHeight(count, rh, this.gaps)}px`);
+    setAttribute(this.gridEl, "aria-rowcount", String(count + 1));
     setAttribute(this.gridEl, "aria-colcount", String(this.columns.length));
-    if (this.emptyEl) this.emptyEl.hidden = this.total > 0;
+    if (this.emptyEl) this.emptyEl.hidden = this.total > 0 || this.drafts.length > 0;
+    this.leaveDraft();
 
     const headHeight = this.head.offsetHeight;
     const { first, last } =
       this.gaps.length === 0
-        ? visibleRows(this.gridEl.scrollTop, this.gridEl.clientHeight - headHeight, rh, this.total, OVERSCAN)
+        ? visibleRows(this.gridEl.scrollTop, this.gridEl.clientHeight - headHeight, rh, count, OVERSCAN)
         : {
             first: Math.max(0, indexAt(this.gridEl.scrollTop, rh, this.gaps) - OVERSCAN),
-            last: Math.min(this.total - 1, indexAt(this.gridEl.scrollTop + this.gridEl.clientHeight - headHeight, rh, this.gaps) + OVERSCAN),
+            last: Math.min(count - 1, indexAt(this.gridEl.scrollTop + this.gridEl.clientHeight - headHeight, rh, this.gaps) + OVERSCAN),
           };
 
     for (const [index, rowEl] of this.rows) {
@@ -399,7 +412,8 @@ export class Grid {
         rowEl.masuTop = top;
         rowEl.style.transform = `translateY(${top}px)`;
       }
-      this.fillRow(rowEl, index, this.cache.get(index) ?? this.stale?.get(index) ?? null);
+      if (index === this.addIndex()) this.fillAddRow(rowEl, index);
+      else this.fillRow(rowEl, index, this.dataAt(index) ?? null);
       this.markRow(rowEl, index, selection);
     }
 
@@ -410,7 +424,7 @@ export class Grid {
     this.drawPeople();
     this.reportCursor();
     this.cache.evict(this.cache.blockOf(first));
-    this.planRequests(first, last);
+    this.planRequests(first, Math.min(last, this.total - 1));
   }
 
   private clearRows(): void {
@@ -466,6 +480,9 @@ export class Grid {
     rowEl.setAttribute("aria-busy", row === null ? "true" : "false");
 
     rowEl.classList.toggle("masu-group-row", row !== null && isGroup(row));
+    rowEl.classList.remove("masu-add-row");
+    const draft = row !== null && isDraft(row);
+    rowEl.classList.toggle("masu-draft", draft);
     const flash = row === null ? null : this.flashing(row[0]);
     rowEl.classList.toggle("masu-changed", flash !== null);
     // The flash of a row someone saved takes their color.
@@ -483,7 +500,7 @@ export class Grid {
         const value = row[col + 1] as CellValue;
         cell.textContent = value === null ? "" : this.aggregateFormat(col)(value);
         cell.classList.remove("masu-null");
-      } else if (column.html) {
+      } else if (column.html && !draft) {
         const value = row[col + 1] as unknown;
         cell.innerHTML = (Array.isArray(value) ? (value[0] as string) : (value as string | null)) ?? "";
       } else {
@@ -497,10 +514,12 @@ export class Grid {
       const error = row === null ? undefined : this.errors.get(key);
       cell.classList.toggle("masu-invalid", error !== undefined);
       cell.classList.toggle("masu-saving", row !== null && this.saving.has(key));
-      const locked = row !== null && column.editable === true && this.locked(row, col);
-      cell.classList.toggle("masu-editable", column.editable === true && !locked);
+      const edits = draft ? column.creatable === true : column.editable === true;
+      const locked = row !== null && edits && this.locked(row, col);
+      cell.classList.toggle("masu-editable", edits && !locked);
       cell.classList.toggle("masu-locked", locked);
-      if (column.editable) cell.setAttribute("aria-readonly", locked ? "true" : "false");
+      if (edits) cell.setAttribute("aria-readonly", locked ? "true" : "false");
+      else if (draft) cell.setAttribute("aria-readonly", "true");
       if (error !== undefined) {
         cell.title = error;
         cell.setAttribute("aria-invalid", "true");
@@ -570,7 +589,7 @@ export class Grid {
       twisty.dataset.state = node.children ? (node.expanded ? "open" : "closed") : "leaf";
       cell.prepend(twisty);
     }
-    if (this.config.selection && !isGroup(row)) {
+    if (this.config.selection && !isGroup(row) && !isDraft(row)) {
       const box = document.createElement("input");
       box.type = "checkbox";
       box.className = "masu-select";
@@ -633,7 +652,7 @@ export class Grid {
 
   /** The box of a row was clicked (Shift: the range from the last one). */
   private onBox(index: number, shift: boolean): void {
-    const row = this.cache.get(index) ?? this.stale?.get(index);
+    const row = this.dataAt(index);
     if (!row) return;
     const on = !this.isChosen(row[0]);
     if (shift && this.lastChosen !== null) this.choose(this.lastChosen, index, on);
@@ -673,6 +692,14 @@ export class Grid {
     clear.textContent = this.message("clear_selection", {});
     clear.addEventListener("click", () => this.chooseAll(false));
     this.selectionBar.replaceChildren(text, clear);
+    if (this.config.deletes) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "masu-selection-delete masu-danger";
+      remove.textContent = this.message("delete", {});
+      remove.addEventListener("click", () => this.confirmDelete(this.chosen.count, { selection: true }));
+      this.selectionBar.insertBefore(remove, clear);
+    }
   }
 
   /** The ids of the rows whose detail is open (as JSON). */
@@ -775,7 +802,7 @@ export class Grid {
 
   /** Opens or closes a row of the tree, or every row beside it (`*`). */
   private toggleNode(index: number, open: boolean, siblings = false): void {
-    const row = this.cache.get(index) ?? this.stale?.get(index);
+    const row = this.dataAt(index);
     if (!row) return;
     // The rows under it move: the old ones are of no use.
     this.freshRows = true;
@@ -788,7 +815,7 @@ export class Grid {
 
   /** Opens or closes the detail of a row. */
   private toggleDetail(index: number, open?: boolean): void {
-    const row = this.cache.get(index) ?? this.stale?.get(index);
+    const row = this.dataAt(index);
     if (!row || !this.config.detail) return;
     const isOpen = this.openDetails().has(JSON.stringify(row[0]));
     const next = open ?? !isOpen;
@@ -1084,7 +1111,7 @@ export class Grid {
 
   private makeFormatters(): void {
     const locale = this.config.locale ?? undefined;
-    this.formatters = this.columns.map((column) => formatter(column.type, locale));
+    this.formatters = this.columns.map((column) => formatter(column.type, locale, column.decimals));
     // A count is an integer; an average of integers has decimals.
     this.aggregateFormatters = this.columns.map((column, col) =>
       column.aggregate === "count" || column.aggregate === "count_distinct"
@@ -1164,7 +1191,7 @@ export class Grid {
       if (cache !== this.cache) cache.failed(block);
       this.cache.store(answer.from, answer.rows);
       if (answer.rows.length === 0) this.cache.failed(block);
-      if (answer.total !== this.total) this.total = answer.total;
+      if (answer.total !== this.total) this.setTotal(answer.total);
       this.schedule();
       then?.();
     });
@@ -1227,6 +1254,11 @@ export class Grid {
         if (cell) this.onBox(cell.row, event.shiftKey);
         return;
       }
+      if (target.closest(".masu-add-row")) {
+        event.preventDefault();
+        this.addDraft();
+        return;
+      }
       const button = target.closest<HTMLElement>(".masu-filter-button");
       if (!button) return;
       const col = Number(button.dataset.col);
@@ -1243,6 +1275,17 @@ export class Grid {
       this.on(this.gridEl, type, () => this.stopFollowing(false), { passive: true });
     }
     this.on(this.gridEl, "focus", () => this.schedule());
+    // Focus that leaves the grid (not for its editor or its questions)
+    // saves the new row it was on.
+    this.on(this.gridEl, "focusout", (event) => {
+      const next = (event as FocusEvent).relatedTarget as Node | null;
+      if (next && this.el.contains(next)) return;
+      setTimeout(() => {
+        if (this.editor || this.el.contains(document.activeElement)) return;
+        const draft = this.draftAt(this.active.row);
+        if (draft) this.saveDrafts([draft.id]);
+      }, 0);
+    });
     this.on(document, "mousemove", (event) => this.onMouseMove(event));
     this.on(document, "mouseup", () => {
       this.dragging = false;
@@ -1334,7 +1377,7 @@ export class Grid {
     }
 
     const target = move(this.active, event.key, mod, {
-      rows: this.total,
+      rows: this.rowCount(),
       cols: this.columns.length,
       page: this.pageRows(),
       rtl: getComputedStyle(this.gridEl).direction === "rtl",
@@ -1361,8 +1404,8 @@ export class Grid {
   private onRowKey(event: KeyboardEvent, mod: boolean): boolean {
     const { row, col } = this.active;
     if (row < 0 || mod) return false;
-    const data = this.cache.get(row) ?? this.stale?.get(row);
-    if (!data) return false;
+    const data = this.dataAt(row);
+    if (!data || isDraft(data)) return false;
 
     // Space on the first column selects the row, or takes it out.
     if (this.config.selection && event.key === " " && col === 0 && !event.altKey && !isGroup(data)) {
@@ -1406,7 +1449,7 @@ export class Grid {
       if (node.level > 0) {
         // To the parent: the row above with a smaller level.
         for (let index = row - 1; index >= 0; index--) {
-          const above = this.cache.get(index) ?? this.stale?.get(index);
+          const above = this.dataAt(index);
           const aboveNode = above ? this.nodeOf(above) : null;
           if (aboveNode && aboveNode.level < node.level) {
             event.preventDefault();
@@ -1868,6 +1911,31 @@ export class Grid {
     const column = this.columns[col];
     const key = event.key;
 
+    // A new row: Ctrl+Enter or Insert, or Enter on the row that adds one.
+    if (this.config.creates && ((mod && key === "Enter") || (key === "Insert" && !mod && !event.shiftKey))) {
+      event.preventDefault();
+      this.addDraft();
+      return true;
+    }
+    if (row >= 0 && row === this.addIndex() && (key === "Enter" || key === " ")) {
+      event.preventDefault();
+      this.addDraft();
+      return true;
+    }
+    // Ctrl+Delete (⌘⌫): the rows of the range, or those selected.
+    if (mod && (key === "Delete" || key === "Backspace")) {
+      if (!this.config.deletes && !this.draftAt(row)) return false;
+      event.preventDefault();
+      this.deleteRows();
+      return true;
+    }
+    // Escape on a new row lets it go.
+    if (key === "Escape" && !this.anchor && this.draftAt(row)) {
+      event.preventDefault();
+      this.discardDraft(this.draftAt(row)!.id);
+      return true;
+    }
+
     if (mod && !event.altKey && key.toLowerCase() === "z") {
       event.preventDefault();
       if (event.shiftKey) this.redo();
@@ -1885,9 +1953,8 @@ export class Grid {
       this.fillDown();
       return true;
     }
-    if (!column.editable) return false;
-    const data = this.cache.get(row) ?? this.stale?.get(row);
-    if (data && this.locked(data, col)) return false;
+    const data = this.dataAt(row);
+    if (!data || !this.edits(data, col)) return false;
 
     if (column.type === "boolean" && (key === " " || key === "Enter")) {
       event.preventDefault();
@@ -1916,8 +1983,8 @@ export class Grid {
   /** Opens the editor of a cell, with its value, or with `text` typed on it. */
   startEdit(cell: Cell, text?: string): void {
     const column = this.columns[cell.col];
-    const row = this.cache.get(cell.row) ?? this.stale?.get(cell.row);
-    if (!column?.editable || !row || cell.row < 0 || this.locked(row, cell.col)) return;
+    const row = this.dataAt(cell.row);
+    if (!column || !row || cell.row < 0 || !this.edits(row, cell.col)) return;
     if (column.type === "boolean") return;
     const editor = this.people.find((person) => person.editing && person.cell && cellKey(person.cell[0], person.cell[1]) === cellKey(row[0], column.key));
     if (editor) {
@@ -1942,17 +2009,120 @@ export class Grid {
     input.style.width = `${this.widths[cell.col]}px`;
     input.style.height = `${this.config.rowHeight}px`;
 
-    this.editor = { input, row: cell.row, col: cell.col, id: row[0], original: raw, done: false };
+    this.editor = { input, row: cell.row, col: cell.col, id: row[0], original: raw, done: false, list: null, options: [], shown: [], highlight: -1 };
     input.addEventListener("keydown", (event) => this.onEditorKey(event));
-    input.addEventListener("blur", () => this.commitEdit(null));
+    input.addEventListener("blur", () => this.commitEdit(null, true));
     this.body.appendChild(input);
+    if (column.type === "enum") this.openChoices(this.editor, column, text !== undefined);
     input.focus();
     if (text === undefined && input.type === "text") input.setSelectionRange(input.value.length, input.value.length);
     this.reportCursor();
   }
 
+  /**
+   * An enum's editor: a list of its values under the cell (or above, at
+   * the bottom of the grid), which narrows as the person types; ↑ and ↓
+   * pick, Enter takes. The values are the column's own (`values`), or the
+   * values its rows have (as its filter menu has them).
+   */
+  private openChoices(editor: Editor, column: ColumnConfig, typed: boolean): void {
+    const list = document.createElement("ul");
+    const listId = `${this.id}-choices`;
+    list.id = listId;
+    list.className = "masu-choices";
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", column.label);
+    editor.list = list;
+    const input = editor.input;
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-controls", listId);
+    input.setAttribute("aria-expanded", "true");
+    input.autocomplete = "off";
+
+    // Where it opens: under the cell, or above it when the screen ends.
+    const top = this.rowTop(editor.row);
+    const room = this.gridEl.scrollTop + this.gridEl.clientHeight - (top + this.config.rowHeight + this.head.offsetHeight);
+    list.style.insetInlineStart = `${this.colLeft(editor.col)}px`;
+    list.style.minWidth = `${this.widths[editor.col]}px`;
+    if (room < 200 && top - this.gridEl.scrollTop > room) {
+      list.style.transform = `translateY(calc(${top}px - 100%))`;
+    } else {
+      list.style.transform = `translateY(${top + this.config.rowHeight}px)`;
+    }
+    // A click on a value takes it (before the input's blur).
+    list.addEventListener("mousedown", (event) => {
+      const option = (event.target as HTMLElement).closest<HTMLElement>("[data-index]");
+      if (!option) return;
+      event.preventDefault();
+      editor.input.value = editor.shown[Number(option.dataset.index)] ?? editor.input.value;
+      this.commitEdit({ row: 0, col: 0 });
+    });
+    input.addEventListener("input", () => this.showChoices(editor, true));
+    this.body.appendChild(list);
+
+    const show = (values: CellValue[]) => {
+      if (this.editor !== editor) return;
+      editor.options = values.filter((value) => value !== null).map((value) => String(value));
+      this.showChoices(editor, typed);
+    };
+    if (column.values && column.values.length > 0) show(column.values);
+    else
+      this.transport.push("masu:values", { key: column.key }, (reply) => {
+        show(((reply.values as [CellValue, number][]) ?? []).map(([value]) => value));
+      });
+  }
+
+  /** The values that match the editor's text; the first is picked when the person typed. */
+  private showChoices(editor: Editor, typed: boolean): void {
+    if (!editor.list) return;
+    const text = editor.input.value;
+    editor.shown = typed ? matching(editor.options, text) : editor.options;
+    editor.highlight = typed ? (editor.shown.length > 0 && text.trim() !== "" ? 0 : -1) : editor.shown.indexOf(text);
+    const items = editor.shown.map((value, index) => {
+      const item = document.createElement("li");
+      item.id = `${this.id}-choice-${index}`;
+      item.className = "masu-choice";
+      item.setAttribute("role", "option");
+      item.dataset.index = String(index);
+      item.textContent = value;
+      return item;
+    });
+    editor.list.replaceChildren(...items);
+    editor.list.hidden = items.length === 0;
+    this.highlightChoice(editor);
+  }
+
+  private highlightChoice(editor: Editor): void {
+    if (!editor.list) return;
+    editor.list.querySelectorAll<HTMLElement>(".masu-choice").forEach((item, index) => {
+      item.setAttribute("aria-selected", String(index === editor.highlight));
+    });
+    const current = editor.highlight >= 0 ? editor.list.children[editor.highlight] : null;
+    if (current) {
+      editor.input.setAttribute("aria-activedescendant", current.id);
+      (current as HTMLElement).scrollIntoView?.({ block: "nearest" });
+    } else {
+      editor.input.removeAttribute("aria-activedescendant");
+    }
+  }
+
   private onEditorKey(event: KeyboardEvent): void {
     event.stopPropagation();
+    const editor = this.editor;
+    // An enum's list: ↑ and ↓ pick a value, Enter and Tab take it.
+    if (editor?.list && editor.shown.length > 0) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        editor.highlight = (editor.highlight + step + editor.shown.length) % editor.shown.length;
+        this.highlightChoice(editor);
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && editor.highlight >= 0) {
+        editor.input.value = editor.shown[editor.highlight];
+      }
+    }
     switch (event.key) {
       case "Enter":
         event.preventDefault();
@@ -1969,20 +2139,33 @@ export class Grid {
     }
   }
 
-  private commitEdit(step: { row: number; col: number } | null): void {
+  private commitEdit(step: { row: number; col: number } | null, blur = false): void {
     const editor = this.editor;
     if (!editor || editor.done) return;
-    editor.done = true;
     const column = this.columns[editor.col];
     const changed = editor.input.value !== inputText(column.type, editor.original);
     const value = sendValue(column.type, editor.input.value, this.config.locale ?? undefined);
+    // A value the server would refuse (text in a number): the editor stays,
+    // and says so; leaving it lets the value go.
+    const problem = changed ? invalid(column.type, value, column.values) : null;
+    if (problem && !blur) {
+      editor.input.setAttribute("aria-invalid", "true");
+      editor.input.title = this.message(problem, {});
+      this.announce(`${column.label}: ${this.message(problem, {})}`);
+      return;
+    }
+    editor.done = true;
     this.closeEditor();
+    if (problem) {
+      this.announce(`${column.label}: ${this.message(problem, {})} ${this.message("not_saved", {})}`);
+      return;
+    }
     // The value the person saw is the one the editor opened with: a save
     // by someone else while they typed is a conflict, not their base.
     if (changed) this.applyEdits([{ row: editor.row, col: editor.col, value, before: editor.original }]);
     if (step) {
       this.active = {
-        row: Math.min(Math.max(editor.row + step.row, 0), this.total - 1),
+        row: Math.min(Math.max(editor.row + step.row, 0), this.rowCount() - 1),
         col: Math.min(Math.max(editor.col + step.col, 0), this.columns.length - 1),
       };
       this.ensureVisible(this.active);
@@ -1996,6 +2179,7 @@ export class Grid {
     editor.done = true;
     this.editor = null;
     editor.input.remove();
+    editor.list?.remove();
     this.gridEl.focus({ preventScroll: true });
     this.render();
     this.reportCursor();
@@ -2012,11 +2196,27 @@ export class Grid {
   ): void {
     const edits: Edit[] = [];
     let skipped = 0;
+    let drafted = false;
+    let firstProblem: string | null = null;
     for (const { row, col, value, before: seen } of cells) {
       const column = this.columns[col];
-      const data = this.cache.get(row) ?? this.stale?.get(row);
-      if (!column?.editable || !data || this.locked(data, col)) {
+      const data = this.dataAt(row);
+      if (!column || !data || !this.edits(data, col)) {
         skipped += 1;
+        continue;
+      }
+      // A value the server would refuse stays out, with its error.
+      const problem = invalid(column.type, value, column.values);
+      if (problem) {
+        this.errors.set(cellKey(data[0], column.key), this.message(problem, {}));
+        firstProblem ??= `${column.label}: ${this.message(problem, {})}`;
+        continue;
+      }
+      // A new row keeps its values until it saves.
+      const draft = this.draftAt(row);
+      if (draft) {
+        this.setDraftValue(draft, column.key, value);
+        drafted = true;
         continue;
       }
       const before = seen !== undefined ? seen : rawValue(data[col + 1]);
@@ -2024,6 +2224,8 @@ export class Grid {
       this.setValue(row, col, column.html ? [escapeHTML(String(value ?? "")), shownValue(column.type, value)] : shownValue(column.type, value));
     }
     if (skipped > 0) this.announce(this.message("not_editable", { count: skipped }));
+    if (firstProblem) this.announce(firstProblem);
+    if (drafted || firstProblem) this.refreshRows();
     this.send(edits, record ? "edit" : "redo");
   }
 
@@ -2062,9 +2264,9 @@ export class Grid {
 
       const saved = edits.filter((edit) => !refused.has(cellKey(edit.id, edit.key)));
       if (saved.length > 0) {
-        if (mode === "undo") this.redoStack.push(saved);
+        if (mode === "undo") this.redoStack.push({ kind: "edits", edits: saved });
         else {
-          this.undoStack.push(saved);
+          this.undoStack.push({ kind: "edits", edits: saved });
           if (this.undoStack.length > 100) this.undoStack.shift();
           if (mode === "edit") this.redoStack = [];
         }
@@ -2084,15 +2286,15 @@ export class Grid {
   }
 
   private undo(): void {
-    const batch = this.undoStack.pop();
-    if (!batch) return;
-    this.send(batch.map((edit) => this.reverse(edit)), "undo");
+    const step = this.undoStack.pop();
+    if (step?.kind === "edits") this.send(step.edits.map((edit) => this.reverse(edit)), "undo");
+    else if (step?.kind === "delete") this.restoreRows(step.undo);
   }
 
   private redo(): void {
-    const batch = this.redoStack.pop();
-    if (!batch) return;
-    this.send(batch.map((edit) => this.reverse(edit)), "redo");
+    const step = this.redoStack.pop();
+    if (step?.kind === "edits") this.send(step.edits.map((edit) => this.reverse(edit)), "redo");
+    else if (step?.kind === "restore") this.pushDelete({ ids: step.ids }, true);
   }
 
   /** The edit that takes `edit` back. */
@@ -2130,7 +2332,21 @@ export class Grid {
     if (!text) return;
     event.preventDefault();
     const selection = this.selection() ?? { top: 0, left: 0, bottom: 0, right: 0 };
-    const placed = placePaste(fromTSV(text), selection, this.total, this.columns.length).slice(0, MAX_EDITS);
+    const matrix = fromTSV(text);
+    // On the new rows: their values, and more new rows for more lines.
+    if (selection.top >= this.total && this.config.creates) {
+      this.pasteIntoDrafts(matrix, selection);
+      return;
+    }
+    // Lines past the last row: new rows, if the person wants them.
+    const single = matrix.length === 1 && matrix[0].length === 1;
+    const overflow = single ? 0 : Math.min(matrix.length - (this.total - selection.top), MAX_NEW_ROWS);
+    if (overflow > 0 && this.config.creates) {
+      this.confirm(this.message("paste_add", { count: overflow }), this.message("add_rows", {}), () =>
+        this.addPastedRows(matrix.slice(matrix.length - overflow), selection.left),
+      );
+    }
+    const placed = placePaste(matrix, selection, this.total, this.columns.length).slice(0, MAX_EDITS);
     if (placed.length === 0) return;
     const bottom = Math.max(...placed.map((p) => p.row));
     const right = Math.max(...placed.map((p) => p.col));
@@ -2159,18 +2375,20 @@ export class Grid {
   /** Whether the row's state makes its cell of `col` read-only; a group's row is. */
   private locked(data: Row, col: number): boolean {
     if (isGroup(data)) return true;
+    if (isDraft(data)) return !this.columns[col]?.creatable;
     if (!this.config.locks) return false;
     const lock = (data as unknown[])[this.columns.length + 1];
     return lock === true || (Array.isArray(lock) && lock.includes(col));
   }
 
   private valueAt(row: number, col: number): CellValue | undefined {
-    const data = this.cache.get(row) ?? this.stale?.get(row);
+    const data = this.dataAt(row);
     return data ? rawValue(data[col + 1]) : undefined;
   }
 
   /** Puts a value in a row the browser has, in a new copy of the row. */
   private setValue(row: number, col: number, value: unknown): void {
+    if (this.draftAt(row)) return;
     for (const cache of [this.cache, this.stale]) {
       const data = cache?.get(row);
       if (!cache || !data) continue;
@@ -2184,6 +2402,363 @@ export class Grid {
   private refreshRows(): void {
     for (const rowEl of this.rows.values()) rowEl.masuRow = undefined;
     this.render();
+  }
+
+  // New rows (`create`): a row that adds one after the rows of the query,
+  // and the new rows, drafts until they save. A draft saves when the
+  // person leaves it (another row, or out of the grid), and stays with
+  // its errors on its cells when the server refuses it. Escape lets it go.
+
+  /** The rows the grid draws: the query's, the drafts, the row that adds one. */
+  private rowCount(): number {
+    return this.total + this.drafts.length + (this.config.creates ? 1 : 0);
+  }
+
+  /** The index of the row that adds one, or -1. */
+  private addIndex(): number {
+    return this.config.creates ? this.total + this.drafts.length : -1;
+  }
+
+  /** The row at an index: the query's (as the browser has it), or a draft's. */
+  private dataAt(index: number): Row | undefined {
+    if (index < this.total) return this.cache.get(index) ?? this.stale?.get(index);
+    return this.drafts[index - this.total]?.row;
+  }
+
+  private draftAt(index: number): Draft | undefined {
+    return index >= this.total ? this.drafts[index - this.total] : undefined;
+  }
+
+  /** Whether the person may edit the cell of `col` of a row (a draft: of a column a new row takes). */
+  private edits(data: Row, col: number): boolean {
+    const column = this.columns[col];
+    if (!column) return false;
+    if (isDraft(data)) return column.creatable === true;
+    return column.editable === true && !this.locked(data, col);
+  }
+
+  /**
+   * A new count of the query's rows, which moves the drafts: the active
+   * cell stays on the draft, or the row that adds one, it was on.
+   */
+  private setTotal(total: number): void {
+    const draft = this.draftAt(this.active.row);
+    const adding = this.active.row >= 0 && this.active.row === this.addIndex();
+    this.total = total;
+    if (draft) this.active = { row: this.total + this.drafts.indexOf(draft), col: this.active.col };
+    else if (adding) this.active = { row: this.addIndex(), col: this.active.col };
+  }
+
+  /** Takes drafts out, keeping the active cell on what it was on. */
+  private dropDrafts(ids: Set<string>): void {
+    const draft = this.draftAt(this.active.row);
+    const adding = this.active.row >= 0 && this.active.row === this.addIndex();
+    for (const d of this.drafts) {
+      if (!ids.has(d.id)) continue;
+      for (const column of this.columns) this.errors.delete(cellKey(d.id, column.key));
+    }
+    this.drafts = this.drafts.filter((d) => !ids.has(d.id));
+    if (draft && !ids.has(draft.id)) this.active = { row: this.total + this.drafts.indexOf(draft), col: this.active.col };
+    else if (draft || adding) this.active = { row: Math.max(0, Math.min(this.addIndex(), this.rowCount() - 1)), col: this.active.col };
+    this.activeDraft = this.draftAt(this.active.row)?.id ?? null;
+    this.anchor = null;
+    this.clearRows();
+  }
+
+  private draftRow(draft: Draft): Row {
+    return [draft.id, ...this.columns.map((column) => shownValue(column.type, draft.values.get(column.key) ?? null))] as Row;
+  }
+
+  private setDraftValue(draft: Draft, key: string, value: string | boolean | null): void {
+    if (value === null || value === "") draft.values.delete(key);
+    else draft.values.set(key, value);
+    this.errors.delete(cellKey(draft.id, key));
+    draft.row = this.draftRow(draft);
+  }
+
+  private newDraft(): Draft {
+    const draft: Draft = { id: `${DRAFT}${++this.draftCount}`, values: new Map(), row: [null] as unknown as Row, saving: false };
+    draft.row = this.draftRow(draft);
+    return draft;
+  }
+
+  /** A new row, under the others; the one the person was on saves. */
+  private addDraft(): void {
+    if (!this.config.creates) return;
+    const current = this.draftAt(this.active.row);
+    if (current) this.saveDrafts([current.id]);
+    const draft = this.newDraft();
+    this.drafts.push(draft);
+    const editable = this.columns.findIndex((column) => column.creatable);
+    const col = this.columns[this.active.col]?.creatable ? this.active.col : Math.max(0, editable);
+    this.active = { row: this.total + this.drafts.length - 1, col };
+    this.activeDraft = draft.id;
+    this.anchor = null;
+    this.gridEl.focus({ preventScroll: true });
+    this.ensureVisible(this.active);
+    this.render();
+    this.announce(this.message("new_row", {}));
+  }
+
+  private discardDraft(id: string): void {
+    this.dropDrafts(new Set([id]));
+    this.render();
+    this.announce(this.message("draft_discarded", {}));
+  }
+
+  /** The active cell left a draft: it saves. */
+  private leaveDraft(): void {
+    const now = this.draftAt(this.active.row)?.id ?? null;
+    const left = this.activeDraft;
+    this.activeDraft = now;
+    if (left && left !== now && !this.editor) setTimeout(() => this.saveDrafts([left]), 0);
+  }
+
+  /**
+   * Saves drafts (`masu:create`): a saved one leaves the drafts (its row
+   * comes in the query's rows, with a flash); a refused one stays, with
+   * its errors on its cells. An empty draft just goes.
+   */
+  private saveDrafts(ids: string[], showRefused = false): void {
+    const wanted = new Set(ids);
+    const drafts = this.drafts.filter((d) => wanted.has(d.id) && !d.saving);
+    const empty = drafts.filter((d) => d.values.size === 0);
+    if (empty.length > 0) {
+      this.dropDrafts(new Set(empty.map((d) => d.id)));
+      this.render();
+    }
+    const saving = drafts.filter((d) => d.values.size > 0);
+    if (saving.length === 0) return;
+    for (const draft of saving) {
+      draft.saving = true;
+      for (const key of draft.values.keys()) this.saving.add(cellKey(draft.id, key));
+    }
+    this.refreshRows();
+
+    const rows = saving.map((draft) => Object.fromEntries(draft.values));
+    this.transport.push("masu:create", { rows }, (reply) => {
+      for (const draft of saving) {
+        draft.saving = false;
+        for (const key of draft.values.keys()) this.saving.delete(cellKey(draft.id, key));
+      }
+      if (typeof reply.error === "string") {
+        this.announce(reply.error);
+        this.refreshRows();
+        return;
+      }
+      const results = (reply.results as { id?: unknown; errors?: [string | null, string][] }[]) ?? [];
+      const saved = new Set<string>();
+      const now = performance.now();
+      let firstError: string | null = null;
+      results.forEach((result, i) => {
+        const draft = saving[i];
+        if (!draft) return;
+        if (result.errors) {
+          for (const [key, message] of result.errors) {
+            const column = this.columns.find((c) => c.key === key) ?? this.columns[0];
+            this.errors.set(cellKey(draft.id, column.key), message);
+            firstError ??= `${column.label}: ${message}`;
+          }
+          draft.row = this.draftRow(draft);
+        } else {
+          saved.add(draft.id);
+          this.flash.set(String(result.id), { until: now + FLASH, color: undefined });
+        }
+      });
+      if (saved.size > 0) this.dropDrafts(saved);
+      if (typeof reply.total === "number") this.setTotal(reply.total);
+      // New rows of a paste that the server refused: the first is shown.
+      const refused = saving.find((draft) => !saved.has(draft.id));
+      if (showRefused && refused) {
+        const col = this.columns.findIndex((column) => this.errors.has(cellKey(refused.id, column.key)));
+        this.active = { row: this.total + this.drafts.indexOf(refused), col: Math.max(0, col) };
+        this.activeDraft = refused.id;
+        this.anchor = null;
+        this.ensureVisible(this.active);
+      }
+      this.refreshRows();
+
+      if (firstError) this.announce(firstError);
+      else if (saved.size > 1) this.announce(this.message("rows_added", { count: saved.size }));
+      else if (saved.size === 1) this.announce(this.message(reply.index === null ? "row_added_hidden" : "row_added", {}));
+    });
+  }
+
+  /** Lines of a paste on the new rows: their values, and more new rows. */
+  private pasteIntoDrafts(matrix: string[][], selection: Rect): void {
+    const first = selection.top - this.total;
+    const lines = matrix.slice(0, MAX_NEW_ROWS);
+    while (this.drafts.length < first + lines.length) this.drafts.push(this.newDraft());
+    this.fillDrafts(this.drafts.slice(first, first + lines.length), lines, selection.left);
+    this.anchor = { row: selection.top, col: selection.left };
+    this.active = { row: selection.top + lines.length - 1, col: Math.min(selection.left + Math.max(...lines.map((l) => l.length)) - 1, this.columns.length - 1) };
+    this.activeDraft = this.draftAt(this.active.row)?.id ?? null;
+    this.clearRows();
+    this.render();
+  }
+
+  /** The lines of a paste past the last row, as new rows, saved at once. */
+  private addPastedRows(lines: string[][], left: number): void {
+    const drafts = lines.map(() => this.newDraft());
+    this.drafts.push(...drafts);
+    this.fillDrafts(drafts, lines, left);
+    this.render();
+    this.saveDrafts(
+      drafts.map((d) => d.id),
+      true,
+    );
+  }
+
+  private fillDrafts(drafts: Draft[], lines: string[][], left: number): void {
+    const locale = this.config.locale ?? undefined;
+    drafts.forEach((draft, r) => {
+      lines[r].forEach((text, c) => {
+        const column = this.columns[left + c];
+        if (column?.creatable) this.setDraftValue(draft, column.key, sendValue(column.type, text, locale));
+      });
+    });
+  }
+
+  // Deleting rows (`delete`, `deletable`): Ctrl+Delete on a range, or the
+  // rows selected, after a question; Ctrl+Z brings them back when the
+  // grid can.
+
+  private deleteRows(): void {
+    // The rows selected with their boxes, when there are.
+    if (this.config.selection && this.chosen.count > 0) {
+      this.confirmDelete(this.chosen.count, { selection: true });
+      return;
+    }
+    const range = this.selection();
+    if (!range) return;
+    // New rows in the range just go.
+    const drafts = new Set<string>();
+    for (let index = Math.max(range.top, this.total); index <= range.bottom; index++) {
+      const draft = this.draftAt(index);
+      if (draft) drafts.add(draft.id);
+    }
+    if (drafts.size > 0) this.discardDrafts(drafts);
+    if (!this.config.deletes || range.top >= this.total) return;
+    const bottom = Math.min(range.bottom, this.total - 1, range.top + MAX_NEW_ROWS - 1);
+    this.load(range.top, bottom, () => {
+      const ids: unknown[] = [];
+      for (let index = range.top; index <= bottom; index++) {
+        const row = this.cache.get(index);
+        if (row && !isGroup(row)) ids.push(row[0]);
+      }
+      if (ids.length > 0) this.confirmDelete(ids.length, { ids });
+    });
+  }
+
+  private discardDrafts(ids: Set<string>): void {
+    this.dropDrafts(ids);
+    this.render();
+    this.announce(this.message("draft_discarded", {}));
+  }
+
+  private confirmDelete(count: number, payload: { ids: unknown[] } | { selection: true }): void {
+    const question = count === 1 ? this.message("delete_one", {}) : this.message("delete_rows", { count });
+    this.confirm(question, this.message("delete", {}), () => this.pushDelete(payload, false), true);
+  }
+
+  /** Deletes rows; the step goes on the undo stack (or, for a redo, back on it). */
+  private pushDelete(payload: { ids: unknown[] } | { selection: true }, redo: boolean): void {
+    this.transport.push("masu:delete", payload, (reply) => {
+      if (typeof reply.error === "string") {
+        this.announce(reply.error);
+        return;
+      }
+      const deleted = (reply.deleted as number) ?? 0;
+      const errors = (reply.errors as [unknown, string][]) ?? [];
+      if (typeof reply.total === "number") this.setTotal(reply.total);
+      this.anchor = null;
+      if (deleted > 0 && typeof reply.undo === "string") {
+        this.undoStack.push({ kind: "delete", undo: reply.undo });
+        if (!redo) this.redoStack = [];
+      }
+      const said = deleted === 1 ? this.message("deleted_one", {}) : this.message("deleted", { count: deleted });
+      this.announce(errors.length > 0 ? `${deleted > 0 ? `${said} ` : ""}${errors[0][1]}` : said);
+      this.render();
+    });
+  }
+
+  /** Brings back the rows of a delete (Ctrl+Z); a redo deletes them again. */
+  private restoreRows(undo: string): void {
+    this.transport.push("masu:restore", { undo }, (reply) => {
+      if (typeof reply.error === "string") {
+        this.announce(reply.error);
+        return;
+      }
+      const ids = (reply.ids as unknown[]) ?? [];
+      if (typeof reply.total === "number") this.setTotal(reply.total);
+      const now = performance.now();
+      for (const id of ids) this.flash.set(String(id), { until: now + FLASH, color: undefined });
+      if (ids.length > 0) this.redoStack.push({ kind: "restore", ids });
+      this.announce(ids.length === 1 ? this.message("restored_one", {}) : this.message("restored", { count: ids.length }));
+      this.render();
+    });
+  }
+
+  /**
+   * A question above the grid, with its answer and Cancel; the answer has
+   * the focus, Escape cancels, and the focus goes back to the grid.
+   */
+  private confirm(question: string, answer: string, then: () => void, danger = false): void {
+    this.confirmEl?.remove();
+    const el = document.createElement("div");
+    el.className = "masu-confirm";
+    el.setAttribute("role", "alertdialog");
+    el.setAttribute("aria-label", question);
+    const text = document.createElement("span");
+    text.textContent = question;
+    const ok = document.createElement("button");
+    ok.type = "button";
+    ok.className = danger ? "masu-confirm-ok masu-danger" : "masu-confirm-ok";
+    ok.textContent = answer;
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "masu-confirm-cancel";
+    cancel.textContent = this.message("cancel", {});
+    const close = () => {
+      el.remove();
+      if (this.confirmEl === el) this.confirmEl = null;
+      this.gridEl.focus({ preventScroll: true });
+    };
+    ok.addEventListener("click", () => {
+      close();
+      then();
+    });
+    cancel.addEventListener("click", close);
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }
+    });
+    el.append(text, ok, cancel);
+    this.uiEl.appendChild(el);
+    this.confirmEl = el;
+    ok.focus();
+  }
+
+  /** The row that adds one: "+ New row", across the grid. */
+  private fillAddRow(rowEl: RowElement, index: number): void {
+    rowEl.masuRow = undefined;
+    rowEl.dataset.index = String(index);
+    rowEl.classList.remove("masu-loading", "masu-group-row", "masu-draft", "masu-changed");
+    rowEl.classList.add("masu-add-row");
+    rowEl.setAttribute("aria-busy", "false");
+    for (const name of ["aria-level", "aria-posinset", "aria-setsize", "aria-expanded"]) rowEl.removeAttribute(name);
+    Array.from(rowEl.children).forEach((child, col) => {
+      const cell = child as HTMLElement;
+      cell.id = `${this.id}-r${index}-c${col}`;
+      cell.textContent = col === 0 ? `+ ${this.message("new_row", {})}` : "";
+      cell.classList.remove("masu-invalid", "masu-saving", "masu-editable", "masu-locked", "masu-null");
+      cell.removeAttribute("aria-readonly");
+      cell.removeAttribute("aria-invalid");
+      cell.removeAttribute("title");
+    });
   }
 
   // The other people who have the grid open (Masu.Presence): a line in
@@ -2274,7 +2849,7 @@ export class Grid {
     if (!range || (range.top === range.bottom && range.left === range.right)) return null;
     const rows: unknown[] = [];
     for (let index = range.top; index <= range.bottom && rows.length < 500; index++) {
-      const data = this.cache.get(index) ?? this.stale?.get(index);
+      const data = this.dataAt(index);
       if (data) rows.push(data[0]);
     }
     return { rows, keys: this.columns.slice(range.left, range.right + 1).map((column) => column.key) };
@@ -2506,8 +3081,9 @@ export class Grid {
     if (!this.config.presence || this.cursorTimer) return;
     this.cursorTimer = setTimeout(() => {
       this.cursorTimer = null;
-      const data = this.active.row >= 0 ? (this.cache.get(this.active.row) ?? this.stale?.get(this.active.row)) : undefined;
-      const cell = data ? [data[0], this.columns[this.active.col].key] : null;
+      const data = this.active.row >= 0 ? this.dataAt(this.active.row) : undefined;
+      // A new row is this person's own until it saves.
+      const cell = data && !isDraft(data) ? [data[0], this.columns[this.active.col].key] : null;
       const range = this.rangeForOthers();
       // The first row on the screen, for those who follow this person.
       const first = this.cache.get(this.firstWholeRow());
@@ -2616,6 +3192,14 @@ export class Grid {
   private announce(text: string): void {
     if (this.statusEl) this.statusEl.textContent = text;
   }
+}
+
+/** A new row's id, until it saves: a string of its own. */
+const DRAFT = "\u0000masu-draft:";
+
+/** A new row, not saved yet. */
+function isDraft(row: Row): boolean {
+  return typeof row[0] === "string" && row[0].startsWith(DRAFT);
 }
 
 /** A group's row (Masu.Group): its id is its path, `["masu-group", key, value, ...]`. */
@@ -2728,6 +3312,28 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   chosen: "{count} selected",
   chosen_all: "All {count} selected",
   clear_selection: "Clear",
+  new_row: "New row",
+  draft_discarded: "New row discarded",
+  row_added: "Row added",
+  row_added_hidden: "Row added; the filters leave it out",
+  rows_added: "{count} rows added",
+  paste_add: "Add {count} new rows for the rest of the paste?",
+  add_rows: "Add rows",
+  delete: "Delete",
+  delete_one: "Delete this row?",
+  delete_rows: "Delete {count} rows?",
+  deleted_one: "Row deleted",
+  deleted: "{count} rows deleted",
+  restored: "{count} rows brought back",
+  restored_one: "Row brought back",
+  invalid_integer: "Not a whole number",
+  invalid_number: "Not a number",
+  invalid_date: "Not a date",
+  invalid_time: "Not a time",
+  invalid_datetime: "Not a date and time",
+  invalid_value: "Not one of the values",
+  not_saved: "Not saved.",
+  cancel: "Cancel",
   export_menu: "Export",
   export_csv: "CSV",
   export_xlsx: "Excel (XLSX)",
@@ -2765,6 +3371,11 @@ interface Editor {
   id: unknown;
   original: CellValue;
   done: boolean;
+  /** An enum's list of values, and those it shows, and the one picked. */
+  list: HTMLElement | null;
+  options: string[];
+  shown: string[];
+  highlight: number;
 }
 
 interface OwnView {
@@ -2786,6 +3397,19 @@ interface Edit {
 }
 
 const MAX_EDITS = 5_000;
+/** The most rows added or deleted at once (Masu.Edit). */
+const MAX_NEW_ROWS = 1_000;
+
+/** A new row: its values by column key, as they go to the server. */
+interface Draft {
+  id: string;
+  values: Map<string, string | boolean | null>;
+  row: Row;
+  saving: boolean;
+}
+
+/** A step to undo or redo: edits of cells, a delete, or a delete undone. */
+type Step = { kind: "edits"; edits: Edit[] } | { kind: "delete"; undo: string } | { kind: "restore"; ids: unknown[] };
 
 function cellKey(id: unknown, key: string): string {
   return `${JSON.stringify(id)}\u0000${key}`;

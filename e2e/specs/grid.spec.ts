@@ -889,3 +889,125 @@ test.describe("selection and export", () => {
     expect(bytes.subarray(0, 2).toString()).toBe("PK");
   });
 });
+
+test.describe("new and deleted rows, and editors", () => {
+  const status = (page: import("@playwright/test").Page) => page.locator("#tasks > .masu-status");
+  const cell = (page: import("@playwright/test").Page, row: number, col: number) => page.locator(`#tasks-r${row}-c${col}`);
+
+  test.beforeEach(async ({ page }) => {
+    await openPage(page, "/tasks");
+  });
+
+  test("a new row is a draft until the person leaves it; its errors stay on its cells", async ({ page }) => {
+    await expect(grid(page, "tasks")).toHaveAttribute("aria-rowcount", "32");
+    await grid(page, "tasks").evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(cell(page, 30, 0)).toHaveText("+ New row");
+
+    await grid(page, "tasks").focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(status(page)).toHaveText("New row");
+    await expect(page.locator("#tasks .masu-draft")).toHaveCount(1);
+    await page.keyboard.type("Write the guide");
+    await page.keyboard.press("Enter");
+    // Enter goes to the row below: "+ New row". The draft saves.
+    await expect(status(page)).toHaveText("Row added");
+    await expect(page.locator("#tasks .masu-draft")).toHaveCount(0);
+    await expect(grid(page, "tasks")).toHaveAttribute("aria-rowcount", "33");
+    await expect(cell(page, 30, 0)).toHaveText("Write the guide");
+    await expect(cell(page, 30, 1)).toHaveText("todo");
+
+    // A draft with no title: refused, it stays, with the error on its cell.
+    await cell(page, 31, 0).click();
+    await expect(page.locator("#tasks .masu-draft")).toHaveCount(1);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.type("2");
+    await page.keyboard.press("Enter");
+    await expect(status(page)).toHaveText("Title: can't be blank");
+    await expect(page.locator("#tasks .masu-draft .masu-invalid")).toHaveCount(1);
+    await expect(grid(page, "tasks")).toHaveAttribute("aria-rowcount", "34");
+
+    // Escape lets it go.
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Escape");
+    await expect(status(page)).toHaveText("New row discarded");
+    await expect(page.locator("#tasks .masu-draft")).toHaveCount(0);
+    await expect(grid(page, "tasks")).toHaveAttribute("aria-rowcount", "33");
+  });
+
+  test("Ctrl+Delete deletes rows after a question, Ctrl+Z brings them back, and the bar deletes those selected", async ({ page }) => {
+    await cell(page, 0, 0).click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Control+Delete");
+    const question = page.getByRole("alertdialog");
+    await expect(question).toContainText("Delete 2 rows?");
+    await expect(question.getByRole("button", { name: "Delete" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(question).toHaveCount(0);
+    await expect(grid(page, "tasks")).toBeFocused();
+
+    await page.keyboard.press("Control+Delete");
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+    await expect(status(page)).toHaveText("2 rows deleted");
+    await expect(cell(page, 0, 0)).toHaveText("Task 3");
+
+    await page.keyboard.press("Control+z");
+    await expect(status(page)).toHaveText("2 rows brought back");
+    await expect(cell(page, 0, 0)).toHaveText("Task 1");
+    await expect(cell(page, 1, 0)).toHaveText("Task 2");
+
+    // A row that is done does not delete (deletable); the others do.
+    await page.locator("#tasks-r2-c0 .masu-select").click();
+    await page.locator("#tasks-r3-c0 .masu-select").click();
+    const bar = page.locator("#tasks .masu-selection-bar");
+    await bar.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+    await expect(status(page)).toHaveText("Row deleted This row cannot be deleted.");
+    await expect(cell(page, 2, 0)).toHaveText("Task 3");
+    await expect(cell(page, 3, 0)).toHaveText("Task 5");
+  });
+
+  test("an enum edits with its values, a number with one decimal, and a value the server would refuse stays in the editor", async ({ page }) => {
+    await expect(cell(page, 0, 2)).toHaveText("3.5");
+    await expect(cell(page, 3, 2)).toHaveText("1.0");
+
+    await cell(page, 0, 1).click();
+    await page.keyboard.type("re");
+    await expect(page.locator("#tasks .masu-choice")).toHaveText(["review"]);
+    await page.keyboard.press("Enter");
+    await expect(cell(page, 0, 1)).toHaveText("review");
+
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("F2");
+    await expect(page.locator("#tasks .masu-choice")).toHaveText(["todo", "doing", "review", "done"]);
+    await expect(page.locator("#tasks .masu-choice[aria-selected=true]")).toHaveText("review");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(cell(page, 0, 1)).toHaveText("done");
+
+    await cell(page, 0, 2).click();
+    await page.keyboard.type("lots");
+    await page.keyboard.press("Enter");
+    await expect(status(page)).toHaveText("Estimate: Not a number");
+    await expect(page.locator("#tasks .masu-editor")).toHaveAttribute("aria-invalid", "true");
+    await page.keyboard.press("Escape");
+    await expect(cell(page, 0, 2)).toHaveText("3.5");
+  });
+
+  test("a paste past the last row adds the rest as new rows, and shows the one refused", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "only Chromium lets a test write the clipboard");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await grid(page, "tasks").evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await cell(page, 29, 0).click();
+    await page.evaluate(() => navigator.clipboard.writeText("Alpha\ttodo\nBeta\tdoing\n\tdone"));
+    await page.keyboard.press("Control+v");
+    const question = page.getByRole("alertdialog");
+    await expect(question).toContainText("Add 2 new rows for the rest of the paste?");
+    await question.getByRole("button", { name: "Add rows" }).click();
+    await expect(status(page)).toHaveText("Title: can't be blank");
+    await expect(cell(page, 29, 0)).toHaveText("Alpha");
+    await expect(cell(page, 30, 0)).toHaveText("Beta");
+    await expect(page.locator("#tasks .masu-draft")).toHaveCount(1);
+    await expect(grid(page, "tasks")).toHaveAttribute("aria-activedescendant", "tasks-r31-c0");
+  });
+});
