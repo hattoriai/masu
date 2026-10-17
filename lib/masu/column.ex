@@ -27,6 +27,12 @@ defmodule Masu.Column do
   A column with an inner block is rendered by it, on the server, for each
   row that the browser shows; the type still says how it sorts and
   filters.
+
+  ## Layout
+
+  `hidden` starts the column hidden (a person shows it from the columns
+  menu), and `pinned={:start}` or `pinned={:end}` keeps it in view while
+  the others scroll sideways. See `Masu.Layout`.
   """
 
   @types [:text, :enum, :integer, :number, :decimal, :date, :datetime, :time, :boolean]
@@ -60,6 +66,8 @@ defmodule Masu.Column do
           searchable: boolean(),
           editable: boolean() | nil,
           editable_if: (term() -> boolean()) | nil,
+          hidden: boolean(),
+          pinned: :start | :end | nil,
           slot: map() | nil
         }
 
@@ -77,7 +85,9 @@ defmodule Masu.Column do
     filterable: true,
     searchable: false,
     editable: nil,
-    editable_if: nil
+    editable_if: nil,
+    hidden: false,
+    pinned: nil
   ]
 
   @doc "The types a column can have."
@@ -118,9 +128,18 @@ defmodule Masu.Column do
       editable:
         if(is_function(Map.get(attrs, :editable), 1), do: nil, else: Map.get(attrs, :editable)),
       editable_if: if(is_function(Map.get(attrs, :editable), 1), do: Map.get(attrs, :editable)),
+      hidden: Map.get(attrs, :hidden) == true,
+      pinned: pinned!(Map.get(attrs, :pinned)),
       slot: if(Map.get(attrs, :inner_block), do: attrs)
     }
   end
+
+  defp pinned!(pin) when pin in [nil, :start, :end], do: pin
+  defp pinned!("start"), do: :start
+  defp pinned!("end"), do: :end
+
+  defp pinned!(pin),
+    do: raise(ArgumentError, "a Masu column is pinned to :start or :end, got: #{inspect(pin)}")
 
   defp check!(attrs) do
     field = Map.get(attrs, :field)

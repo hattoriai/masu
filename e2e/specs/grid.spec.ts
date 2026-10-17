@@ -506,3 +506,126 @@ test.describe("presence", () => {
     await alan.context().close();
   });
 });
+
+test.describe("layout and views", () => {
+  const person = (name: string) => `${name}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const headers = (page: import("@playwright/test").Page) => page.locator("#views .masu-hcell .masu-label").allTextContents();
+
+  test("pinned columns stay in place while the others scroll sideways", async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 760 });
+    await openPage(page, `/views?as=${person("ada")}`);
+    const id = page.locator("#views-r0-c0");
+    const city = page.locator("#views-r0-c2");
+    const revenue = page.locator('#views .masu-hcell[data-key="revenue"]');
+    const before = (await id.boundingBox())!.x;
+    const cityBefore = (await city.boundingBox())!.x;
+    const gridBox = (await grid(page, "views").boundingBox())!;
+
+    await grid(page, "views").evaluate((el) => (el.scrollLeft = 300));
+    await expect.poll(async () => (await city.boundingBox())!.x).toBeLessThan(cityBefore - 200);
+    expect((await id.boundingBox())!.x).toBe(before);
+    const end = (await revenue.boundingBox())!;
+    expect(Math.abs(end.x + end.width - (gridBox.x + gridBox.width))).toBeLessThan(4);
+    await expect(id).toHaveClass(/masu-pinned-start/);
+  });
+
+  test("a drag on a header moves its column, and Alt+Shift+→ on a header too", async ({ page }) => {
+    await openPage(page, `/views?as=${person("ada")}`);
+    const plan = (await page.locator('#views .masu-hcell[data-key="plan"] .masu-label').boundingBox())!;
+    const city = (await header(page, "views", "city").boundingBox())!;
+    await page.mouse.move(plan.x + 5, plan.y + 5);
+    await page.mouse.down();
+    await page.mouse.move(city.x + 10, city.y + 10, { steps: 6 });
+    await expect(page.locator("#views .masu-drop")).toBeVisible();
+    await page.mouse.up();
+
+    await expect.poll(() => headers(page)).toEqual(["ID", "Name", "Plan", "City", "Seats", "Active", "Signed up", "Last seen", "Revenue"]);
+    expect(await rowText(page, "views", 0)).toEqual(expect.arrayContaining(["1", "Ken Torvalds"]));
+    // The drag did not sort.
+    await expect(header(page, "views", "plan")).toHaveAttribute("aria-sort", "none");
+
+    await page.locator("#views-r0-c2").click();
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Alt+Shift+ArrowRight");
+    await expect.poll(() => headers(page)).toEqual(["ID", "Name", "City", "Plan", "Seats", "Active", "Signed up", "Last seen", "Revenue"]);
+    await expect(page.locator("#views .masu-status")).toHaveText("Plan moved");
+  });
+
+  test("the columns menu hides, shows, pins and moves columns", async ({ page }) => {
+    await openPage(page, `/views?as=${person("ada")}`);
+    await page.getByRole("button", { name: "Columns" }).click();
+    const menu = page.getByRole("dialog", { name: "Columns" });
+
+    await menu.getByRole("checkbox", { name: "Seats" }).uncheck();
+    await menu.getByRole("checkbox", { name: "Email" }).check();
+    await expect.poll(() => headers(page)).toEqual(["ID", "Name", "Email", "City", "Plan", "Active", "Signed up", "Last seen", "Revenue"]);
+
+    await menu.getByRole("combobox", { name: "Pin City" }).selectOption("start");
+    await expect(header(page, "views", "city")).toHaveClass(/masu-pinned-start/);
+    await expect.poll(() => headers(page)).toEqual(["ID", "Name", "City", "Email", "Plan", "Active", "Signed up", "Last seen", "Revenue"]);
+
+    await menu.getByRole("button", { name: "Move Active up" }).click();
+    await expect.poll(() => headers(page)).toEqual(["ID", "Name", "City", "Email", "Active", "Plan", "Signed up", "Last seen", "Revenue"]);
+    // The focus stays on the button, for the next move.
+    await expect(menu.getByRole("button", { name: "Move Active up" })).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Columns" })).toBeFocused();
+  });
+
+  test("the view goes into the URL, and the link opens it in another browser", async ({ page, browser }) => {
+    await openPage(page, `/views?as=${person("ada")}`);
+    await page.locator(".masu-search").fill("Oslo");
+    await settled(page, "views");
+    await header(page, "views", "revenue").click();
+    await header(page, "views", "revenue").click();
+    await page.getByRole("button", { name: "Columns" }).click();
+    await page.getByRole("checkbox", { name: "Seats" }).uncheck();
+    await expect(page).toHaveURL(/views\[hide\]=email%2Cseats/);
+    await expect(page).toHaveURL(/views\[sort\]=-revenue/);
+
+    const other = await (await browser.newContext({ locale: "en-GB" })).newPage();
+    await openPage(other, page.url().replace(/as=[^&]+/, `as=${person("alan")}`));
+    await expect.poll(() => headers(other)).toEqual(["ID", "Name", "City", "Plan", "Active", "Signed up", "Last seen", "Revenue"]);
+    await expect(header(other, "views", "revenue")).toHaveAttribute("aria-sort", "descending");
+    await expect(other.locator(".masu-search")).toHaveValue("Oslo");
+    expect(await rowText(other, "views", 0)).toEqual(await rowText(page, "views", 0));
+    await other.context().close();
+  });
+
+  test("a saved view comes back, and a shared one is in the others' views menu", async ({ page, browser }) => {
+    const ada = person("ada");
+    await openPage(page, `/views?as=${ada}`);
+    await header(page, "views", "seats").click();
+    await page.getByRole("button", { name: "Columns" }).click();
+    await page.getByRole("checkbox", { name: "City" }).uncheck();
+    await page.keyboard.press("Escape");
+
+    const name = `Seats ${Math.random().toString(36).slice(2, 6)}`;
+    await page.getByRole("button", { name: "Views" }).click();
+    await page.getByPlaceholder("Name this view").fill(name);
+    await page.getByRole("checkbox", { name: "Share with everyone" }).check();
+    await page.getByRole("button", { name: "Save view" }).click();
+    await expect(page.getByRole("dialog", { name: "Views" }).getByRole("status")).toHaveText("View saved");
+    await expect(page.locator(".masu-views-button")).toContainText(name);
+
+    // The last view of the person comes back, without the URL.
+    await openPage(page, `/views?as=${ada}`);
+    await expect.poll(() => headers(page)).not.toContain("City");
+    await expect(header(page, "views", "seats")).toHaveAttribute("aria-sort", "ascending");
+
+    const alan = await (await browser.newContext({ locale: "en-GB" })).newPage();
+    await openPage(alan, `/views?as=${person("alan")}`);
+    await expect.poll(() => headers(alan)).toContain("City");
+    await alan.getByRole("button", { name: "Views" }).click();
+    await alan.getByRole("button", { name, exact: true }).click();
+    await expect.poll(() => headers(alan)).not.toContain("City");
+    await expect(header(alan, "views", "seats")).toHaveAttribute("aria-sort", "ascending");
+    await expect(alan.getByRole("button", { name: `Delete ${name}` })).toHaveCount(0);
+
+    await alan.getByRole("button", { name: "The grid's own view" }).click();
+    await expect.poll(() => headers(alan)).toContain("City");
+    await alan.context().close();
+  });
+});

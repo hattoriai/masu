@@ -46,6 +46,7 @@ defmodule Masu.Live do
   import Phoenix.LiveView, only: [attach_hook: 4]
 
   alias Phoenix.LiveView.Socket
+  alias Plug.Conn.Query
 
   @typedoc "A change to the rows of a topic."
   @type change :: {:upsert, term()} | {:delete, term()}
@@ -53,7 +54,75 @@ defmodule Masu.Live do
   @doc false
   def on_mount(_arg, _params, _session, %Socket{} = socket) do
     Process.put(__MODULE__, %{})
-    {:cont, attach_hook(socket, :masu_live, :handle_info, &__MODULE__.__handle_info__/2)}
+    socket = attach_hook(socket, :masu_live, :handle_info, &__MODULE__.__handle_info__/2)
+
+    # A grid with `url` keeps its view in the URL's params: the hook reads
+    # them (a LiveView at the router only).
+    socket =
+      if socket.router,
+        do: attach_hook(socket, :masu_params, :handle_params, &__MODULE__.__handle_params__/3),
+        else: socket
+
+    {:cont, socket}
+  end
+
+  @doc false
+  def __handle_params__(params, uri, socket) do
+    Process.put({__MODULE__, :params}, {params, uri})
+
+    for grid <- Process.get({__MODULE__, :url_grids}, []),
+        do: Phoenix.LiveView.send_update(Masu.Grid, id: grid, masu_params: true)
+
+    # A LiveView without handle_params/3 of its own may still be patched,
+    # as a grid with `url` does.
+    if function_exported?(socket.view, :handle_params, 3),
+      do: {:cont, socket},
+      else: {:halt, socket}
+  end
+
+  @doc false
+  # The params of the grid `grid` in the URL (`?orders[sort]=...`), or nil,
+  # and the URL. Registers the grid, which hears of later params.
+  @spec params(String.t()) :: {map() | nil, String.t() | nil}
+  def params(grid) do
+    unless Process.get(__MODULE__) do
+      raise ArgumentError, """
+      the grid #{grid} has `url`, but its LiveView has no Masu.Live hook. \
+      Add `on_mount Masu.Live` to the LiveView, or to its live_session.\
+      """
+    end
+
+    Process.put(
+      {__MODULE__, :url_grids},
+      MapSet.put(Process.get({__MODULE__, :url_grids}, MapSet.new()), grid)
+    )
+
+    case Process.get({__MODULE__, :params}) do
+      {params, uri} ->
+        grid_params = Map.get(params, grid)
+        {if(is_map(grid_params), do: grid_params), uri}
+
+      nil ->
+        {nil, nil}
+    end
+  end
+
+  @doc false
+  # The URL with the params of the grid `grid` replaced (none: left out).
+  @spec url(String.t(), String.t(), map()) :: String.t()
+  def url(uri, grid, grid_params) do
+    %URI{path: path, query: query} = URI.parse(uri)
+    params = Query.decode(query || "")
+
+    params =
+      if grid_params == %{},
+        do: Map.delete(params, grid),
+        else: Map.put(params, grid, grid_params)
+
+    case Query.encode(params) do
+      "" -> path || "/"
+      query -> "#{path || "/"}?#{query}"
+    end
   end
 
   @doc """
@@ -142,6 +211,10 @@ defmodule Masu.Live do
   end
 
   @doc false
+  # A grid with `url` whose view changed.
+  def __handle_info__({Masu.Live.Patch, url}, socket),
+    do: {:halt, Phoenix.LiveView.push_patch(socket, to: url, replace: true)}
+
   def __handle_info__({__MODULE__, topic, change}, socket) do
     grids = Process.get(__MODULE__, %{})
 

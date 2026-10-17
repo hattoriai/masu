@@ -96,6 +96,24 @@ defmodule Masu.Components do
     default: nil,
     doc: "with `presence`: this person, `%{id: ..., name: ..., color: ..., avatar: ...}`"
 
+  attr :url, :boolean,
+    default: false,
+    doc:
+      "when `true`, the person's view (order, filters, search, columns) goes into the URL's params, under the grid's id, and a link opens it; see `Masu.View`"
+
+  attr :views, :atom,
+    default: nil,
+    doc:
+      "a `Masu.Views` store: the grid keeps each person's last view, and a views menu saves named views; needs `user`"
+
+  attr :views_key, :string,
+    default: nil,
+    doc: "with `views`: the name of the grid in the store; its id unless given"
+
+  attr :columns_menu, :boolean,
+    default: false,
+    doc: "when `true`, a columns menu to show, hide, pin and move columns"
+
   attr :share_view, :boolean,
     default: true,
     doc:
@@ -143,6 +161,8 @@ defmodule Masu.Components do
     attr :filterable, :boolean
     attr :searchable, :boolean
     attr :editable, :any
+    attr :hidden, :boolean
+    attr :pinned, :atom
   end
 
   slot :empty, doc: "what the grid shows when it has no rows"
@@ -154,6 +174,10 @@ defmodule Masu.Components do
   def data_grid(assigns) do
     if is_nil(assigns.rows) and is_nil(assigns.source) do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> needs rows or a source"
+    end
+
+    if assigns.views && is_nil(assigns.user) do
+      raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with views needs user"
     end
 
     if assigns.presence && (is_nil(assigns.user) or is_nil(assigns.live)) do
@@ -175,6 +199,10 @@ defmodule Masu.Components do
       presence={@presence}
       user={@user}
       share_view={@share_view}
+      url={@url}
+      views={@views}
+      views_key={@views_key}
+      columns_menu={@columns_menu}
       person={@person}
       on_save={@on_save}
       row_id={@row_id}
