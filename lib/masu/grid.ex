@@ -34,7 +34,7 @@ defmodule Masu.Grid do
 
   use Phoenix.LiveComponent
 
-  alias Masu.{Column, Group, Layout, Query, Source, Tree, Value, View}
+  alias Masu.{Action, Column, Group, Layout, Query, Source, Tree, Value, View}
   alias Masu.Export.{Download, Ticket}
   alias Masu.Source.Ecto, as: EctoSource
   alias Masu.Source.List, as: ListSource
@@ -93,7 +93,11 @@ defmodule Masu.Grid do
        exact: true,
        count_ref: 0,
        page: 0,
-       initial_from: 0
+       initial_from: 0,
+       header_actions: [],
+       cell_actions: [],
+       cell_menu: [],
+       action_panel: nil
      )}
   end
 
@@ -124,7 +128,14 @@ defmodule Masu.Grid do
   end
 
   def update(assigns, socket) do
-    socket = assign(socket, Map.drop(assigns, [:input]))
+    socket =
+      socket
+      |> assign(Map.drop(assigns, [:input, :header_action, :cell_action]))
+      |> assign(
+        header_actions: Action.all(Map.get(assigns, :header_action, []), :header),
+        cell_actions: Action.all(Map.get(assigns, :cell_action, []), :cell)
+      )
+
     columns = Enum.map(assigns.col, &Column.new/1)
 
     socket =
@@ -770,6 +781,32 @@ defmodule Masu.Grid do
     reprepare(socket, query, params["from"])
   end
 
+  # An item of a menu of the app's own (Masu.Action), on a header or a
+  # cell: run, or its panel opened. The cell's row and value are read
+  # here, from the source; the browser gives only where it is.
+  def handle_event(
+        "masu:action",
+        %{"kind" => kind, "action" => index, "key" => key} = params,
+        socket
+      )
+      when kind in ["header", "cell"] and is_integer(index) and is_binary(key) do
+    with {:ok, action, column} <- find_action(socket.assigns, kind, index, key, params["label"]),
+         {:ok, context} <- action_context(socket.assigns, action, column, params) do
+      if action.slot do
+        panel = %{kind: action.kind, index: action.index, context: context}
+        {:reply, %{"panel" => true}, assign(socket, action_panel: panel)}
+      else
+        Action.run(action, context)
+        {:reply, %{"ok" => true}, socket}
+      end
+    else
+      {:error, error} -> {:reply, %{"error" => error}, socket}
+    end
+  end
+
+  def handle_event("masu:action_panel", %{"open" => false}, socket),
+    do: {:reply, %{}, assign(socket, action_panel: nil)}
+
   # A row's detail (the `:detail` slot) opened or closed.
   def handle_event("masu:detail", %{"id" => id} = params, socket) do
     open = Enum.reject(socket.assigns.open_details, &(&1 == id))
@@ -948,6 +985,73 @@ defmodule Masu.Grid do
     {reply, socket} = block(socket, from, socket.assigns.block_size)
     {:reply, reply, socket}
   end
+
+  # The item of the open panel, as the LiveView renders it now: none
+  # when the LiveView no longer offers it (`:if`).
+  defp panel_action(%{action_panel: nil}), do: nil
+
+  defp panel_action(%{action_panel: %{kind: kind, index: index}} = assigns) do
+    actions = if kind == :header, do: assigns.header_actions, else: assigns.cell_actions
+
+    case Enum.at(actions, index) do
+      %Action{slot: slot} = action when slot != nil -> action
+      _other -> nil
+    end
+  end
+
+  # The item `index` of the header or cell menus, if the grid offers it
+  # for the column `key`, and it does something here (not only a JS
+  # command). Its label, when the browser gives it, is the one it showed:
+  # the items of a LiveView that changed (`:if`) are in other places.
+  defp find_action(assigns, kind, index, key, label) do
+    actions = if kind == "header", do: assigns.header_actions, else: assigns.cell_actions
+
+    with %Action{} = action <- Enum.at(actions, index),
+         true <- is_nil(label) or label == action.label,
+         true <- Action.server?(action),
+         %Column{} = column <- Column.find(assigns.columns, key),
+         true <- Action.for?(action, column) do
+      {:ok, action, column}
+    else
+      _other -> {:error, "action"}
+    end
+  end
+
+  defp action_context(assigns, %Action{kind: :header}, column, _params),
+    do: {:ok, %{grid: assigns.id, column: column.key}}
+
+  defp action_context(assigns, %Action{kind: :cell}, column, %{"id" => id} = params) do
+    row_id = row_id(assigns)
+
+    case Source.fetch(assigns.source, [id], row_id) do
+      [row | _] ->
+        context = %{
+          grid: assigns.id,
+          column: column.key,
+          id: row_id.(row),
+          row: row,
+          value: Column.get(column, row),
+          range: action_range(assigns, params["range"])
+        }
+
+        {:ok, context}
+
+      [] ->
+        {:error, "row"}
+    end
+  end
+
+  defp action_context(_assigns, _action, _column, _params), do: {:error, "row"}
+
+  # A range of rows and columns, as the browser has it: the columns that
+  # the grid shows, and no more rows than a copy takes.
+  defp action_range(assigns, %{"ids" => ids, "keys" => keys})
+       when is_list(ids) and is_list(keys) do
+    shown = Enum.map(assigns.columns, & &1.key)
+    %{ids: Enum.take(ids, 10_000), columns: Enum.filter(keys, &(&1 in shown))}
+  end
+
+  defp action_range(_assigns, _range), do: nil
 
   # The rows of the open details, read again, with their places in the
   # person's order (nil: their filters leave the row out).
@@ -1389,6 +1493,22 @@ defmodule Masu.Grid do
           />
         </div>
       </div>
+      <%!-- Always there: a panel that comes or goes moves no element beside it. --%>
+      <div id={"#{@id}-panels"} class="masu-panels">
+        <div
+          :if={panel = panel_action(assigns)}
+          id={"#{@id}-action-panel"}
+          class="masu-menu masu-panel masu-action-panel"
+          role="dialog"
+          aria-label={panel.label}
+          tabindex="-1"
+          data-kind={panel.kind}
+          data-key={@action_panel.context.column}
+          data-id={Map.has_key?(@action_panel.context, :id) && JSON.encode!(Value.to_wire(@action_panel.context.id))}
+        >
+          {render_slot([panel.slot], @action_panel.context)}
+        </div>
+      </div>
       <%!-- The scroll box is the server's, for the details it renders in it;
            its rows are the browser's (phx-update="ignore"). --%>
       <div
@@ -1569,7 +1689,7 @@ defmodule Masu.Grid do
   defp config(assigns) do
     JSON.encode!(%{
       "v" => 1,
-      "columns" => Enum.map(assigns.columns, &column_config/1),
+      "columns" => Enum.map(assigns.columns, &column_config(&1, assigns)),
       "rowHeight" => assigns.row_height,
       "total" => assigns.total,
       "exact" => assigns.exact,
@@ -1596,6 +1716,7 @@ defmodule Masu.Grid do
       "totals" => totals(assigns),
       "groupable" => assigns.tree == nil,
       "export" => Enum.map(export_formats(assigns), &Atom.to_string/1),
+      "cellMenu" => Enum.map(assigns.cell_menu, &Atom.to_string/1),
       "selection" => selection_config(assigns),
       "creates" => creates?(assigns),
       "deletes" => Masu.Edit.deletes?(assigns),
@@ -1616,8 +1737,10 @@ defmodule Masu.Grid do
       |> Enum.zip(assigns.initial_nodes)
       |> encode_rows(assigns, assigns.initial_from)
 
-  defp column_config(%Column{} = column) do
+  defp column_config(%Column{} = column, assigns) do
     %{
+      "headerActions" => Action.to_wire(assigns.header_actions, column),
+      "cellActions" => Action.to_wire(assigns.cell_actions, column),
       "key" => column.key,
       "label" => column.label,
       "type" => Atom.to_string(column.type),

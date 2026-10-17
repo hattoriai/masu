@@ -157,6 +157,7 @@ defmodule MasuDev.Layouts do
           {"Tasks", "/tasks"},
           {"Pages", "/pages"},
           {"Look", "/look"},
+          {"Menus", "/menus"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -935,6 +936,94 @@ defmodule MasuDev.LookLive do
   end
 end
 
+defmodule MasuDev.MenusLive do
+  @moduledoc """
+  Menus of the app's own (Masu.Action): items in the header menu, a
+  menu on each cell (a right click, or the context-menu key or Shift+F10
+  on the active cell) with the grid's own items, and panels the server
+  renders.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  alias Phoenix.LiveView.JS
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, rows: Enum.take(MasuDev.Customers.all(), 200), said: nil)}
+  end
+
+  @impl true
+  def handle_info({Masu.Action, "open", context}, socket),
+    do: {:noreply, assign(socket, said: "Opened #{context.row.name}")}
+
+  def handle_info({:said, text}, socket), do: {:noreply, assign(socket, said: text)}
+
+  @impl true
+  def render(assigns) do
+    pid = self()
+    assigns = assign(assigns, explain: &send(pid, {:said, "About #{&1.column}"}))
+
+    ~H"""
+    <h1 id="menus-label">Menus</h1>
+    <p id="said" role="status">{@said}</p>
+    <p id="js-mark" data-marked="no">A JS command marks this.</p>
+    <.data_grid id="menus" rows={@rows} label_id="menus-label" height="24rem" cell_menu>
+      <:col field={:name} />
+      <:col field={:city} />
+      <:col field={:plan} type={:enum} values={~w(free starter team business enterprise)} />
+      <:col field={:revenue} type={:decimal} />
+      <:col field={:active} type={:boolean} />
+
+      <:header_action label="Explain" on_action={@explain} />
+      <:header_action :let={action} label="Column stats" types={[:decimal]}>
+        <.stats rows={@rows} key={action.column} />
+      </:header_action>
+
+      <:cell_action label="Open" event="open" />
+      <:cell_action label="Mark" js={JS.set_attribute({"data-marked", "yes"}, to: "#js-mark")} />
+      <:cell_action :let={action} label="Card" columns={[:name]}>
+        <div id="card">
+          <strong>{action.row.name}</strong>
+          <p>{action.row.email} · {action.row.city || "no city"} · {action.row.plan}</p>
+        </div>
+      </:cell_action>
+    </.data_grid>
+    """
+  end
+
+  attr :rows, :list, required: true
+  attr :key, :string, required: true
+
+  defp stats(assigns) do
+    values =
+      assigns.rows
+      |> Enum.map(&Map.fetch!(&1, String.to_existing_atom(assigns.key)))
+      |> Enum.reject(&is_nil/1)
+
+    sum = Enum.reduce(values, Decimal.new(0), &Decimal.add/2)
+
+    assigns =
+      assign(assigns,
+        min: Enum.min(values, Decimal),
+        max: Enum.max(values, Decimal),
+        avg: values |> length() |> then(&Decimal.div(sum, &1)) |> Decimal.round(2)
+      )
+
+    ~H"""
+    <dl id="stats">
+      <dt>Lowest</dt>
+      <dd>{Decimal.to_string(@min)}</dd>
+      <dt>Highest</dt>
+      <dd>{Decimal.to_string(@max)}</dd>
+      <dt>Average</dt>
+      <dd>{Decimal.to_string(@avg)}</dd>
+    </dl>
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -962,6 +1051,7 @@ defmodule MasuDev.Router do
     live("/tasks", MasuDev.TasksLive)
     live("/pages", MasuDev.PagesLive)
     live("/look", MasuDev.LookLive)
+    live("/menus", MasuDev.MenusLive)
     masu_exports()
   end
 end

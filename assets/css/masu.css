@@ -1527,3 +1527,75 @@ button.masu-person:focus-visible {
 .masu-export-button[aria-busy="true"] {
   cursor: progress;
 }
+
+/* Menus of your own (Masu.Action): the app's items in a header menu, the
+   menu of a cell, and the panel of an item, which the server renders. */
+.masu-menu-items {
+  display: grid;
+  gap: 0.125rem;
+  margin-bottom: 0.5rem;
+}
+
+.masu-menu-item {
+  width: 100%;
+  border-color: transparent;
+  text-align: start;
+}
+
+.masu-menu-item:hover {
+  background: var(--masu-surface);
+}
+
+.masu-action-menu {
+  display: grid;
+  width: auto;
+  min-width: 12rem;
+  max-width: 20rem;
+  padding: 0.25rem;
+}
+
+.masu-menuitem {
+  overflow: hidden;
+  padding: 0.375rem 0.625rem;
+  border: 0;
+  border-radius: calc(var(--masu-radius) - 2px);
+  background: transparent;
+  color: var(--masu-text);
+  font: inherit;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.masu-menuitem:hover,
+.masu-menuitem:focus-visible {
+  outline: none;
+  background: var(--masu-surface);
+}
+
+.masu-menuitem:focus-visible {
+  box-shadow: var(--masu-focus-ring);
+}
+
+.masu-menu-separator {
+  height: 1px;
+  margin: 0.25rem 0.375rem;
+  background: var(--masu-border);
+}
+
+.masu-action-panel {
+  display: block;
+  width: auto;
+  min-width: 14rem;
+  max-width: min(28rem, calc(100% - 0.5rem));
+}
+
+.masu-action-panel[hidden] {
+  display: none;
+}
+
+.masu-action-panel:focus-visible {
+  outline: none;
+  box-shadow: var(--masu-focus-ring), 0 8px 24px rgba(0, 0, 0, 0.14);
+}

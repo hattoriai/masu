@@ -56,6 +56,14 @@ defmodule Masu.Components do
       <:col :let={user} field={:name}>
         <.link navigate={~p"/users/\#{user}"}>{user.name}</.link>
       </:col>
+
+  ## Menus
+
+  `cell_menu` gives each cell a menu (a right click, or the context-menu
+  key or Shift+F10 on the active cell): copy, filter by the cell's value,
+  sort. `:header_action` and `:cell_action` add items of your own to the
+  header menus and to the menu of the cells; see `Masu.Action` and the
+  [Menus of your own](menus.md) guide.
   """
   attr :id, :string, required: true, doc: "the id of the grid"
   attr :rows, :list, default: nil, doc: "the rows, maps or structs"
@@ -165,6 +173,11 @@ defmodule Masu.Components do
     doc:
       "an Export menu: `true` for CSV and XLSX, or a list of `:csv` and `:xlsx`; `false` (the default) has none, and the server exports nothing; see `Masu.Export`"
 
+  attr :cell_menu, :any,
+    default: false,
+    doc:
+      "a menu on each cell (a right click, or the context-menu key or Shift+F10 on the active cell): `true` for its built-in items, or a list of `:copy`, `:filter` and `:sort`; `false` (the default) has only the `:cell_action` items, if any; see `Masu.Action`"
+
   attr :group_by, :any,
     default: [],
     doc:
@@ -267,6 +280,29 @@ defmodule Masu.Components do
     attr :aggregate, :any
   end
 
+  slot :header_action,
+    doc:
+      "an item of each column's header menu: a function, an event to the LiveView, a JS command, or a panel of its content; see `Masu.Action`" do
+    attr :label, :string, required: true
+    attr :on_action, :any
+    attr :event, :string
+    attr :js, :any
+    attr :columns, :list
+    attr :types, :list
+    attr :show, :any
+  end
+
+  slot :cell_action,
+    doc: "an item of the menu of a cell, as `:header_action`; see `Masu.Action`" do
+    attr :label, :string, required: true
+    attr :on_action, :any
+    attr :event, :string
+    attr :js, :any
+    attr :columns, :list
+    attr :types, :list
+    attr :show, :any
+  end
+
   slot :empty, doc: "what the grid shows when it has no rows"
 
   slot :detail,
@@ -317,6 +353,9 @@ defmodule Masu.Components do
       tree={@tree}
       group_by={@group_by}
       export={@export}
+      cell_menu={cell_menu!(@id, @cell_menu)}
+      header_action={@header_action}
+      cell_action={@cell_action}
       selectable={@selectable}
       on_select={@on_select}
       expanded={@expanded}
@@ -395,6 +434,30 @@ defmodule Masu.Components do
          )
 
   defp check_row_id!(_assigns), do: :ok
+
+  @cell_menu [:copy, :filter, :sort]
+
+  defp cell_menu!(_id, true), do: @cell_menu
+  defp cell_menu!(_id, false), do: []
+  defp cell_menu!(_id, nil), do: []
+
+  defp cell_menu!(id, items) when is_list(items) do
+    case items -- @cell_menu do
+      [] ->
+        Enum.filter(@cell_menu, &(&1 in items))
+
+      unknown ->
+        raise ArgumentError,
+              "<.data_grid id=#{inspect(id)}> cell_menu has #{inspect(unknown)}: its items are #{inspect(@cell_menu)}"
+    end
+  end
+
+  defp cell_menu!(id, other),
+    do:
+      raise(
+        ArgumentError,
+        "<.data_grid id=#{inspect(id)}> cell_menu is true, false or a list of #{inspect(@cell_menu)}, got: #{inspect(other)}"
+      )
 
   defp density_height(:compact), do: 28
   defp density_height(:comfortable), do: 48

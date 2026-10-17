@@ -1,7 +1,8 @@
-// A column's filter menu: a small dialog under its header, with the
-// operators of the column's type and the input they need. An enum lists
-// its values with how many rows have each, asked of the server, with a
-// search box when there are many.
+// A column's header menu: a small dialog under its header, with the
+// app's items for the column (Masu.Action), Group by, and the filter:
+// the operators of the column's type and the input they need. An enum
+// lists its values with how many rows have each, asked of the server,
+// with a search box when there are many.
 
 import { arity, inputType, makeFilter, opLabel, opsFor, type Op } from "./filters";
 import type { ColumnConfig, FilterSpec } from "./types";
@@ -22,6 +23,8 @@ export interface MenuHost {
   /** Groups the rows by the column, or stops (Masu.Group); absent when the grid does not group. */
   group?: (on: boolean) => void;
   grouped?: boolean;
+  /** The app's items for the column (`:header_action`). */
+  actions?: { label: string; run(): void }[];
 }
 
 let menus = 0;
@@ -49,8 +52,26 @@ export class FilterMenu {
     this.el = document.createElement("div");
     this.el.className = "masu-menu";
     this.el.setAttribute("role", "dialog");
-    this.el.setAttribute("aria-label", (messages.filter ?? "Filter {label}").replace("{label}", column.label));
+    this.el.setAttribute(
+      "aria-label",
+      (column.filterable ? (messages.filter ?? "Filter {label}") : (messages.column_menu ?? "{label} menu")).replace("{label}", column.label),
+    );
     this.el.id = id;
+
+    if (host.actions?.length) {
+      const actions = document.createElement("div");
+      actions.className = "masu-menu-items";
+      actions.setAttribute("role", "group");
+      for (const action of host.actions) {
+        const item = button(action.label, "button", "masu-menu-item");
+        item.addEventListener("click", () => {
+          host.close();
+          action.run();
+        });
+        actions.appendChild(item);
+      }
+      this.el.appendChild(actions);
+    }
 
     if (host.group) {
       const group = button(
@@ -64,7 +85,8 @@ export class FilterMenu {
 
     this.form = document.createElement("form");
     this.form.className = "masu-menu-form";
-    this.el.appendChild(this.form);
+    // A column that does not filter: its items and Group by only.
+    if (column.filterable) this.el.appendChild(this.form);
 
     if (ops.length > 1) {
       const select = document.createElement("select");
@@ -110,7 +132,7 @@ export class FilterMenu {
       if (!this.el.contains(target) && !anchor.contains(target)) host.close();
     });
 
-    this.renderFields();
+    if (column.filterable) this.renderFields();
     host.root.appendChild(this.el);
     this.place(anchor);
     this.focusFirst();
@@ -137,9 +159,10 @@ export class FilterMenu {
     this.el.style.insetInlineStart = `${left}px`;
   }
 
-  /** The first control of the filter (the condition, else its value), not the Group by button above it. */
+  /** The first control of the filter (the condition, else its value), not the buttons above it; else the first button. */
   private focusFirst(): void {
-    this.form.querySelector<HTMLElement>("select, input, button")?.focus();
+    const first = this.form.isConnected ? this.form.querySelector<HTMLElement>("select, input, button") : null;
+    (first ?? this.el.querySelector<HTMLElement>("button"))?.focus();
   }
 
   private renderFields(): void {

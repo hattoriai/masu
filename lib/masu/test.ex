@@ -397,6 +397,101 @@ defmodule Masu.Test do
   end
 
   @doc """
+  The labels of the items of the app's own (`Masu.Action`) that the grid
+  `id` offers for the column `key`: in its header menu (`:header`), or in
+  the menu of its cells (`:cell`).
+  """
+  @spec actions(struct(), String.t(), :header | :cell, String.t() | atom()) :: [String.t()]
+  def actions(view, id, kind, key) when kind in [:header, :cell] do
+    view |> offered(id, kind, to_string(key)) |> Enum.map(& &1["label"])
+  end
+
+  @doc """
+  Runs the item `label` of the header menu of the column `key` of the
+  grid `id`, as a click on it does: its function, its event to the
+  LiveView, or its panel, which `Phoenix.LiveViewTest.render/1` then has.
+  An item that is only a JS command runs in the browser, not here.
+  Returns the view.
+  """
+  @spec header_action(struct(), String.t(), String.t(), String.t() | atom()) :: struct()
+  def header_action(view, id, label, key) do
+    run_action(view, id, :header, label, to_string(key), %{})
+  end
+
+  @doc """
+  Runs the item `label` of the menu of the cell of the row `row_id` and
+  the column `key` of the grid `id`, as `header_action/4` does. The grid
+  reads the row and the value of the cell from its source.
+
+  Options: `:range`, `{ids, keys}`: a range of cells selected, its rows'
+  ids and its columns' keys, that the cell is in.
+  """
+  @spec cell_action(struct(), String.t(), String.t(), String.t() | atom(), term(), keyword()) ::
+          struct()
+  def cell_action(view, id, label, key, row_id, opts \\ []) do
+    payload =
+      case Keyword.get(opts, :range) do
+        nil ->
+          %{"id" => row_id}
+
+        {ids, keys} ->
+          %{"id" => row_id, "range" => %{"ids" => ids, "keys" => Enum.map(keys, &to_string/1)}}
+      end
+
+    run_action(view, id, :cell, label, to_string(key), payload)
+  end
+
+  @doc "Closes the panel of an item of the grid `id`, as Escape does. Returns the view."
+  @spec close_panel(struct(), String.t()) :: struct()
+  def close_panel(view, id) do
+    event(view, id, "masu:action_panel", %{"open" => false})
+    view
+  end
+
+  defp run_action(view, id, kind, label, key, payload) do
+    action =
+      view
+      |> offered(id, kind, key)
+      |> Enum.find(&(&1["label"] == label)) ||
+        flunk(
+          "the grid #{id} has no #{kind} item #{inspect(label)} for the column #{inspect(key)}"
+        )
+
+    unless action["server"] or action["panel"] do
+      flunk("the #{kind} item #{inspect(label)} of the grid #{id} runs only in the browser (js)")
+    end
+
+    payload =
+      Map.merge(payload, %{
+        "kind" => Atom.to_string(kind),
+        "action" => action["id"],
+        "label" => label,
+        "key" => key
+      })
+
+    case event(view, id, "masu:action", payload) do
+      %{"error" => error} ->
+        flunk("the grid #{id} refused the #{kind} item #{inspect(label)}: #{error}")
+
+      _reply ->
+        view
+    end
+  end
+
+  defp offered(view, id, kind, key) do
+    field = if kind == :header, do: "headerActions", else: "cellActions"
+
+    view
+    |> config(id)
+    |> Map.fetch!("columns")
+    |> Enum.find(&(&1["key"] == key))
+    |> case do
+      nil -> flunk("the grid #{id} shows no column #{inspect(key)}")
+      column -> column[field]
+    end
+  end
+
+  @doc """
   Selects rows of the grid `id` (`selectable`) by their ids, as their
   boxes do, or, with `false`, takes them out. Returns the view.
   """
