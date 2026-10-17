@@ -1599,3 +1599,71 @@ button.masu-person:focus-visible {
   outline: none;
   box-shadow: var(--masu-focus-ring), 0 8px 24px rgba(0, 0, 0, 0.14);
 }
+
+/* A read that runs (`load={:async}`, `on_query`): its state, with Stop;
+   one that failed: its error, with Run again. */
+.masu-state:empty {
+  display: none;
+}
+
+.masu-running,
+.masu-error {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: var(--masu-space);
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--masu-border);
+  border-radius: var(--masu-radius);
+  background: var(--masu-surface);
+  font-size: 0.875em;
+}
+
+.masu-running-text::before {
+  content: "";
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-inline-end: 0.5em;
+  border: 2px solid var(--masu-border);
+  border-top-color: var(--masu-accent);
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: masu-spin 0.8s linear infinite;
+}
+
+@keyframes masu-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .masu-running-text::before {
+    animation: none;
+  }
+}
+
+.masu-error {
+  border-color: color-mix(in oklab, var(--masu-error, #c2410c) 45%, var(--masu-border));
+  color: var(--masu-text);
+}
+
+.masu-error-text {
+  flex: 1;
+}
+
+.masu-state-button {
+  padding: 0.125rem 0.625rem;
+  border: 1px solid var(--masu-border);
+  border-radius: calc(var(--masu-radius) - 2px);
+  background: var(--masu-background);
+  color: var(--masu-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.masu-state-button:focus-visible {
+  outline: none;
+  box-shadow: var(--masu-focus-ring);
+}

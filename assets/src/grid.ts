@@ -193,6 +193,12 @@ export class Grid {
   private followEl: HTMLElement | null = null;
   /** A query is on its way to the server. */
   private querying = false;
+  /** A query whose rows come later (`load={:async}`, `on_query`): what to do when they come. */
+  private pendingQuery: { origin: "self" | "follow" | "restore"; then?: () => void } | null = null;
+  /** The blocks asked for whose rows come in a `masu:block` event, by their first row. */
+  private blockWaiters = new Map<number, (answer: BlockReply) => void>();
+  /** What waits for a count that comes with the server's render. */
+  private countWaiter: (() => void) | null = null;
   /** The next revision's rows are not the old ones moved (a tree's row opened): drop the old. */
   private freshRows = false;
   private cursorTimer: ReturnType<typeof setTimeout> | null = null;
@@ -317,8 +323,10 @@ export class Grid {
       }
       this.revision = config.revision;
       this.countAsked = false;
+      this.blockWaiters.clear();
       this.setTotal(config.total, config.exact !== false);
       this.query = config.query;
+      this.finishQuery(true);
       // The rows of the older revision stay on the screen until the new
       // ones come, so that the grid does not blink as its rows change;
       // not when the columns moved.
@@ -332,7 +340,52 @@ export class Grid {
       this.urgent = true;
     }
 
+    // A read that stopped, or failed, with no new rows: the query is the
+    // server's still.
+    if (this.pendingQuery && !config.running && config.revision === this.revision) {
+      this.query = config.query;
+      this.renderHeader();
+      this.finishQuery(false);
+    }
+    if (this.countWaiter && this.exact) {
+      const then = this.countWaiter;
+      this.countWaiter = null;
+      then();
+    }
+    this.showBusy();
+
     this.render();
+  }
+
+  /** Rows that come later: the grid looks busy while they run. */
+  private showBusy(): void {
+    this.el.classList.toggle("masu-busy", this.querying || this.config.running === true);
+  }
+
+  /** The rows of a query that came later (`fresh`), or none (it stopped). */
+  private finishQuery(fresh: boolean): void {
+    const pending = this.pendingQuery;
+    if (!pending) return;
+    this.pendingQuery = null;
+    this.querying = false;
+    if (fresh) {
+      this.gridEl.scrollTop = 0;
+      this.active = { row: Math.min(Math.max(this.active.row, -1), this.total - 1), col: this.active.col };
+      this.anchor = null;
+      if (pending.origin === "self") this.announceCount();
+      pending.then?.();
+    }
+  }
+
+  /** A block of rows read in a task, which the server sends when it has it. */
+  receiveBlock(answer: BlockReply): void {
+    const waiter = this.blockWaiters.get(answer.from);
+    if (waiter) {
+      this.blockWaiters.delete(answer.from);
+      waiter(answer);
+    } else {
+      this.takeBlock(answer);
+    }
   }
 
   destroy(): void {
@@ -378,6 +431,13 @@ export class Grid {
       this.querying = false;
       this.el.classList.remove("masu-busy");
       const answer = reply as unknown as BlockReply;
+      // Its rows come with the server's render (a new revision).
+      if (answer.pending && !answer.error) {
+        this.querying = true;
+        this.pendingQuery = { origin, then };
+        this.showBusy();
+        return;
+      }
       if (answer.error) {
         if (origin === "follow") this.refusedView = JSON.stringify(query);
         this.query = previous;
@@ -1514,8 +1574,12 @@ export class Grid {
   private request(block: number, then?: () => void): void {
     const cache = this.cache;
     cache.ask(block);
-    this.transport.push("masu:rows", { from: block * cache.size, count: cache.size }, (reply) => {
-      const answer = reply as unknown as BlockReply;
+    const take = (answer: BlockReply) => {
+      if (answer.failed) {
+        // The grid shows the error; Run again reads anew.
+        cache.failed(block);
+        return;
+      }
       // An answer is good when it has the grid's revision now, whatever
       // the revision was when the grid asked: under live changes the
       // server is often a revision ahead of the question.
@@ -1530,6 +1594,15 @@ export class Grid {
       if (answer.total !== this.total || (answer.exact !== false) !== this.exact) this.setTotal(answer.total, answer.exact !== false);
       this.schedule();
       then?.();
+    };
+    this.transport.push("masu:rows", { from: block * cache.size, count: cache.size }, (reply) => {
+      const answer = reply as unknown as BlockReply;
+      // The rows come later: in a `masu:block` event, or with a new revision.
+      if (answer.pending) {
+        this.blockWaiters.set(answer.from, take);
+        return;
+      }
+      take(answer);
     });
   }
 
@@ -1674,7 +1747,8 @@ export class Grid {
   private sortBy(col: number, additive: boolean): void {
     const column = this.columns[col];
     if (!column?.sortable) return;
-    this.setQuery({ ...this.query, sorts: nextSorts(this.query.sorts, column.key, additive) });
+    const several = additive && this.config.multiSort !== false;
+    this.setQuery({ ...this.query, sorts: nextSorts(this.query.sorts, column.key, several) });
   }
 
   private onKeyDown(event: KeyboardEvent): void {
@@ -2855,6 +2929,14 @@ export class Grid {
     }
     this.countAsked = true;
     this.transport.push("masu:count", {}, (reply) => {
+      // Counted in a task: the count comes with the server's render.
+      if (reply.pending) {
+        this.countWaiter = () => {
+          this.render();
+          then?.();
+        };
+        return;
+      }
       if (reply.revision === this.revision && typeof reply.total === "number") this.setTotal(reply.total, reply.exact !== false);
       this.render();
       then?.();

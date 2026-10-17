@@ -99,6 +99,8 @@ defmodule Masu.Test do
   @spec ask_count(struct(), String.t()) :: {:exact | :at_least, non_neg_integer()}
   def ask_count(view, id) do
     reply = event(view, id, "masu:count", %{})
+    # Counted in a task (`load={:async}`): the count is in the render.
+    reply = if reply["pending"], do: config(view, id), else: reply
     {if(reply["exact"], do: :exact, else: :at_least), reply["total"]}
   end
 
@@ -108,10 +110,15 @@ defmodule Masu.Test do
   """
   @spec page(struct(), String.t(), pos_integer()) :: [term()]
   def page(view, id, page) when is_integer(page) and page >= 1 do
-    view
-    |> event(id, "masu:page", %{"page" => page - 1})
-    |> Map.fetch!("rows")
-    |> Enum.map(&hd/1)
+    case event(view, id, "masu:page", %{"page" => page - 1}) do
+      %{"rows" => rows} ->
+        Enum.map(rows, &hd/1)
+
+      # Its rows come later (`load={:async}`, `on_query`): read them.
+      %{"page" => page} ->
+        size = view |> config(id) |> Map.fetch!("pageSize")
+        ids(view, id, from: page * size, count: size)
+    end
   end
 
   @doc """
@@ -621,10 +628,49 @@ defmodule Masu.Test do
 
     %{proxy: {ref, _topic, _pid}} = view
 
+    reply =
+      receive do
+        {^ref, {:reply, reply}} -> reply
+      after
+        1000 -> flunk("the grid #{id} did not answer #{name}")
+      end
+
+    if reply["pending"], do: pending(view, id, name, reply), else: reply
+  end
+
+  # An answer whose rows come later (`load={:async}`): the read in a task
+  # is waited for, as the browser waits. A block of rows comes in a
+  # `masu:block` event; a query or a count, with the render after it.
+  defp pending(view, id, "masu:rows", %{"from" => from}) do
+    LiveViewTest.render_async(view, 5000)
+    %{proxy: {ref, _topic, _pid}} = view
+
     receive do
-      {^ref, {:reply, reply}} -> reply
+      {^ref, {:push_event, "masu:block", %{"id" => ^id, "block" => %{"from" => ^from} = block}}} ->
+        if block["failed"],
+          do: flunk("the grid #{id} could not read its rows: #{error(view, id)}")
+
+        block
     after
-      1000 -> flunk("the grid #{id} did not answer #{name}")
+      5000 -> flunk("the grid #{id} sent no rows from #{from}")
+    end
+  end
+
+  defp pending(view, id, _name, reply) do
+    LiveViewTest.render_async(view, 5000)
+    if message = error(view, id), do: flunk("the grid #{id} failed: #{message}")
+    reply
+  end
+
+  defp error(view, id) do
+    view
+    |> LiveViewTest.render()
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query("##{id}-state .masu-error-text")
+    |> LazyHTML.text()
+    |> case do
+      "" -> nil
+      text -> text
     end
   end
 

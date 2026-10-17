@@ -83,6 +83,16 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   class or `data-theme="dark"`; Tailwind in the Theming guide, and Lotus
   Web's results table as its worked example, compared pixel for pixel in
   e2e.
+- Slow sources: `load={:async}` reads a source in a task (a new
+  query's first rows and count, a block, a page, a count): the LiveView
+  answers meanwhile, the grid says "Running…" with Stop and keeps its
+  rows, `timeout` stops a long read, and a source's error (a raise, or
+  `{:error, reason}` from `rows/3`, `Masu.Source.Error`) shows in the
+  grid with Run again. `load={:inline}`, the default, reads as before.
+- Controlled grids: with `on_query`, the LiveView runs its own queries;
+  the grid shows the `rows` it is given (with `total` and `loading`),
+  and reports the person's sort, filter, search, page and view. One sort
+  at a time with `multi_sort={false}`. `Masu.Test` waits for tasks.
 - Columns not known in advance, as a query tool's results: rows as
   lists of values (`field={2}` reads a place of a list), `type={:auto}`
   (the type of the values of the first block of rows), `columns` on a

@@ -126,6 +126,14 @@ grid's reason.
   panel is then in `render/1`. `close_panel(view, id)` closes it. See
   [Menus of your own](menus.md).
 
+## Slow sources and controlled grids
+
+The helpers wait for a grid's tasks (`load={:async}`), as the browser
+does, and fail with the grid's error when a read fails: a test reads the
+same either way. In a controlled grid (`on_query`), a sort or a filter
+reaches the LiveView, which runs its query: `render_async/1` waits for
+a query that it runs in a task, before the rows are read.
+
 ## What these tests do not cover
 
 `Masu.Test` does not run the browser: the drawing of the rows, the
