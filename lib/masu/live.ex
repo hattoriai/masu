@@ -192,6 +192,18 @@ defmodule Masu.Live do
     do: Phoenix.PubSub.broadcast(pubsub, topic, {__MODULE__, topic, {:delete, row_or_id}})
 
   @doc false
+  # As broadcast_delete/3, to every process but `from`.
+  @spec broadcast_delete_from(pid(), atom(), String.t(), term()) :: :ok | {:error, term()}
+  def broadcast_delete_from(from, pubsub, topic, row_or_id),
+    do:
+      Phoenix.PubSub.broadcast_from(
+        pubsub,
+        from,
+        topic,
+        {__MODULE__, topic, {:delete, row_or_id}}
+      )
+
+  @doc false
   # Subscribes the LiveView to the people of a topic it follows, once.
   @spec follow_presence(atom(), String.t()) :: :ok
   def follow_presence(pubsub, topic) do

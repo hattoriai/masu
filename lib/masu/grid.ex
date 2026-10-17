@@ -80,7 +80,8 @@ defmodule Masu.Grid do
        initial_nodes: nil,
        open_details: [],
        detail_rows: [],
-       selection: %{all: false, ids: MapSet.new(), except: MapSet.new()}
+       selection: %{all: false, ids: MapSet.new(), except: MapSet.new()},
+       trash: []
      )}
   end
 
@@ -392,15 +393,20 @@ defmodule Masu.Grid do
 
   # A column that the source cannot sort or filter by does neither. A
   # column is editable when the grid edits, and it names a field.
+  # A column takes a value on a new row when the grid creates rows, as it
+  # takes one in an edit. An enum's values are its own, or its schema's.
   defp supported(source, columns, assigns) do
     edits? = assigns.changeset != nil or assigns.update != nil
+    creates? = creates?(assigns)
 
     Enum.map(columns, fn column ->
+      field? = column.editable != false and is_nil(column.value) and not is_nil(column.field)
+
       column = %{
         column
-        | editable:
-            edits? and column.editable != false and is_nil(column.value) and
-              not is_nil(column.field)
+        | editable: edits? and field?,
+          creatable: creates? and field?,
+          values: column.values || enum_values(source, column)
       }
 
       if Source.supports?(source, column),
@@ -408,6 +414,19 @@ defmodule Masu.Grid do
         else: %{column | sortable: false, filterable: false, searchable: false}
     end)
   end
+
+  defp creates?(assigns) do
+    is_function(Map.get(assigns, :create), 1) or
+      (is_function(Map.get(assigns, :changeset), 2) and Map.get(assigns, :struct) != nil)
+  end
+
+  defp enum_values(
+         %Source{module: Masu.Source.Ecto, state: state},
+         %Column{type: :enum} = column
+       ),
+       do: Masu.Source.Ecto.enum_values(state, column.field)
+
+  defp enum_values(_source, _column), do: nil
 
   @impl true
   def handle_event("masu:rows", %{"from" => from, "count" => count}, socket)
@@ -442,34 +461,8 @@ defmodule Masu.Grid do
   # live change. Other LiveViews that follow the grid's topic get the
   # saved rows; this one has them already.
   def handle_event("masu:edit", %{"edits" => edits}, socket) when is_list(edits) do
-    row_id = row_id(socket.assigns)
-    {saved, errors} = Masu.Edit.run(edits, socket.assigns, row_id)
-
-    socket =
-      if saved == [] do
-        socket
-      else
-        %{source: source, query: query, all_columns: columns, revision: revision} =
-          socket.assigns
-
-        source =
-          source
-          |> Source.change(Enum.map(saved, &{:upsert, &1}), row_id)
-          |> Source.prepare(query, columns)
-
-        broadcast(socket.assigns.live, saved, socket.assigns.user)
-        if is_function(socket.assigns.on_save, 1), do: socket.assigns.on_save.(saved)
-
-        socket
-        |> assign(
-          source: source,
-          total: Source.count(source),
-          revision: revision + 1,
-          initial: nil,
-          changed: []
-        )
-        |> refresh_details()
-      end
+    {saved, errors} = Masu.Edit.run(edits, socket.assigns, row_id(socket.assigns))
+    socket = take_saved(socket, Enum.map(saved, &{:upsert, &1}))
 
     {:reply,
      %{
@@ -477,6 +470,94 @@ defmodule Masu.Grid do
        "rows" => encode_rows(saved, socket.assigns),
        "errors" => errors
      }, socket}
+  end
+
+  # New rows (`create`, or `changeset` and `struct`), each the values of
+  # its cells: the answer has, for each, its id, or the errors of its
+  # cells (`[key, message]`, a key of nil for the row); and the place of
+  # the first new row in the person's order, when it is in their query.
+  def handle_event("masu:create", %{"rows" => drafts}, socket) when is_list(drafts) do
+    if creates?(socket.assigns) do
+      row_id = row_id(socket.assigns)
+      results = Masu.Edit.create(drafts, socket.assigns, row_id)
+      created = for {:ok, row} <- results, do: row
+      socket = take_saved(socket, Enum.map(created, &{:upsert, &1}))
+
+      index =
+        case created do
+          [first | _] ->
+            Source.locate(socket.assigns.source, Value.to_wire(row_id.(first)), row_id)
+
+          [] ->
+            nil
+        end
+
+      {:reply,
+       %{
+         "revision" => socket.assigns.revision,
+         "total" => socket.assigns.total,
+         "index" => index,
+         "results" =>
+           Enum.map(results, fn
+             {:ok, row} -> %{"id" => Value.to_wire(row_id.(row))}
+             {:error, errors} -> %{"errors" => errors}
+           end)
+       }, socket}
+    else
+      {:reply, %{"error" => "This grid does not add rows."}, socket}
+    end
+  end
+
+  # Rows deleted, by their ids, or the rows selected (`selection`). The
+  # answer has an `undo` that brings them back, when the grid can.
+  def handle_event("masu:delete", params, socket) when is_map(params) do
+    with true <- Masu.Edit.deletes?(socket.assigns) || "This grid does not delete rows.",
+         {:ok, ids} <- ids_to_delete(params, socket.assigns) do
+      row_id = row_id(socket.assigns)
+      places = places(socket.assigns.source, ids, row_id)
+      {deleted, errors} = Masu.Edit.delete(ids, socket.assigns, row_id)
+      socket = socket |> take_saved([], deleted) |> unselect(deleted)
+      {undo, socket} = put_trash(socket, deleted, places)
+
+      {:reply,
+       %{
+         "revision" => socket.assigns.revision,
+         "total" => socket.assigns.total,
+         "deleted" => length(deleted),
+         "errors" => errors,
+         "undo" => undo
+       }, socket}
+    else
+      message when is_binary(message) -> {:reply, %{"error" => message}, socket}
+      {:error, message} -> {:reply, %{"error" => message}, socket}
+    end
+  end
+
+  # Deleted rows back (an undo): the answer has their ids, for a redo.
+  def handle_event("masu:restore", %{"undo" => token}, socket) when is_binary(token) do
+    row_id = row_id(socket.assigns)
+
+    case List.keytake(socket.assigns.trash, token, 0) do
+      {{^token, rows, places}, trash} ->
+        {restored, errors} = Masu.Edit.restore(rows, socket.assigns, row_id)
+
+        socket =
+          socket
+          |> assign(trash: trash)
+          |> reinsert(restored, places, row_id)
+          |> take_saved(Enum.map(restored, &{:upsert, &1}))
+
+        {:reply,
+         %{
+           "revision" => socket.assigns.revision,
+           "total" => socket.assigns.total,
+           "ids" => Enum.map(restored, &Value.to_wire(row_id.(&1))),
+           "errors" => errors
+         }, socket}
+
+      nil ->
+        {:reply, %{"error" => "These rows can no longer be brought back."}, socket}
+    end
   end
 
   # The place of a row in this person's order: where to scroll to follow
@@ -902,6 +983,115 @@ defmodule Masu.Grid do
     end
   end
 
+  # Rows saved, created, restored or deleted here: the source takes them,
+  # and the query applies again; the LiveViews of the grid's topic get
+  # them, and the LiveView's own callbacks.
+  defp take_saved(socket, upserts, deleted \\ [])
+  defp take_saved(socket, [], []), do: socket
+
+  defp take_saved(socket, upserts, deleted) do
+    %{source: source, query: query, all_columns: columns, revision: revision} = socket.assigns
+    row_id = row_id(socket.assigns)
+    changes = upserts ++ Enum.map(deleted, &{:delete, &1})
+    source = source |> Source.change(changes, row_id) |> Source.prepare(query, columns)
+    saved = for {:upsert, row} <- upserts, do: row
+
+    broadcast(socket.assigns.live, saved, socket.assigns.user)
+    broadcast_deleted(socket.assigns.live, deleted)
+    if saved != [] and is_function(socket.assigns.on_save, 1), do: socket.assigns.on_save.(saved)
+
+    if deleted != [] and is_function(socket.assigns.on_delete, 1),
+      do: socket.assigns.on_delete.(deleted)
+
+    socket
+    |> assign(
+      source: source,
+      total: Source.count(source),
+      revision: revision + 1,
+      initial: nil,
+      changed: []
+    )
+    |> refresh_details()
+  end
+
+  defp ids_to_delete(%{"ids" => ids}, _assigns) when is_list(ids), do: {:ok, ids}
+
+  defp ids_to_delete(%{"selection" => true}, assigns) do
+    max = Masu.Edit.max_rows()
+
+    ids =
+      case selected(assigns) do
+        {:ids, ids} -> ids
+        {:query, query} -> Masu.Source.Ecto.ids_of(assigns.source.state, query, max + 1)
+      end
+
+    if length(ids) > max,
+      do: {:error, "Too many rows to delete at once: #{max} at most."},
+      else: {:ok, Enum.map(ids, &Value.to_wire/1)}
+  end
+
+  defp ids_to_delete(_params, _assigns), do: {:error, "No rows to delete."}
+
+  # Deleted rows leave the selection.
+  defp unselect(socket, []), do: socket
+
+  defp unselect(socket, deleted) do
+    row_id = row_id(socket.assigns)
+    ids = Enum.map(deleted, &Value.to_wire(row_id.(&1)))
+    %{selection: selection} = socket.assigns
+
+    assign(socket,
+      selection: %{
+        selection
+        | ids: Enum.reduce(ids, selection.ids, &MapSet.delete(&2, &1)),
+          except: Enum.reduce(ids, selection.except, &MapSet.delete(&2, &1))
+      }
+    )
+  end
+
+  # The rows of the last deletes, for an undo: a token for each.
+  @max_trash 20
+
+  defp put_trash(socket, [], _places), do: {nil, socket}
+
+  defp put_trash(socket, deleted, places) do
+    if Masu.Edit.restores?(socket.assigns) do
+      token = 16 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+      trash = Enum.take([{token, deleted, places} | socket.assigns.trash], @max_trash)
+      {token, assign(socket, trash: trash)}
+    else
+      {nil, socket}
+    end
+  end
+
+  # The places of rows in a list, so that an undo puts them back there
+  # (an upsert of a row a list does not have puts it at its end).
+  defp places(%Source{module: Masu.Source.List, state: state}, ids, row_id),
+    do: Masu.Source.List.places(state, ids, row_id)
+
+  defp places(_source, _ids, _row_id), do: %{}
+
+  defp reinsert(
+         %{assigns: %{source: %Source{module: Masu.Source.List} = source}} = socket,
+         rows,
+         places,
+         row_id
+       ) do
+    placed =
+      for row <- rows, index = Map.get(places, Value.to_wire(row_id.(row))), do: {index, row}
+
+    assign(socket, source: %{source | state: Masu.Source.List.reinsert(source.state, placed)})
+  end
+
+  defp reinsert(socket, _rows, _places, _row_id), do: socket
+
+  defp broadcast_deleted(nil, _rows), do: :ok
+
+  defp broadcast_deleted({pubsub, topic}, rows) do
+    for row <- rows, do: Masu.Live.broadcast_delete_from(self(), pubsub, topic, row)
+    :ok
+  end
+
   defp broadcast(nil, _rows, _user), do: :ok
 
   defp broadcast({pubsub, topic}, rows, user) do
@@ -1111,6 +1301,9 @@ defmodule Masu.Grid do
       "groupable" => assigns.tree == nil,
       "export" => Enum.map(export_formats(assigns), &Atom.to_string/1),
       "selection" => selection_config(assigns),
+      "creates" => creates?(assigns),
+      "deletes" => Masu.Edit.deletes?(assigns),
+      "restores" => Masu.Edit.restores?(assigns),
       "detail" => assigns.detail != [],
       "details" => for({id, _row, index} <- assigns.detail_rows, do: [id, index]),
       "initial" => assigns.initial && %{"from" => 0, "rows" => encode_initial(assigns)}
@@ -1133,6 +1326,9 @@ defmodule Masu.Grid do
       "sortable" => column.sortable,
       "filterable" => column.filterable,
       "editable" => column.editable,
+      "creatable" => column.creatable,
+      "values" => column.values && Enum.map(column.values, &Value.to_wire/1),
+      "decimals" => column.decimals,
       "html" => column.slot != nil,
       "pinned" => column.pinned && Atom.to_string(column.pinned),
       "aggregate" => aggregate_name(column.aggregate)

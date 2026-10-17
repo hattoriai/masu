@@ -18,6 +18,9 @@ defmodule Masu.Edit do
   # Returns the rows saved, and the errors as `[id, key, message]`, or
   # `[id, key, message, value]` for a cell changed meanwhile, with its
   # value now.
+  #
+  # New rows (`create/2`) and deleted ones (`delete/3`, `restore/2`) go
+  # through the grid's functions, or Ecto's.
 
   alias Masu.{Column, Source, Value}
   alias Masu.Source.Ecto, as: EctoSource
@@ -222,4 +225,244 @@ defmodule Masu.Edit do
       String.replace(message, "%{#{key}}", fn _ -> to_string(value) end)
     end)
   end
+
+  @max_rows 1_000
+
+  @doc false
+  # The most rows a grid creates or deletes at once.
+  def max_rows, do: @max_rows
+
+  # New rows, each the values of its cells by column key: through the
+  # grid's `create` function, or its `changeset` of its `struct` (inserted
+  # by the repo of an Ecto source, applied for a list). Gives, for each,
+  # `{:ok, row}`, or `{:error, [[key, message]]}`: its errors on its cells.
+  @spec create([map()], map(), (term() -> term())) :: [{:ok, term()} | {:error, [list()]}]
+  def create(drafts, assigns, row_id) when is_list(drafts) do
+    drafts
+    |> Enum.take(@max_rows)
+    |> Enum.map(fn draft -> create_one(draft, assigns, row_id) end)
+  end
+
+  defp create_one(draft, assigns, row_id) when is_map(draft) do
+    {cells, refused} =
+      draft
+      |> Enum.filter(fn {_key, value} -> value != "" and not is_nil(value) end)
+      |> Enum.split_with(fn {key, value} ->
+        match?(%Column{creatable: true}, Column.find(assigns.columns, key)) and value?(value)
+      end)
+
+    edits = Enum.map(cells, fn {key, value} -> %{"key" => key, "value" => value} end)
+
+    case refused do
+      [] ->
+        params = params(edits, assigns.columns)
+        keys = Enum.map(edits, & &1["key"])
+
+        case insert(params, assigns) do
+          {:ok, row} -> check_id(row, row_id)
+          {:error, reason} -> {:error, new_errors(reason, keys, assigns.columns)}
+        end
+
+      refused ->
+        {:error, Enum.map(refused, fn {key, _value} -> [key, "This cell cannot be set."] end)}
+    end
+  end
+
+  defp create_one(_draft, _assigns, _row_id), do: {:error, [[nil, "Not a row."]]}
+
+  # A new row of a list must have an id, as every row of a grid does.
+  defp check_id(row, row_id) do
+    if is_nil(row_id.(row)),
+      do: {:error, [[nil, "The new row has no id."]]},
+      else: {:ok, row}
+  end
+
+  defp insert(params, %{create: create}) when is_function(create, 1) do
+    case create.(params) do
+      {:ok, row} ->
+        {:ok, row}
+
+      {:error, reason} ->
+        {:error, reason}
+
+      other ->
+        raise ArgumentError,
+              "a Masu grid's create gave #{inspect(other)}, not {:ok, row} or {:error, reason}"
+    end
+  end
+
+  defp insert(params, %{changeset: changeset, struct: struct} = assigns)
+       when is_function(changeset, 2) and struct != nil do
+    changeset = changeset.(new_struct(struct), params)
+
+    if assigns.source.module == EctoSource,
+      do: assigns.repo.insert(changeset, assigns.repo_opts),
+      else: Ecto.Changeset.apply_action(changeset, :insert)
+  end
+
+  defp new_struct(fun) when is_function(fun, 0), do: fun.()
+  defp new_struct(struct), do: struct
+
+  # The errors of a new row, on its cells: an error of a field the person
+  # did not fill goes on that field's column when it shows, else on the
+  # row (`nil`).
+  defp new_errors(%{__struct__: Ecto.Changeset} = changeset, keys, columns) do
+    errors =
+      for {field, {message, opts}} <- changeset.errors do
+        key =
+          case Enum.find(columns, &(&1.field == field)) do
+            nil -> nil
+            column -> column.key
+          end
+
+        [key, interpolate(message, opts)]
+      end
+
+    if errors == [], do: [[List.first(keys), "The row could not be saved."]], else: errors
+  end
+
+  defp new_errors(message, _keys, _columns) when is_binary(message), do: [[nil, message]]
+
+  defp new_errors(reason, _keys, _columns),
+    do: [[nil, "The row could not be saved: #{inspect(reason)}"]]
+
+  # Rows deleted by their ids: through the grid's `delete` function, or
+  # the repo of an Ecto source (in a transaction that locks the row), or
+  # out of a list. A row is found among the rows its source may show, and
+  # `deletable` (a function of the row) may refuse it. Gives the rows
+  # deleted, and the errors as `[id, message]`.
+  @spec delete([term()], map(), (term() -> term())) :: {[term()], [list()]}
+  def delete(ids, assigns, row_id) when is_list(ids) do
+    ids = Enum.take(ids, @max_rows)
+    remove = remover(ids, assigns, row_id)
+
+    {deleted, errors} =
+      Enum.reduce(ids, {[], []}, fn id, {deleted, errors} ->
+        case remove.(id) do
+          {:ok, row} -> {[row | deleted], errors}
+          {:error, message} -> {deleted, [[id, message] | errors]}
+        end
+      end)
+
+    {Enum.reverse(deleted), Enum.reverse(errors)}
+  end
+
+  defp remover(_ids, %{source: %{module: EctoSource} = source} = assigns, _row_id) do
+    fn id -> EctoSource.locked(source.state, id, &delete_row(&1, assigns)) end
+  end
+
+  defp remover(ids, assigns, row_id) do
+    rows =
+      assigns.source |> Source.fetch(ids, row_id) |> Map.new(&{Value.to_wire(row_id.(&1)), &1})
+
+    fn id -> delete_row(Map.get(rows, id), assigns) end
+  end
+
+  defp delete_row(nil, _assigns), do: {:error, "This row is not in the grid."}
+
+  defp delete_row(row, assigns) do
+    if deletable?(assigns, row),
+      do: remove(row, assigns),
+      else: {:error, "This row cannot be deleted."}
+  end
+
+  @doc false
+  # Whether the grid deletes the row: `deletable` (or a `delete`
+  # function) says it deletes, and a `deletable` function says so for the
+  # row.
+  @spec deletable?(map(), term()) :: boolean()
+  def deletable?(%{deletable: fun}, row) when is_function(fun, 1), do: fun.(row) == true
+  def deletable?(assigns, _row), do: deletes?(assigns)
+
+  @doc false
+  @spec deletes?(map()) :: boolean()
+  def deletes?(%{deletable: false}), do: false
+
+  def deletes?(%{deletable: deletable}) when deletable == true or is_function(deletable, 1),
+    do: true
+
+  def deletes?(%{delete: delete}), do: is_function(delete, 1)
+
+  defp remove(row, %{delete: delete}) when is_function(delete, 1) do
+    case delete.(row) do
+      :ok ->
+        {:ok, row}
+
+      {:ok, _deleted} ->
+        {:ok, row}
+
+      {:error, reason} ->
+        {:error, delete_message(reason)}
+
+      other ->
+        raise ArgumentError,
+              "a Masu grid's delete gave #{inspect(other)}, not :ok, {:ok, row} or {:error, reason}"
+    end
+  end
+
+  defp remove(row, %{source: %{module: EctoSource}} = assigns) do
+    if is_struct(row) and function_exported?(row.__struct__, :__schema__, 1) do
+      case assigns.repo.delete(row, assigns.repo_opts) do
+        {:ok, _deleted} -> {:ok, row}
+        {:error, reason} -> {:error, delete_message(reason)}
+      end
+    else
+      {:error, "This row cannot be deleted: it is not a schema's struct."}
+    end
+  rescue
+    error in [Ecto.StaleEntryError] ->
+      _ = error
+      {:error, "Changed or deleted by someone else meanwhile."}
+
+    error in [Ecto.ConstraintError] ->
+      _ = error
+      {:error, "Other records refer to this row."}
+  end
+
+  # A list: the grid takes the row out of its copy.
+  defp remove(row, _assigns), do: {:ok, row}
+
+  defp delete_message(%{__struct__: Ecto.Changeset, errors: [{_field, {message, opts}} | _]}),
+    do: interpolate(message, opts)
+
+  defp delete_message(message) when is_binary(message), do: message
+  defp delete_message(reason), do: "The row could not be deleted: #{inspect(reason)}"
+
+  @doc false
+  # Whether the grid brings deleted rows back (an undo): with its
+  # `restore` function, by inserting them again into an Ecto source's
+  # repo (when it deletes with the repo), or into a list.
+  @spec restores?(map()) :: boolean()
+  def restores?(%{restore: restore}) when is_function(restore, 1), do: true
+  def restores?(%{delete: delete}) when is_function(delete, 1), do: false
+  def restores?(assigns), do: deletes?(assigns)
+
+  # Deleted rows, back: `{rows, errors}`, the errors as `[id, message]`.
+  @spec restore([term()], map(), (term() -> term())) :: {[term()], [list()]}
+  def restore(rows, assigns, row_id) do
+    {restored, errors} =
+      Enum.reduce(rows, {[], []}, fn row, {restored, errors} ->
+        case restore_row(row, assigns) do
+          {:ok, row} ->
+            {[row | restored], errors}
+
+          {:error, reason} ->
+            {restored, [[Value.to_wire(row_id.(row)), delete_message(reason)] | errors]}
+        end
+      end)
+
+    {Enum.reverse(restored), Enum.reverse(errors)}
+  end
+
+  defp restore_row(row, %{restore: restore}) when is_function(restore, 1), do: restore.(row)
+
+  defp restore_row(row, %{source: %{module: EctoSource}} = assigns) do
+    row |> Ecto.put_meta(state: :built) |> assigns.repo.insert(assigns.repo_opts)
+  rescue
+    error in [Ecto.ConstraintError] ->
+      _ = error
+      {:error, "The row could not be brought back."}
+  end
+
+  defp restore_row(row, _assigns), do: {:ok, row}
 end

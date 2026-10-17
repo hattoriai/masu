@@ -28,6 +28,13 @@ defmodule Masu.Column do
   row that the browser shows; the type still says how it sorts and
   filters.
 
+  ## Editing
+
+  In a grid that edits, `values` lists the values of an `:enum` column,
+  which its editor offers (a schema's `Ecto.Enum` field has them unless
+  given); `decimals` shows a `:decimal` or `:number` column with that
+  many digits after the point, whatever the value has.
+
   ## Layout
 
   `hidden` starts the column hidden (a person shows it from the columns
@@ -71,6 +78,9 @@ defmodule Masu.Column do
           searchable: boolean(),
           editable: boolean() | nil,
           editable_if: (term() -> boolean()) | nil,
+          creatable: boolean(),
+          decimals: non_neg_integer() | nil,
+          values: [term()] | nil,
           hidden: boolean(),
           pinned: :start | :end | nil,
           aggregate: aggregate() | nil,
@@ -102,6 +112,9 @@ defmodule Masu.Column do
     searchable: false,
     editable: nil,
     editable_if: nil,
+    creatable: false,
+    decimals: nil,
+    values: nil,
     hidden: false,
     pinned: nil,
     aggregate: nil
@@ -145,12 +158,26 @@ defmodule Masu.Column do
       editable:
         if(is_function(Map.get(attrs, :editable), 1), do: nil, else: Map.get(attrs, :editable)),
       editable_if: if(is_function(Map.get(attrs, :editable), 1), do: Map.get(attrs, :editable)),
+      decimals: decimals!(Map.get(attrs, :decimals)),
+      values: values!(Map.get(attrs, :values)),
       hidden: Map.get(attrs, :hidden) == true,
       pinned: pinned!(Map.get(attrs, :pinned)),
       aggregate: aggregate!(Map.get(attrs, :aggregate)),
       slot: if(Map.get(attrs, :inner_block), do: attrs)
     }
   end
+
+  defp decimals!(nil), do: nil
+  defp decimals!(n) when is_integer(n) and n >= 0 and n <= 20, do: n
+
+  defp decimals!(other),
+    do: raise(ArgumentError, "a Masu column's decimals is 0 to 20, got: #{inspect(other)}")
+
+  defp values!(nil), do: nil
+  defp values!(values) when is_list(values), do: values
+
+  defp values!(other),
+    do: raise(ArgumentError, "a Masu column's values is a list, got: #{inspect(other)}")
 
   defp aggregate!(nil), do: nil
   defp aggregate!(aggregate) when aggregate in @aggregates, do: aggregate

@@ -231,6 +231,32 @@ defmodule Masu.Source.List do
     Enum.reject(rows, &(row_id.(&1) == id))
   end
 
+  @doc false
+  # Deleted rows back in their places (an undo): `{index, row}`, by the
+  # places they had, first to last.
+  @spec reinsert(map(), [{non_neg_integer(), term()}]) :: map()
+  def reinsert(%{all: rows} = state, placed) do
+    rows =
+      placed
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.reduce(rows, fn {index, row}, rows -> List.insert_at(rows, index, row) end)
+
+    %{state | all: rows}
+  end
+
+  @doc false
+  # The places of rows in the list, by their ids, before they leave it.
+  @spec places(map(), [term()], (term() -> term())) :: %{term() => non_neg_integer()}
+  def places(%{all: rows}, ids, row_id) do
+    wanted = MapSet.new(ids)
+
+    for {row, index} <- Enum.with_index(rows),
+        id = Masu.Value.to_wire(row_id.(row)),
+        MapSet.member?(wanted, id),
+        into: %{},
+        do: {id, index}
+  end
+
   defp filter(rows, [], _columns), do: rows
 
   defp filter(rows, filters, columns) do
