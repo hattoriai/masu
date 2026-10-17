@@ -111,7 +111,8 @@ defmodule Masu.QueryTest do
                %{"key" => "name", "op" => "starts_with", "value" => "a"},
                %{"key" => "born", "op" => "not_nil", "value" => nil}
              ],
-             "search" => nil
+             "search" => nil,
+             "groups" => []
            }
 
     assert {:ok, ^query} = Query.from_wire(Query.to_wire(query), @columns)

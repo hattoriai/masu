@@ -47,6 +47,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Collaboration | `presence={MyAppWeb.Presence} user={...}`: avatars (a `:person` slot of your own), each person's cell by row id and column key whatever the others' order and filters, "Ada is typing" and a lock on that cell, flashes in the saver's color; a click on an avatar follows that person in their view (`share_view={false}` keeps it), each person's selected range in their color, "Changed by Ada meanwhile."; `configure({peerLabel})` and CSS for the rest |
 | Layout and views | `pinned={:start}` and `hidden` columns; headers that move by dragging; a columns menu to show, hide, pin and move them; the person's view (order, filters, search, columns) in the URL (`url`) and kept per person, with named views to save and share (`views`, with an Ecto store and `mix masu.gen.views`) |
 | Trees and details | `tree={:parent_id}`: rows in a tree, opened with →, ← and `*`, virtualized as a list of the open rows (a list or an Ecto source, children read as they open), siblings sorted among themselves, filters that keep the ancestors of a match; a `:detail` slot that opens a row on any HEEx under it, another grid too |
+| Groups and totals | `group_by` and "Group by" in the header menu: groups with their counts and totals, opened as a tree, sorted by value or by a total; `aggregate={:sum}` and a row of totals at the bottom; counted and totalled by the database, a `GROUP BY` a level |
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
 | Sorting | a click on a header; with Shift, by several columns, numbered in the headers; text without case, empty values last |
@@ -172,6 +173,8 @@ in the same order.
   and each person's view in the URL and in a store.
 * [Trees and details](guides/trees.md): rows in a tree, and rows that
   open on a detail of their own.
+* [Groups and totals](guides/groups.md): rows grouped by columns, with
+  their counts and totals, and a row of totals.
 * [Keyboard and copy](guides/keyboard.md): the keys, the selection, and
   what a copy gives.
 * [Testing](guides/testing.md): `Masu.Test` with `Phoenix.LiveViewTest`.

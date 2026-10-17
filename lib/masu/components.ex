@@ -119,6 +119,11 @@ defmodule Masu.Components do
     doc:
       "with `presence`: whether the person's order, filters and search go to the others, who see them when they follow the person"
 
+  attr :group_by, :any,
+    default: [],
+    doc:
+      "the keys of the columns the rows start grouped by, the first the outermost; see `Masu.Group`"
+
   attr :tree, :any,
     default: nil,
     doc:
@@ -172,6 +177,7 @@ defmodule Masu.Components do
     attr :editable, :any
     attr :hidden, :boolean
     attr :pinned, :atom
+    attr :aggregate, :any
   end
 
   slot :empty, doc: "what the grid shows when it has no rows"
@@ -213,6 +219,7 @@ defmodule Masu.Components do
       user={@user}
       share_view={@share_view}
       tree={@tree}
+      group_by={@group_by}
       expanded={@expanded}
       detail={@detail}
       url={@url}

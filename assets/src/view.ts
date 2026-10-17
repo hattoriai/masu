@@ -11,5 +11,5 @@ export function sameView(a: QuerySpec, b: QuerySpec): boolean {
 function normal(view: QuerySpec): QuerySpec {
   const search = view.search?.trim() ? view.search.trim() : null;
   const filters = [...view.filters].sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
-  return { sorts: view.sorts, filters, search };
+  return { sorts: view.sorts, filters, search, groups: view.groups ?? [] };
 }

@@ -153,6 +153,7 @@ defmodule MasuDev.Layouts do
           {"Views", "/views"},
           {"Tree", "/tree"},
           {"Details", "/details"},
+          {"Groups", "/groups"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -467,6 +468,45 @@ defmodule MasuDev.DetailsLive do
   end
 end
 
+defmodule MasuDev.GroupsLive do
+  @moduledoc """
+  A hundred thousand customers grouped by plan, then city: each group
+  with its count and totals, the totals of the query at the bottom. The
+  header menu groups by another column.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket),
+    do: {:ok, assign(socket, customers: MasuDev.Customers.all())}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="groups-label">Groups</h1>
+    <.data_grid
+      id="groups"
+      rows={@customers}
+      group_by={[:plan, :city]}
+      label_id="groups-label"
+      searchable
+      height="34rem"
+    >
+      <:col field={:name} width={240} />
+      <:col field={:plan} type={:enum} width={130} />
+      <:col field={:city} />
+      <:col field={:seats} type={:integer} aggregate={:sum} />
+      <:col field={:revenue} type={:decimal} aggregate={:sum} />
+      <:col key="average" field={:revenue} type={:decimal} label="Average" aggregate={:avg} />
+      <:col field={:active} type={:boolean} />
+      <:col field={:signed_up} type={:date} label="Last sign-up" aggregate={:max} />
+    </.data_grid>
+    """
+  end
+end
+
 defmodule MasuDev.SmallLive do
   @moduledoc "The smallest grid: a few rows, two columns."
   use Phoenix.LiveView
@@ -677,6 +717,7 @@ defmodule MasuDev.Router do
     live("/views", MasuDev.ViewsLive)
     live("/tree", MasuDev.TreeLive)
     live("/details", MasuDev.DetailsLive)
+    live("/groups", MasuDev.GroupsLive)
   end
 end
 

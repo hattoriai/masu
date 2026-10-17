@@ -74,6 +74,14 @@ grid's reason.
 
 `columns/2` and `rows/3` read the columns that show, in their order.
 
+## Groups and totals
+
+* `group(view, id, keys)`: groups by columns, as the header menu does;
+  `[]` stops.
+* `groups(view, id, opts)`: the groups' rows, as maps of `:id`, `:key`,
+  `:value`, `:count`, `:level`, `:expanded` and `:totals`.
+* `totals(view, id)`: the row of totals, by column key.
+
 ## Trees and details
 
 * `nodes(view, id, opts)`: the rows of a tree, as maps of `:id`,

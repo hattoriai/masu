@@ -198,10 +198,67 @@ defmodule Masu.Test do
     })
     |> Map.fetch!("rows")
     |> Enum.map(fn [row_id | rest] ->
-      [level, children, expanded, _position, _size] = List.last(rest)
+      # A group's row ends with its [key, value, count] after its place.
+      place = if Masu.Group.id?(row_id), do: Enum.at(rest, -2), else: List.last(rest)
+      [level, children, expanded, _position, _size] = place
       %{id: row_id, level: level, children: children, expanded: expanded}
     end)
   end
+
+  @doc """
+  Groups the rows of the grid `id` by columns (`Masu.Group`), as the
+  header menu does: `keys`, the first the outermost; `[]` stops
+  grouping. Returns the view.
+  """
+  @spec group(struct(), String.t(), [String.t() | atom()]) :: struct()
+  def group(view, id, keys), do: query(view, id, %{"groups" => Enum.map(keys, &to_string/1)})
+
+  @doc """
+  The rows of a grouped grid `id` that are groups, in order, as maps of
+  `:id` (what `expand/3` takes), `:key`, `:value`, `:count`, `:level`,
+  `:expanded` and `:totals` (by column key). Options as `rows/3`.
+  """
+  @spec groups(struct(), String.t(), keyword()) :: [map()]
+  def groups(view, id, opts \\ []) do
+    keys = view |> config(id) |> Map.fetch!("columns") |> Enum.map(& &1["key"])
+
+    view
+    |> event(id, "masu:rows", %{
+      "from" => Keyword.get(opts, :from, 0),
+      "count" => Keyword.get(opts, :count, 100)
+    })
+    |> Map.fetch!("rows")
+    |> Enum.flat_map(fn
+      [["masu-group" | _] = group_id | rest] ->
+        [[level, _children, expanded, _position, _size], [key, value, count]] =
+          Enum.take(rest, -2)
+
+        totals = keys |> Enum.zip(rest) |> Enum.reject(&is_nil(elem(&1, 1))) |> Map.new()
+
+        [
+          %{
+            id: group_id,
+            key: key,
+            value: value,
+            count: count,
+            level: level,
+            expanded: expanded,
+            totals: totals
+          }
+        ]
+
+      _row ->
+        []
+    end)
+  end
+
+  @doc """
+  The totals of the query of the grid `id`, by column key: the row of
+  totals at its bottom (`Masu.Group`). `nil` when no column has an
+  aggregate.
+  """
+  @spec totals(struct(), String.t()) :: map() | nil
+  def totals(view, id), do: view |> config(id) |> Map.fetch!("totals")
 
   @doc """
   Opens the row `row_id` of a tree in the grid `id`, as a click on its

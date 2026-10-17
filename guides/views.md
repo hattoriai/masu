@@ -49,7 +49,7 @@ With `url`, the view goes into the URL's params, under the grid's id, as
 it changes, so a link reproduces what the person sees:
 
 ```text
-/orders?orders[sort]=-total&orders[q]=acme&orders[hide]=notes,seats&orders[pin]=number:start
+/orders?orders[sort]=-total&orders[q]=acme&orders[group]=status&orders[hide]=notes,seats&orders[pin]=number:start
 ```
 
 Only what differs from the grid's own view (of its attributes) is in the

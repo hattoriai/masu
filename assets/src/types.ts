@@ -31,6 +31,8 @@ export interface ColumnConfig {
   html: boolean;
   /** Kept in view while the others scroll sideways. */
   pinned: "start" | "end" | null;
+  /** How the column totals (Masu.Group): sum, avg, min, max, count, count_distinct, custom. */
+  aggregate?: string | null;
 }
 
 /** A column of the grid, shown or not, as the columns menu lists it. */
@@ -68,6 +70,8 @@ export interface QuerySpec {
   sorts: SortSpec[];
   filters: FilterSpec[];
   search: string | null;
+  /** The keys of the columns the rows are grouped by (Masu.Group). */
+  groups?: string[];
 }
 
 export interface Config {
@@ -103,6 +107,10 @@ export interface Config {
   detail: boolean;
   /** The open details: [row id, its index in the person's order]. */
   details: [unknown, number][];
+  /** The totals of the query by column key, or null: no column totals. */
+  totals: Record<string, CellValue> | null;
+  /** The person may group the rows by a column (not a tree). */
+  groupable: boolean;
 }
 
 export interface BlockReply {

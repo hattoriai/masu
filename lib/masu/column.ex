@@ -33,6 +33,11 @@ defmodule Masu.Column do
   `hidden` starts the column hidden (a person shows it from the columns
   menu), and `pinned={:start}` or `pinned={:end}` keeps it in view while
   the others scroll sideways. See `Masu.Layout`.
+
+  ## Totals
+
+  `aggregate={:sum}` totals the column in the row of each group and in a
+  row of totals at the bottom of the grid; see `Masu.Group`.
   """
 
   @types [:text, :enum, :integer, :number, :decimal, :date, :datetime, :time, :boolean]
@@ -68,8 +73,19 @@ defmodule Masu.Column do
           editable_if: (term() -> boolean()) | nil,
           hidden: boolean(),
           pinned: :start | :end | nil,
+          aggregate: aggregate() | nil,
           slot: map() | nil
         }
+
+  @aggregates [:sum, :avg, :min, :max, :count, :count_distinct]
+
+  @typedoc """
+  How a column totals its values, in a group's row and the totals row:
+  `:sum`, `:avg`, `:min`, `:max`, `:count` (of the values that are not
+  `nil`), `:count_distinct`, or, for a list, a function of the rows.
+  """
+  @type aggregate ::
+          :sum | :avg | :min | :max | :count | :count_distinct | ([term()] -> term())
 
   defstruct [
     :key,
@@ -87,7 +103,8 @@ defmodule Masu.Column do
     editable: nil,
     editable_if: nil,
     hidden: false,
-    pinned: nil
+    pinned: nil,
+    aggregate: nil
   ]
 
   @doc "The types a column can have."
@@ -130,8 +147,18 @@ defmodule Masu.Column do
       editable_if: if(is_function(Map.get(attrs, :editable), 1), do: Map.get(attrs, :editable)),
       hidden: Map.get(attrs, :hidden) == true,
       pinned: pinned!(Map.get(attrs, :pinned)),
+      aggregate: aggregate!(Map.get(attrs, :aggregate)),
       slot: if(Map.get(attrs, :inner_block), do: attrs)
     }
+  end
+
+  defp aggregate!(nil), do: nil
+  defp aggregate!(aggregate) when aggregate in @aggregates, do: aggregate
+  defp aggregate!(fun) when is_function(fun, 1), do: fun
+
+  defp aggregate!(other) do
+    raise ArgumentError,
+          "a Masu column's aggregate is one of #{inspect(@aggregates)} or a function of the rows, got: #{inspect(other)}"
   end
 
   defp pinned!(pin) when pin in [nil, :start, :end], do: pin

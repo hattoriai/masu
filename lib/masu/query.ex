@@ -8,6 +8,9 @@ defmodule Masu.Query do
   the column's type. `search` is text to find in the columns that are
   searchable, or `nil`.
 
+  `groups` are the keys of the columns the rows are grouped by, the
+  first the outermost (`Masu.Group`).
+
   In a tree (`Masu.Tree`), `expanded` holds the ids of the rows the
   person opened, and `collapsed` those they closed while a filter or a
   search shows every row it keeps open. Neither goes to the browser with
@@ -24,11 +27,17 @@ defmodule Masu.Query do
           sorts: [Sort.t()],
           filters: [Filter.t()],
           search: String.t() | nil,
+          groups: [String.t()],
           expanded: MapSet.t(),
           collapsed: MapSet.t()
         }
 
-  defstruct sorts: [], filters: [], search: nil, expanded: MapSet.new(), collapsed: MapSet.new()
+  defstruct sorts: [],
+            filters: [],
+            search: nil,
+            groups: [],
+            expanded: MapSet.new(),
+            collapsed: MapSet.new()
 
   @doc """
   Makes a query from what the browser sends, and checks it against the
@@ -43,9 +52,27 @@ defmodule Masu.Query do
   def from_wire(params, columns) when is_map(params) do
     with {:ok, sorts} <- wire_sorts(Map.get(params, "sorts", []), columns),
          {:ok, filters} <- wire_filters(Map.get(params, "filters", []), columns) do
-      {:ok, %__MODULE__{sorts: sorts, filters: filters, search: search(params["search"])}}
+      {:ok,
+       %__MODULE__{
+         sorts: sorts,
+         filters: filters,
+         search: search(params["search"]),
+         groups: groups(Map.get(params, "groups", []), columns)
+       }}
     end
   end
+
+  @doc false
+  # The keys of the columns to group by: columns that sort, each once.
+  @spec groups(term(), [Column.t()]) :: [String.t()]
+  def groups(keys, columns) when is_list(keys) do
+    keys
+    |> Enum.map(&to_string/1)
+    |> Enum.filter(&match?(%Column{sortable: true}, Column.find(columns, &1)))
+    |> Enum.uniq()
+  end
+
+  def groups(_keys, _columns), do: []
 
   @doc """
   Makes a query from Elixir terms (the grid's attributes, or `Masu.Test`)
@@ -79,7 +106,8 @@ defmodule Masu.Query do
        %__MODULE__{
          sorts: check_sorts(sorts, columns),
          filters: filters,
-         search: search(Keyword.get(opts, :search))
+         search: search(Keyword.get(opts, :search)),
+         groups: opts |> Keyword.get(:group_by, []) |> List.wrap() |> groups(columns)
        }}
     end
   end
@@ -90,7 +118,8 @@ defmodule Masu.Query do
     %{
       "sorts" => Enum.map(query.sorts, &Sort.to_wire/1),
       "filters" => Enum.map(query.filters, &Filter.to_wire/1),
-      "search" => query.search
+      "search" => query.search,
+      "groups" => query.groups
     }
   end
 
