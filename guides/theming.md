@@ -79,3 +79,4 @@ the active cell a line of it.
 | `.masu-active`, `.masu-selected`, `.masu-col-selected` | the active cell, a selected cell, a header of a selected column |
 | `.masu-loading`, `.masu-null`, `.masu-empty` | a row that is coming, an empty value, the grid with no rows |
 | `.masu-busy`, `.masu-resizing` | a query being applied, a column being resized |
+| `.masu-changed` | a row that changed on the grid's topic, for a moment (see [Live rows](live.md)) |

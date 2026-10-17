@@ -62,6 +62,11 @@ defmodule Masu.Components do
   attr :repo, :atom, default: nil, doc: "the repo of an Ecto source"
   attr :repo_opts, :list, default: [], doc: "options for each call to the repo"
 
+  attr :live, :any,
+    default: nil,
+    doc:
+      "`{pubsub, topic}`: shows the rows that change on the topic as they change, see `Masu.Live`"
+
   attr :row_id, :any,
     default: nil,
     doc: "a function that gives a row's id; the `id` of the row unless given"
@@ -119,6 +124,7 @@ defmodule Masu.Components do
       input={if is_nil(@rows), do: @source, else: @rows}
       repo={@repo}
       repo_opts={@repo_opts}
+      live={@live}
       row_id={@row_id}
       sort={@sort}
       filters={@filters}

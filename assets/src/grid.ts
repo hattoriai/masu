@@ -21,6 +21,7 @@ const REQUEST_DELAY = 40;
 const SEARCH_DELAY = 250;
 const MAX_COPY_ROWS = 10_000;
 const MAX_AUTO_WIDTH = 640;
+const FLASH = 1600;
 
 interface RowElement extends HTMLDivElement {
   masuIndex?: number;
@@ -39,6 +40,10 @@ export class Grid {
   private revision: number;
   private query: QuerySpec;
   private cache = new BlockCache();
+  /** The rows of the revision before, shown until the new ones come. */
+  private stale: BlockCache | null = null;
+  /** The rows on the screen are old: ask for them at once, not after a pause. */
+  private urgent = false;
 
   private gridEl: HTMLElement;
   private head: HTMLElement;
@@ -55,6 +60,8 @@ export class Grid {
   private dragging = false;
   private frame: number | null = null;
   private queries = 0;
+  /** The rows that changed (Masu.Live), each until its flash ends. */
+  private flash = new Map<string, number>();
   private requestTimer: ReturnType<typeof setTimeout> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private observer: ResizeObserver | null = null;
@@ -107,13 +114,22 @@ export class Grid {
     }
 
     if (config.revision > this.revision) {
+      // New rows from the server (a live change, or new rows of the
+      // LiveView): the person keeps their place; the rows that changed
+      // flash as they are drawn.
+      const now = performance.now();
+      for (const [id, until] of this.flash) if (until < now) this.flash.delete(id);
+      for (const id of config.changed ?? []) this.flash.set(String(id), now + FLASH);
       this.revision = config.revision;
       this.total = config.total;
       this.query = config.query;
-      this.cache.clear();
+      // The rows of the older revision stay on the screen until the new
+      // ones come, so that the grid does not blink as its rows change.
+      this.stale = this.cache;
+      this.cache = new BlockCache(this.stale.size, this.stale.maxBlocks);
       if (config.initial) this.cache.store(config.initial.from, config.initial.rows);
       this.renderHeader();
-      this.clearRows();
+      this.urgent = true;
     }
 
     this.render();
@@ -153,6 +169,7 @@ export class Grid {
       this.total = answer.total;
       this.query = answer.query ?? query;
       this.cache.clear();
+      this.stale = null;
       this.cache.store(answer.from, answer.rows);
       this.gridEl.scrollTop = 0;
       this.active = { row: Math.min(Math.max(this.active.row, -1), this.total - 1), col: this.active.col };
@@ -211,7 +228,7 @@ export class Grid {
         this.body.appendChild(rowEl);
         this.rows.set(index, rowEl);
       }
-      this.fillRow(rowEl, index, this.cache.get(index) ?? null);
+      this.fillRow(rowEl, index, this.cache.get(index) ?? this.stale?.get(index) ?? null);
       this.markRow(rowEl, index, selection);
     }
 
@@ -254,6 +271,9 @@ export class Grid {
     rowEl.classList.toggle("masu-loading", row === null);
     rowEl.setAttribute("aria-busy", row === null ? "true" : "false");
 
+    const flashing = row !== null && this.flashing(row[0]);
+    rowEl.classList.toggle("masu-changed", flashing);
+
     const cells = rowEl.children;
     this.columns.forEach((column, col) => {
       const cell = cells[col] as HTMLElement;
@@ -268,6 +288,14 @@ export class Grid {
         cell.classList.toggle("masu-null", value === null);
       }
     });
+  }
+
+  private flashing(id: unknown): boolean {
+    const until = this.flash.get(String(id));
+    if (until === undefined) return false;
+    if (performance.now() <= until) return true;
+    this.flash.delete(String(id));
+    return false;
   }
 
   private markRow(rowEl: RowElement, index: number, selection: Rect | null): void {
@@ -351,22 +379,36 @@ export class Grid {
 
   private planRequests(first: number, last: number): void {
     if (this.requestTimer) clearTimeout(this.requestTimer);
-    if (this.cache.missing(first, last, this.total).length === 0 && this.cache.missing(first - PREFETCH, last + PREFETCH, this.total).length === 0) return;
-    this.requestTimer = setTimeout(() => {
+    if (this.cache.missing(first - PREFETCH, last + PREFETCH, this.total).length === 0) {
+      this.stale = null;
+      return;
+    }
+    const ask = () => {
       this.requestTimer = null;
       for (const block of this.cache.missing(first - PREFETCH, last + PREFETCH, this.total)) this.request(block);
-    }, REQUEST_DELAY);
+    };
+    if (this.urgent) {
+      this.urgent = false;
+      ask();
+    } else {
+      this.requestTimer = setTimeout(ask, REQUEST_DELAY);
+    }
   }
 
   private request(block: number, then?: () => void): void {
-    const revision = this.revision;
-    this.cache.ask(block);
-    this.transport.push("masu:rows", { from: block * this.cache.size, count: this.cache.size }, (reply) => {
+    const cache = this.cache;
+    cache.ask(block);
+    this.transport.push("masu:rows", { from: block * cache.size, count: cache.size }, (reply) => {
       const answer = reply as unknown as BlockReply;
-      if (answer.revision !== this.revision || revision !== this.revision) {
-        this.cache.failed(block);
+      // An answer is good when it has the grid's revision now, whatever
+      // the revision was when the grid asked: under live changes the
+      // server is often a revision ahead of the question.
+      if (answer.revision !== this.revision) {
+        cache.failed(block);
+        this.schedule();
         return;
       }
+      if (cache !== this.cache) cache.failed(block);
       this.cache.store(answer.from, answer.rows);
       if (answer.rows.length === 0) this.cache.failed(block);
       if (answer.total !== this.total) this.total = answer.total;

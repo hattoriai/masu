@@ -56,6 +56,8 @@ export interface Config {
   query: QuerySpec;
   locale: string | null;
   searchable: boolean;
+  /** The ids of the rows that changed in this revision (Masu.Live). */
+  changed: unknown[];
   messages: Record<string, string>;
   initial: { from: number; rows: Row[] } | null;
 }

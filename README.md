@@ -13,6 +13,9 @@ app:
 * a `:col` slot for each column, with types that the browser formats in
   the locale (numbers, decimals to the last digit, dates and times) and
   cells of your own HEEx;
+* live rows: a grid that follows a PubSub topic shows the rows that
+  change on it as they change, in the place of each person's order and
+  filters, with a short highlight;
 * sorting by several columns, a search box, and filters that the
   LiveView sets;
 * columns that resize, and fit their content on a double click;
@@ -31,6 +34,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | --- | --- |
 | Rows | the rows on the screen and a few more are in the page; the others come from the server in blocks of a hundred as the person scrolls, once the scrolling pauses |
 | Sources | `rows={@users}` for a list; `source={query} repo={Repo}` for Ecto, where a sort is an `ORDER BY`, a filter and the search a `WHERE`, and each block a `LIMIT` and `OFFSET`; `Masu.Source` for your own |
+| Live rows | `live={{MyApp.PubSub, "orders"}}` and `Masu.Live.broadcast_upsert/3`: changes come into the person's query, a batch at a time, the scroll stays, the rows do not blink, the changed ones flash |
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
 | Sorting | a click on a header; with Shift, by several columns, numbered in the headers; text without case, empty values last |
@@ -145,6 +149,7 @@ in the same order.
   own HEEx.
 * [Sources](guides/sources.md): lists, Ecto queries and schemas, and
   sources of your own.
+* [Live rows](guides/live.md): a grid that follows a PubSub topic.
 * [Keyboard and copy](guides/keyboard.md): the keys, the selection, and
   what a copy gives.
 * [Testing](guides/testing.md): `Masu.Test` with `Phoenix.LiveViewTest`.
@@ -169,7 +174,8 @@ empties `priv/static` and writes the four files of the package:
 `masu.esm.js`, `masu.cjs.js`, `masu.css` and `masu-sumi.css`.
 
 `mix dev` runs `dev.exs`: a Phoenix endpoint with a grid of a hundred
-thousand made-up customers (`/`), the smallest grid (`/small`), and the
+thousand made-up customers (`/`), the smallest grid (`/small`), two
+thousand quotes whose prices change live (`/live`), and the
 Sumi theme at `/?theme=sumi` (and `&dark=1`). Every page takes a
 `locale` query param. Set `PORT` for another port. An esbuild watcher
 rebuilds the bundle, and the page reloads.

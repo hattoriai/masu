@@ -4,12 +4,11 @@ Known gaps in Masu, each to become an issue. The first ones are the rest
 of the first release: a grid that a team coming from AG Grid or TanStack
 Table finds complete.
 
-## Live rows over PubSub
+## Live rows: keep the row the person reads
 
-`live={{MyApp.PubSub, "orders"}}`: rows inserted, changed and deleted on
-the topic come into the rows on the screen, with a short highlight, and
-the count changes, without a new query. The grid keeps the person's
-place: a row inserted above the screen does not move the rows they read.
+A live change keeps the scroll, so a row inserted above the screen moves
+the rows below it down by one. Keep the first row on the screen in its
+place instead (by its id), as a feed does.
 
 ## A filter menu on each column
 

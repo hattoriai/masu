@@ -49,3 +49,10 @@ A copy takes at most ten thousand rows. When the browser lacks some of
 them, it asks the server, and writes the clipboard when they come;
 Firefox and Safari may refuse to write it that late, and the grid then
 says the rows could not be copied.
+
+## Live changes to a large list
+
+A grid of a list takes a batch of changes by finding each row by its id
+and applying the query again: a fifth of a second for a hundred thousand
+rows. For a list that large that changes often, use an Ecto source,
+which asks the database instead.

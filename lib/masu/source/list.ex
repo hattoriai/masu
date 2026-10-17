@@ -46,6 +46,28 @@ defmodule Masu.Source.List do
   @impl true
   def supports?(_state, _column), do: true
 
+  # A changed row takes the place of the row with its id, a new one goes
+  # at the end, and a deleted one leaves.
+  @impl true
+  def change(%{all: rows} = state, changes, row_id) do
+    rows = Enum.reduce(changes, rows, &apply_change(&1, &2, row_id))
+    %{state | all: rows}
+  end
+
+  defp apply_change({:upsert, row}, rows, row_id) do
+    id = row_id.(row)
+
+    case Enum.find_index(rows, &(row_id.(&1) == id)) do
+      nil -> rows ++ [row]
+      index -> List.replace_at(rows, index, row)
+    end
+  end
+
+  defp apply_change({:delete, row_or_id}, rows, row_id) do
+    id = if is_map(row_or_id), do: row_id.(row_or_id), else: row_or_id
+    Enum.reject(rows, &(row_id.(&1) == id))
+  end
+
   defp filter(rows, [], _columns), do: rows
 
   defp filter(rows, filters, columns) do

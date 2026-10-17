@@ -41,10 +41,25 @@ defmodule Masu.Grid do
 
   @impl true
   def mount(socket) do
-    {:ok, assign(socket, source: nil, input: nil, revision: 0, initial: nil)}
+    {:ok,
+     assign(socket,
+       source: nil,
+       input: nil,
+       revision: 0,
+       initial: nil,
+       followed: nil,
+       changed: []
+     )}
   end
 
   @impl true
+  def update(%{masu_changes: true}, socket) do
+    case Masu.Live.take(socket.assigns.id) do
+      [] -> {:ok, socket}
+      changes -> {:ok, take_changes(socket, changes)}
+    end
+  end
+
   def update(assigns, socket) do
     socket = assign(socket, Map.drop(assigns, [:input]))
     columns = Enum.map(assigns.col, &Column.new/1)
@@ -56,7 +71,39 @@ defmodule Masu.Grid do
         true -> assign(socket, columns: supported(socket.assigns.source, columns))
       end
 
-    {:ok, socket}
+    {:ok, follow(socket)}
+  end
+
+  # The topic of `live`, followed in the connected LiveView only.
+  defp follow(%{assigns: %{live: live, followed: live}} = socket), do: socket
+
+  defp follow(socket) do
+    if connected?(socket) do
+      :ok = Masu.Live.follow(socket.assigns.id, socket.assigns.followed, socket.assigns.live)
+      assign(socket, followed: socket.assigns.live)
+    else
+      socket
+    end
+  end
+
+  # Changes from the topic: the source takes them and applies the query
+  # again; the browser asks again for the rows it shows, and highlights
+  # the changed ones.
+  defp take_changes(socket, changes) do
+    %{source: source, query: query, columns: columns, revision: revision} = socket.assigns
+    row_id = row_id(socket.assigns)
+    source = source |> Source.change(changes, row_id) |> Source.prepare(query, columns)
+
+    changed =
+      for {:upsert, row} <- changes, uniq: true, do: Value.to_wire(row_id.(row))
+
+    assign(socket,
+      source: source,
+      total: Source.count(source),
+      revision: revision + 1,
+      initial: nil,
+      changed: changed
+    )
   end
 
   defp start(socket, input, columns) do
@@ -90,7 +137,8 @@ defmodule Masu.Grid do
       columns: columns,
       total: Source.count(source),
       revision: socket.assigns.revision + 1,
-      initial: nil
+      initial: nil,
+      changed: []
     )
   end
 
@@ -127,7 +175,8 @@ defmodule Masu.Grid do
             query: query,
             total: Source.count(source),
             revision: revision + 1,
-            initial: nil
+            initial: nil,
+            changed: []
           )
 
         reply =
@@ -155,9 +204,11 @@ defmodule Masu.Grid do
   end
 
   defp encode_rows(rows, assigns) do
-    row_id = assigns.row_id || (&default_row_id/1)
+    row_id = row_id(assigns)
     Enum.map(rows, fn row -> [Value.to_wire(row_id.(row)) | cells(assigns.columns, row)] end)
   end
+
+  defp row_id(assigns), do: assigns.row_id || (&default_row_id/1)
 
   defp cells(columns, row) do
     Enum.map(columns, fn
@@ -284,6 +335,7 @@ defmodule Masu.Grid do
       "query" => Query.to_wire(assigns.query),
       "locale" => assigns.locale,
       "searchable" => assigns.searchable,
+      "changed" => assigns.changed,
       "messages" => assigns.messages,
       "initial" =>
         assigns.initial && %{"from" => 0, "rows" => encode_rows(assigns.initial, assigns)}

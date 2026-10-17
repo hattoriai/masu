@@ -20,3 +20,8 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   range as tab-separated text that spreadsheets paste.
 - Cells formatted for the locale: numbers, decimals, dates and times.
 - `Masu.Test`, to read and query a grid in `Phoenix.LiveViewTest`.
+- Live rows: `live={{pubsub, topic}}`, the `Masu.Live` hook, and
+  `Masu.Live.broadcast_upsert/3` and `broadcast_delete/3`. A grid takes
+  the changes of its topic into the person's query, a batch at a time;
+  the browser keeps the scroll and the rows on the screen until the new
+  ones come, and flashes the changed rows.

@@ -18,6 +18,9 @@ defmodule MasuTest.Router do
     pipe_through(:browser)
     live("/people", MasuTest.PeopleLive)
     live("/orders", MasuTest.OrdersLive)
+    live("/live/people", MasuTest.LivePeopleLive)
+    live("/live/orders", MasuTest.LiveOrdersLive)
+    live("/live/no-hook", MasuTest.NoHookLive)
   end
 end
 

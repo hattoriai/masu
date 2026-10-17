@@ -328,6 +328,7 @@
   .masu *::before,
   .masu *::after {
     transition: none !important;
+    animation: none !important;
   }
 }
 
@@ -335,4 +336,18 @@
 .masu-busy .masu-body {
   opacity: 0.6;
   transition: opacity var(--masu-transition) 150ms;
+}
+
+/* A row that changed on the grid's topic (Masu.Live), for a moment. */
+.masu-body > .masu-row.masu-changed {
+  animation: masu-changed 1.6s ease-out;
+}
+
+@keyframes masu-changed {
+  from {
+    background: color-mix(in oklab, var(--masu-accent) 22%, transparent);
+  }
+  to {
+    background: transparent;
+  }
 }

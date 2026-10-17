@@ -22,6 +22,9 @@ defmodule Masu.Test do
   person: the source sorts, filters and counts, and `rows/3` reads the
   rows it gives.
 
+  Changes broadcast with `Masu.Live` before a call are in the rows it
+  reads: the call waits for the LiveView to take them.
+
   A row is a map of each column's key to its value as the browser gets
   it: numbers and booleans as they are, decimals as strings, dates and
   times in ISO 8601, and for a column with content the text of its cell.
@@ -135,6 +138,10 @@ defmodule Masu.Test do
   end
 
   defp event(view, id, name, payload) do
+    # A render first: changes broadcast before this call (Masu.Live) reach
+    # the grid before the event does.
+    LiveViewTest.render(view)
+
     view
     |> LiveViewTest.element("##{id}")
     |> LiveViewTest.render_hook(name, payload)

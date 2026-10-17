@@ -123,6 +123,7 @@ defmodule MasuDev.Layouts do
         links: [
           {"Customers", "/"},
           {"Small", "/small"},
+          {"Live", "/live"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -257,6 +258,96 @@ defmodule MasuDev.SmallLive do
   end
 end
 
+defmodule MasuDev.QuotesLive do
+  @moduledoc """
+  Live rows: two thousand quotes, and a ticker that changes twenty prices
+  every 700 ms (one of them among the first ten, so that a change is
+  always on the first screen) and broadcasts them on a PubSub topic
+  (Masu.Live).
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  on_mount(Masu.Live)
+
+  @symbols for a <- ?A..?Z, b <- ?A..?Z, c <- ?A..?C, do: <<a, b, c>>
+
+  @impl true
+  def mount(params, _session, socket) do
+    quotes = @symbols |> Enum.take(2000) |> Enum.with_index(1) |> Enum.map(&new_quote/1)
+    if connected?(socket), do: :timer.send_interval(700, :tick)
+
+    {:ok,
+     assign(socket,
+       quotes: quotes,
+       prices: Map.new(quotes, &{&1.id, &1}),
+       ticks: 0,
+       locale: params["locale"] || "en-GB"
+     )}
+  end
+
+  defp new_quote({symbol, id}) do
+    price = Decimal.new(rem(id * 7919, 90_000) + 1000) |> Decimal.div(100) |> Decimal.round(2)
+
+    %{
+      id: id,
+      symbol: symbol,
+      price: price,
+      change: Decimal.new("0.00"),
+      volume: rem(id * 104_729, 1_000_000),
+      updated_at: DateTime.utc_now(:second)
+    }
+  end
+
+  @impl true
+  def handle_info(:tick, socket) do
+    %{prices: prices, ticks: ticks} = socket.assigns
+    ids = [rem(ticks, 10) + 1 | Enum.map(1..19, fn _ -> :rand.uniform(map_size(prices)) end)]
+
+    prices =
+      Enum.reduce(ids, prices, fn id, prices ->
+        row = Map.fetch!(prices, id)
+        change = Decimal.new(:rand.uniform(201) - 101) |> Decimal.div(100) |> Decimal.round(2)
+
+        row = %{
+          row
+          | price: row.price |> Decimal.add(change) |> Decimal.round(2),
+            change: change,
+            volume: row.volume + :rand.uniform(500),
+            updated_at: DateTime.utc_now(:second)
+        }
+
+        Masu.Live.broadcast_upsert(MasuDev.PubSub, "quotes", row)
+        Map.put(prices, id, row)
+      end)
+
+    {:noreply, assign(socket, prices: prices, ticks: ticks + 1)}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="quotes-label">Quotes</h1>
+    <.data_grid
+      id="quotes"
+      rows={@quotes}
+      live={{MasuDev.PubSub, "quotes"}}
+      label_id="quotes-label"
+      searchable
+      height="36rem"
+      locale={@locale}
+    >
+      <:col field={:symbol} width={110} />
+      <:col field={:price} type={:decimal} />
+      <:col field={:change} type={:decimal} />
+      <:col field={:volume} type={:integer} />
+      <:col field={:updated_at} type={:datetime} label="Updated" />
+    </.data_grid>
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -274,6 +365,7 @@ defmodule MasuDev.Router do
 
     live("/", MasuDev.CustomersLive)
     live("/small", MasuDev.SmallLive)
+    live("/live", MasuDev.QuotesLive)
   end
 end
 

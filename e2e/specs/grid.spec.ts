@@ -116,3 +116,28 @@ test("a small grid takes the place of a plain table", async ({ page }) => {
   await expect(page.locator("#small .masu-body .masu-row")).toHaveCount(8);
   expect(await rowText(page, "small", 7)).toEqual(["Anita Liskov", "anita.liskov8@example.com"]);
 });
+
+test.describe("live rows", () => {
+  test("a row that changes on the topic flashes, and the person keeps their place", async ({ page }) => {
+    await openPage(page, "/live");
+    await expect(grid(page, "quotes")).toHaveAttribute("aria-rowcount", "2001");
+    await expect(page.locator("#quotes .masu-changed").first()).toBeAttached({ timeout: 10_000 });
+
+    await grid(page, "quotes").evaluate((el) => (el.scrollTop = 36 * 600));
+    const before = await grid(page, "quotes").evaluate((el) => el.scrollTop);
+    await expect(page.locator("#quotes .masu-changed").first()).toBeAttached({ timeout: 10_000 });
+    expect(await grid(page, "quotes").evaluate((el) => el.scrollTop)).toBe(before);
+    await expect(grid(page, "quotes")).toHaveAttribute("aria-rowcount", "2001");
+  });
+
+  test("a sorted grid stays sorted as the rows change", async ({ page }) => {
+    await openPage(page, "/live");
+    const price = header(page, "quotes", "price");
+    await price.click();
+    await price.click();
+    await settled(page, "quotes");
+    await expect(page.locator("#quotes .masu-changed").first()).toBeAttached({ timeout: 10_000 });
+    const top = await Promise.all([0, 1, 2, 3, 4].map(async (i) => Number((await rowText(page, "quotes", i))[1].replace(/,/g, ""))));
+    expect([...top].sort((a, b) => b - a)).toEqual(top);
+  });
+});

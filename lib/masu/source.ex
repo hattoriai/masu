@@ -46,7 +46,17 @@ defmodule Masu.Source do
   """
   @callback supports?(state(), Column.t()) :: boolean()
 
-  @optional_callbacks supports?: 2
+  @doc """
+  Takes changes into the source's rows (see `Masu.Live`): `{:upsert, row}`
+  and `{:delete, row_or_id}`, oldest first, with the grid's function that
+  gives a row's id. The grid calls `prepare/3` after it.
+
+  A source that reads its rows anew for each query (as a database does)
+  does not need it: without it, the grid asks the query again.
+  """
+  @callback change(state(), [Masu.Live.change()], (term() -> term())) :: state()
+
+  @optional_callbacks supports?: 2, change: 3
 
   @type t :: %__MODULE__{module: module(), state: state()}
 
@@ -93,6 +103,14 @@ defmodule Masu.Source do
   @spec rows(t(), non_neg_integer(), pos_integer()) :: [term()]
   def rows(%__MODULE__{module: module, state: state}, offset, limit),
     do: module.rows(state, offset, limit)
+
+  @doc false
+  @spec change(t(), [Masu.Live.change()], (term() -> term())) :: t()
+  def change(%__MODULE__{module: module, state: state} = source, changes, row_id) do
+    if function_exported?(module, :change, 3),
+      do: %{source | state: module.change(state, changes, row_id)},
+      else: source
+  end
 
   @doc false
   @spec supports?(t(), Column.t()) :: boolean()
