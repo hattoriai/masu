@@ -7,6 +7,14 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-18
+
+### Added
+
+- A cell's menu compares text (Greater than, Less than, At least, At
+  most) when the column's filters, or its source's, name the
+  comparisons: a SQL client's text compares in its order.
+
 ## [0.1.1] - 2026-10-18
 
 ### Added
