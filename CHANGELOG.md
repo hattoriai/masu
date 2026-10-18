@@ -18,6 +18,10 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `raw` on a column shows its values as the source gives them (`12345`,
   `2026-10-18T08:00:00Z`), not formatted for the locale; the column
   keeps its type for its alignment, filters and editor.
+- A cell's menu filters by the cell's value as a bound (Greater than,
+  Less than, At least, At most; After, Before... for dates and times) in
+  a column of numbers or dates, and by a part (Contains) in a column of
+  text, as far as the column's filters go.
 - `Masu.Messages.defaults/0`: every word of a grid, the browser's
   included, so that an app in another language can translate them all
   and test that none is left in English. The words go to the browser

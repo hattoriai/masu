@@ -27,6 +27,7 @@ import type {
   BlockReply,
   CellValue,
   ColumnConfig,
+  ColumnType,
   Config,
   FilterSpec,
   Options,
@@ -1343,6 +1344,22 @@ export class Grid {
             name: "exclude-value",
             label: this.message("exclude_value", { label: shown }),
             run: filter({ key: column.key, op: "neq", value }),
+          });
+        }
+        // The value as a bound, for the columns that have an order; a
+        // text's value as a part of others.
+        if (ORDERED.includes(column.type)) {
+          const timely = column.type === "date" || column.type === "datetime" || column.type === "time";
+          for (const op of ["gt", "lt", "gte", "lte"] as const) {
+            if (!allows(column, op)) continue;
+            const words = this.message(`filter_${op}${timely ? "_time" : ""}`, { label: shown });
+            more.push({ name: `filter-${op}`, label: words, run: filter({ key: column.key, op, value }) });
+          }
+        } else if (column.type === "text" && allows(column, "contains")) {
+          more.push({
+            name: "filter-contains",
+            label: this.message("filter_contains", { label: shown }),
+            run: filter({ key: column.key, op: "contains", value }),
           });
         }
       }
@@ -3799,6 +3816,9 @@ function toolbarButton(label: string, className: string, icon: string): HTMLButt
   return button;
 }
 
+/** The types whose values have an order: a cell's menu filters by its value as a bound. */
+const ORDERED: ColumnType[] = ["integer", "number", "decimal", "date", "datetime", "time"];
+
 const DEFAULT_MESSAGES: Record<string, string> = {
   row: "{count} row",
   rows: "{count} rows",
@@ -3918,6 +3938,15 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   exclude_value: "Exclude {label}",
   filter_empty: "Filter by empty",
   filter_not_empty: "Filter by not empty",
+  filter_gt: "Greater than {label}",
+  filter_lt: "Less than {label}",
+  filter_gte: "At least {label}",
+  filter_lte: "At most {label}",
+  filter_gt_time: "After {label}",
+  filter_lt_time: "Before {label}",
+  filter_gte_time: "On or after {label}",
+  filter_lte_time: "On or before {label}",
+  filter_contains: "Contains {label}",
   sort_asc: "Sort ascending",
   sort_desc: "Sort descending",
   action_failed: "This action no longer applies",

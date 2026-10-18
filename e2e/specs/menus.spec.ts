@@ -206,3 +206,33 @@ test("in a short box that cuts its overflow, a menu and a panel float above the 
   await expect(page.locator("#stats dt")).toHaveText(["Lowest", "Highest", "Average"]);
   await whole("#menus-action-panel");
 });
+
+test("a cell of numbers filters by its value as a bound, and one of text by a part", async ({ page }) => {
+  const [name, , , revenue] = await rowText(page, "menus", 0);
+
+  await cell(page, 0, 3).click({ button: "right" });
+  await expect(menu(page).getByRole("menuitem")).toContainText([
+    `Filter by ${revenue}`,
+    `Exclude ${revenue}`,
+    `Greater than ${revenue}`,
+    `Less than ${revenue}`,
+    `At least ${revenue}`,
+    `At most ${revenue}`,
+    "Filter by empty",
+  ]);
+  await item(page, `At least ${revenue}`).click();
+  await settled(page, "menus");
+  await expect(page.locator("#menus .masu-chip-text")).toHaveText([`Revenue at least ${revenue}`]);
+  const bound = Number(revenue.replace(/,/g, ""));
+  for (let row = 0; row < 3; row++) {
+    const text = (await rowText(page, "menus", row))[3];
+    if (text !== undefined) expect(Number(text.replace(/,/g, ""))).toBeGreaterThanOrEqual(bound);
+  }
+
+  await cell(page, 0, 0).click({ button: "right" });
+  await expect(item(page, `Greater than ${name}`)).toHaveCount(0);
+  const [first] = await rowText(page, "menus", 0);
+  await item(page, `Contains ${first}`).click();
+  await settled(page, "menus");
+  await expect(page.locator("#menus .masu-chip-text")).toContainText([`Name contains ${first}`]);
+});

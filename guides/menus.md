@@ -43,6 +43,8 @@ selected keeps the range: the menu is for it.
 | Copy with headers | the same, with the labels of the columns first |
 | Filter by *value* | the rows with the cell's value in its column (an enum's: that value ticked) |
 | Exclude *value* | the rows without it |
+| Greater than, Less than, At least, At most *value* | for a number, a decimal, a date or a time (After, Before, On or after, On or before): the value as a bound |
+| Contains *value* | for text: the rows whose value has the cell's in it |
 | Filter by empty, by not empty | the rows with no value in the column, or with one |
 | Sort ascending, descending | sorts by the column |
 
