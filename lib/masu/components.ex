@@ -49,7 +49,9 @@ defmodule Masu.Components do
       a function of the row that says whether its cell edits;
     * `values` - the values of an `:enum` column, which its editor offers;
     * `decimals` - the digits after the point of a `:decimal` or `:number`
-      column, whatever the value has.
+      column, whatever the value has;
+    * `filters` - the `Masu.Filter` operators the column offers, of its
+      type: those the app runs, in a controlled grid (`on_query`).
 
   A `:col` with content renders each cell, with the row as `:let`:
 
@@ -315,6 +317,7 @@ defmodule Masu.Components do
     attr :hidden, :boolean
     attr :pinned, :atom
     attr :aggregate, :any
+    attr :filters, :list
   end
 
   slot :header_action,

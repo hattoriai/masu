@@ -83,6 +83,9 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   class or `data-theme="dark"`; Tailwind in the Theming guide, and Lotus
   Web's results table as its worked example, compared pixel for pixel in
   e2e.
+- A column's own filters: `filters` on a `:col` (or a column of
+  `columns`) limits its filters to those operators, as a source's
+  `filters/2` does, for a controlled grid whose app runs fewer.
 - Slow sources: `load={:async}` reads a source in a task (a new
   query's first rows and count, a block, a page, a count): the LiveView
   answers meanwhile, the grid says "Running…" with Stop and keeps its

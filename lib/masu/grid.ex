@@ -769,7 +769,14 @@ defmodule Masu.Grid do
   end
 
   # The operators its source filters a column by; none: it does not filter.
-  defp with_filter_ops(column, nil), do: column
+  # A source's operators, of the column's own (`filters`) when it has them.
+  defp with_filter_ops(%Column{filter_ops: nil} = column, nil), do: column
+  defp with_filter_ops(column, nil), do: with_filter_ops(column, column.filter_ops)
+
+  defp with_filter_ops(%Column{filter_ops: own} = column, ops)
+       when is_list(own) and own != ops,
+       do: with_filter_ops(%{column | filter_ops: nil}, Enum.filter(ops, &(&1 in own)))
+
   defp with_filter_ops(column, []), do: %{column | filter_ops: [], filterable: false}
   defp with_filter_ops(column, ops), do: %{column | filter_ops: ops}
 

@@ -255,8 +255,16 @@ end
   * `multi_sort={false}` sorts by one column at a time, as most query
     tools do; a click on a header turns its order, and a third takes it
     away.
-  * The filter menu offers the operators the app runs with the
-    `columns`' types, or a source's `filters/2` (see above).
+  * Each column offers the filters of its type. An app whose queries
+    run fewer gives each column the operators it runs, with `filters` (a
+    `:col`'s attribute, or a key of a column of `columns`): the filter
+    menu, the chips and the menu of a cell offer only those, and the
+    grid refuses the others before they reach `on_query`. Masu adds
+    "between" for a column with "at least" and "at most":
+
+    ```elixir
+    columns = for name <- result.columns, do: %{key: name, label: name, filters: [:eq, :neq, :gt, :lt, :gte, :lte, :contains, :is_nil, :not_nil]}
+    ```
 
 A controlled grid does not take what reads or writes rows beyond those it
 is given: `changeset`, `update`, `create`, `delete`, `selectable`,

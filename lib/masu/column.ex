@@ -28,6 +28,12 @@ defmodule Masu.Column do
   row that the browser shows; the type still says how it sorts and
   filters.
 
+  `filters`, a list of `Masu.Filter` operators, limits a column's filters
+  to those: the operators the app runs, in a controlled grid
+  (`on_query`) whose app's queries have fewer than Masu (as a source's
+  `c:Masu.Source.filters/2` does). Masu adds `:between` for a column that
+  has `:gte` and `:lte`.
+
   `type={:auto}` is a column whose type the grid learns from its values,
   in the first block of rows of its source: integers make an `:integer`
   column, `Decimal`s a `:decimal` one, `Date`s a `:date` one, and so on;
@@ -190,9 +196,32 @@ defmodule Masu.Column do
       hidden: Map.get(attrs, :hidden) == true,
       pinned: pinned!(Map.get(attrs, :pinned)),
       aggregate: aggregate!(Map.get(attrs, :aggregate)),
+      filter_ops: filters!(Map.get(attrs, :filters), type),
       slot: if(Map.get(attrs, :inner_block), do: attrs)
     }
   end
+
+  # The operators the app runs for the column (a controlled grid's): those
+  # of its type, and between of at least and at most.
+  defp filters!(nil, _type), do: nil
+
+  defp filters!(ops, type) when is_list(ops) do
+    case ops -- Masu.Filter.ops() do
+      [] ->
+        Masu.Filter.offered(ops, type)
+
+      unknown ->
+        raise ArgumentError,
+              "a Masu column's filters are operators of Masu.Filter, got: #{inspect(unknown)}"
+    end
+  end
+
+  defp filters!(other, _type),
+    do:
+      raise(
+        ArgumentError,
+        "a Masu column's filters is a list of operators, got: #{inspect(other)}"
+      )
 
   defp decimals!(nil), do: nil
   defp decimals!(n) when is_integer(n) and n >= 0 and n <= 20, do: n
