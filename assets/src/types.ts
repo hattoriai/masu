@@ -35,6 +35,8 @@ export interface ColumnConfig {
   values?: CellValue[] | null;
   /** The digits after the point a number shows, whatever the value has. */
   decimals?: number | null;
+  /** Its values as the server sends them, not formatted for the locale. */
+  raw?: boolean;
   /** The server renders the cell's HTML (with the value, `[html, value]`, when editable). */
   html: boolean;
   /** Kept in view while the others scroll sideways. */

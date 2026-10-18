@@ -3,6 +3,7 @@
 // Each is a small dialog under its button; Escape or a click away closes
 // it, and the focus goes back to the button.
 
+import { floats, follow, lift, place as placeAt } from "./float";
 import { moveKey } from "./layout";
 import type { CatalogColumn, SavedView } from "./types";
 
@@ -39,6 +40,8 @@ class Panel {
       if (!this.el.contains(target) && !anchor.contains(target)) close();
     });
     root.appendChild(this.el);
+    lift(this.el);
+    this.cleanups.push(follow(() => this.place(root)));
   }
 
   destroy(): void {
@@ -47,11 +50,14 @@ class Panel {
     this.el.remove();
   }
 
-  /** Under its button, inside the grid's element, at the end of the row. */
+  /** Under its button (over it, if there is more room there), its end at the button's; in a browser without popovers, inside the grid's element. */
   protected place(root: HTMLElement): void {
-    const box = root.getBoundingClientRect();
     const button = this.anchor.getBoundingClientRect();
     const width = this.el.offsetWidth;
+    if (floats(this.el)) {
+      return placeAt(this.el, { left: button.right - width, below: button.bottom + 4, above: button.top - 4 });
+    }
+    const box = root.getBoundingClientRect();
     const left = Math.max(0, Math.min(button.right - box.left - width, box.width - width));
     this.el.style.top = `${button.bottom - box.top + 4}px`;
     this.el.style.insetInlineStart = `${left}px`;

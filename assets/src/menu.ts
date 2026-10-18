@@ -4,6 +4,7 @@
 // lists its values with how many rows have each, asked of the server,
 // with a search box when there are many.
 
+import { floats, follow, lift, place as placeAt } from "./float";
 import { arity, inputType, makeFilter, opLabel, opsFor, type Op } from "./filters";
 import type { ColumnConfig, FilterSpec } from "./types";
 
@@ -134,7 +135,9 @@ export class FilterMenu {
 
     if (column.filterable) this.renderFields();
     host.root.appendChild(this.el);
+    lift(this.el);
     this.place(anchor);
+    this.cleanups.push(follow(() => this.place(anchor)));
     this.focusFirst();
   }
 
@@ -149,10 +152,11 @@ export class FilterMenu {
     this.cleanups.push(() => target.removeEventListener(type, listener));
   }
 
-  /** Under the header, inside the grid's element. */
+  /** Under the header (over it, if there is more room there); in a browser without popovers, inside the grid's element. */
   private place(anchor: HTMLElement): void {
-    const root = this.host.root.getBoundingClientRect();
     const cell = anchor.getBoundingClientRect();
+    if (floats(this.el)) return placeAt(this.el, { left: cell.left, below: cell.bottom + 4, above: cell.top - 4 });
+    const root = this.host.root.getBoundingClientRect();
     const width = this.el.offsetWidth;
     const left = Math.max(0, Math.min(cell.left - root.left, root.width - width));
     this.el.style.top = `${cell.bottom - root.top + 4}px`;

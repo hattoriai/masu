@@ -23,7 +23,7 @@ defaults, so that a page with all three looks like one thing.
 | `--masu-background`, `--masu-surface` | the rows, and the surfaces |
 | `--masu-border`, `--masu-rule` | the frame, and the lines between rows |
 | `--masu-grid-border`, `--masu-grid-radius`, `--masu-grid-shadow` | the grid's box (a 1px `--masu-border` with `--masu-radius` unless set; `none` and `0` for a table without one) |
-| `--masu-header-background`, `--masu-header-text` | the header |
+| `--masu-header-background`, `--masu-header-text` | the header (`--masu-surface` and `--masu-text` unless set) |
 | `--masu-header-height` | the header's row (the rows' height unless set) |
 | `--masu-header-font-size`, `--masu-header-font-weight`, `--masu-header-text-transform`, `--masu-header-letter-spacing` | the header's type |
 | `--masu-header-padding` | a header cell's padding (the cells' unless set) |
@@ -32,8 +32,8 @@ defaults, so that a page with all three looks like one thing.
 | `--masu-row-background`, `--masu-row-alt-background` | the rows, and every second row (zebra rows: the second, the fourth, as `:nth-child(even)` counts) |
 | `--masu-row-border` | the line under each row (a 1px line of `--masu-rule` unless set; `none` gives a row its whole height) |
 | `--masu-row-hover`, `--masu-cell-hover` | a row and a cell under the pointer, over the row's own background |
-| `--masu-selection`, `--masu-active` | a selected range, and the line of the active cell |
-| `--masu-accent`, `--masu-accent-text`, `--masu-focus-ring` | the focus |
+| `--masu-selection`, `--masu-active` | a selected range, and the line of the active cell (`--masu-accent` unless set) |
+| `--masu-accent`, `--masu-accent-text`, `--masu-focus-ring` | the focus (a ring of `--masu-accent` unless set) |
 | `--masu-loading` | the bars of a row that is coming |
 | `--masu-invalid` | the line of a cell the server refused |
 | `--masu-avatar-size` | the avatars of the others (Collaboration) |

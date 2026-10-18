@@ -4,6 +4,8 @@
 // between the items, Enter or Space runs one, a letter goes to the next
 // item that starts with it; Escape, Tab or a click away closes it.
 
+import { floats, follow, lift, place as placeAt } from "./float";
+
 export interface MenuItem {
   label: string;
   run(): void;
@@ -65,7 +67,17 @@ export class ActionMenu {
     });
 
     host.root.appendChild(this.el);
+    lift(this.el);
     this.place(at);
+    // The point moves with the grid when the page scrolls.
+    const root = host.root.getBoundingClientRect();
+    const offset = { x: at.x - root.left, y: at.y - root.top };
+    this.cleanups.push(
+      follow(() => {
+        const moved = host.root.getBoundingClientRect();
+        this.place({ x: moved.left + offset.x, y: moved.top + offset.y });
+      }),
+    );
     this.items[0]?.focus();
   }
 
@@ -79,8 +91,9 @@ export class ActionMenu {
     this.cleanups.push(() => target.removeEventListener(type, listener));
   }
 
-  /** At the point, inside the grid's element, as far as it fits. */
+  /** At the point, as far as it fits; in a browser without popovers, inside the grid's element. */
   private place(at: { x: number; y: number }): void {
+    if (floats(this.el)) return placeAt(this.el, { left: at.x, below: at.y, above: at.y });
     const root = this.host.root.getBoundingClientRect();
     const width = this.el.offsetWidth;
     const left = Math.max(0, Math.min(at.x - root.left, root.width - width));

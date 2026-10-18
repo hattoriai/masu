@@ -137,6 +137,23 @@ defmodule Masu.AsyncTest do
              ]
     end
 
+    test "no groups: the LiveView runs the query" do
+      {:ok, view, html} = live(build_conn(), "/controlled")
+      render_async(view)
+
+      [json] =
+        html
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("#people")
+        |> LazyHTML.attribute("data-masu")
+
+      refute JSON.decode!(json)["groupable"]
+
+      group(view, "people", ["age"])
+      render_async(view)
+      assert groups(view, "people") == []
+    end
+
     test "one sort at a time (multi_sort={false})" do
       {:ok, view, _html} = live(build_conn(), "/controlled")
       render_async(view)

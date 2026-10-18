@@ -15,11 +15,32 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `columns`) limits its filters to those operators, as a source's
   `filters/2` does, for a controlled grid whose app runs fewer.
 
+- `raw` on a column shows its values as the source gives them (`12345`,
+  `2026-10-18T08:00:00Z`), not formatted for the locale; the column
+  keeps its type for its alignment, filters and editor.
+- `Masu.Messages.defaults/0`: every word of a grid, the browser's
+  included, so that an app in another language can translate them all
+  and test that none is left in English. The words go to the browser
+  apart from the grid's config (`data-masu-messages`), once.
+
 ### Fixed
 
 - `height` is the whole grid's: the rows take the room the toolbar, the
   chips and the status line leave. A percentage (`height="100%"`) fills
   the grid's container; the rows had no height at all.
+- Menus and panels float above the page (the popover top layer), under
+  their header or cell, or over it when there is more room there, and
+  inside the viewport: a box around the grid that hides its overflow no
+  longer cuts them.
+- Masu's buttons, fields and selects keep their look next to an app's
+  form styles (Tailwind's preflight and `@tailwindcss/forms`, which came
+  later and won).
+- Tokens made of others (`--masu-active`, `--masu-focus-ring`,
+  `--masu-header-background`...) follow a grid's own `--masu-accent`,
+  `--masu-surface`...: set on a class of the grid, they stayed Masu's
+  blue.
+- A controlled grid (`on_query`) offers no "Group by": its app runs the
+  query.
 
 ## [0.1.0] - 2026-10-17
 

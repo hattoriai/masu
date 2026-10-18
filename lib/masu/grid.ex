@@ -46,28 +46,11 @@ defmodule Masu.Grid do
   # Rows open on their detail at once: opening one more closes the first.
   @max_details 50
 
-  @messages %{
-    "search" => "Search",
-    "empty" => "No rows",
-    "row" => "{count} row",
-    "rows" => "{count} rows",
-    "loading" => "Loading",
-    "people" => "Also here",
-    "follow" => "Follow {label}",
-    "view_dropped" => "Part of this view no longer applies: {label}",
-    "detail" => "Details",
-    "pages" => "Pages",
-    "page" => "Page",
-    "of_pages" => "of {count}",
-    "previous" => "Previous",
-    "next" => "Next",
-    "range" => "{first}–{last} of {count}",
-    "running" => "Running…",
-    "stop" => "Stop",
-    "retry" => "Run again",
-    "timeout" => "The query took too long",
-    "failed" => "The query failed: {label}"
-  }
+  # The words the server renders (Masu.Messages has all of them).
+  @messages Map.take(
+              Masu.Messages.defaults(),
+              ~w(search empty row rows loading people follow view_dropped detail pages page of_pages previous next range running stop retry timeout failed)
+            )
 
   @impl true
   def mount(socket) do
@@ -1118,7 +1101,9 @@ defmodule Masu.Grid do
           query
           | expanded: current.expanded,
             collapsed: if(same_filter?, do: current.collapsed, else: MapSet.new()),
-            sorts: if(socket.assigns.multi_sort, do: query.sorts, else: Enum.take(query.sorts, 1))
+            sorts:
+              if(socket.assigns.multi_sort, do: query.sorts, else: Enum.take(query.sorts, 1)),
+            groups: if(controlled?(socket.assigns), do: [], else: query.groups)
         }
 
         pending_query(socket, query) || run_query(socket, source, query, columns, revision)
@@ -1957,6 +1942,7 @@ defmodule Masu.Grid do
       phx-hook="Masu"
       phx-target={@myself}
       data-masu={config(assigns)}
+      data-masu-messages={JSON.encode!(@messages)}
       style={"height: #{@height}"}
       {@rest}
     >
@@ -2029,6 +2015,7 @@ defmodule Masu.Grid do
           :if={panel = panel_action(assigns)}
           id={"#{@id}-action-panel"}
           class="masu-menu masu-panel masu-action-panel"
+          popover="manual"
           role="dialog"
           aria-label={panel.label}
           tabindex="-1"
@@ -2236,7 +2223,6 @@ defmodule Masu.Grid do
       "changedBy" => assigns.changed_by,
       "locks" => locks?(assigns),
       "presence" => assigns.presence != nil,
-      "messages" => assigns.messages,
       "catalog" => Enum.map(Layout.all(assigns.layout, assigns.all_columns), &catalog_entry/1),
       "columnsMenu" => assigns.columns_menu,
       "view" => assigns.view_params,
@@ -2244,7 +2230,8 @@ defmodule Masu.Grid do
       "notice" => assigns.notice,
       "tree" => assigns.tree != nil or assigns.query.groups != [],
       "totals" => totals(assigns),
-      "groupable" => assigns.tree == nil,
+      # A controlled grid's app runs the query, and has no groups.
+      "groupable" => assigns.tree == nil and not controlled?(assigns),
       "export" => Enum.map(export_formats(assigns), &Atom.to_string/1),
       "cellMenu" => Enum.map(assigns.cell_menu, &Atom.to_string/1),
       "running" => running?(assigns),
@@ -2286,6 +2273,7 @@ defmodule Masu.Grid do
       "creatable" => column.creatable,
       "values" => column.values && Enum.map(column.values, &Value.to_wire/1),
       "decimals" => column.decimals,
+      "raw" => column.raw,
       "html" => column.slot != nil,
       "pinned" => column.pinned && Atom.to_string(column.pinned),
       "aggregate" => aggregate_name(column.aggregate)

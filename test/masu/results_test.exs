@@ -104,5 +104,12 @@ defmodule Masu.ResultsTest do
       assert Column.get(column, ["Ada", 36]) == 36
       assert Column.new(field: 2).key == "2"
     end
+
+    test "a raw column stays raw when it takes the type of its values" do
+      column = Column.new(field: 1, key: "id", type: :auto, raw: true)
+
+      assert %Column{type: :integer, raw: true} = Column.typed(column, :integer)
+      refute Column.new(field: 1).raw
+    end
   end
 end

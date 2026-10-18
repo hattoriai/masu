@@ -297,7 +297,7 @@ defmodule Masu.Components do
   attr :messages, :map,
     default: %{},
     doc:
-      "words that replace the built-in ones (`search`, `empty`, `rows`, `loading`; the pager's `previous`, `next`, `page`, `of_pages`, `range`)"
+      "words that replace the built-in ones, by key (`search`, `empty`, `rows`...): `Masu.Messages` has every key, for a grid in another language"
 
   attr :class, :any, default: nil, doc: "classes for the grid element"
   attr :rest, :global, doc: "attributes for the grid element"
@@ -317,6 +317,7 @@ defmodule Masu.Components do
     attr :editable, :any
     attr :values, :list
     attr :decimals, :integer
+    attr :raw, :boolean
     attr :hidden, :boolean
     attr :pinned, :atom
     attr :aggregate, :any

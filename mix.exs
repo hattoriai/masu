@@ -154,7 +154,8 @@ defmodule Masu.MixProject do
           Masu.Presence,
           Masu.Tree,
           Masu.Group,
-          Masu.Action
+          Masu.Action,
+          Masu.Messages
         ],
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],

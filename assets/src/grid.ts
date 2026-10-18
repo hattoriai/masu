@@ -13,6 +13,7 @@ import { BlockCache } from "./blocks";
 import { allows, describe, replaceFilter } from "./filters";
 import { fromTSV, inputText, invalid, matching, placePaste, sendValue, shownValue } from "./parse";
 import { FilterMenu } from "./menu";
+import { drop, floats, follow, lift, place as placeAt } from "./float";
 import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { moveKey, pins, scrollFor, visualLeft, type Pins } from "./layout";
@@ -119,6 +120,8 @@ export class Grid {
   /** Where the panel of an item (Masu.Action), which the server renders, goes: a header (row -1) or a cell. */
   private actionAnchor: { col: number; row: number; focus: boolean } | null = null;
   private wiredPanels = new WeakSet<HTMLElement>();
+  /** Places the server's panel again as the page scrolls, while it is open. */
+  private panelFollow: (() => void) | null = null;
   /** When a menu opened by its key: the browser follows the key with a contextmenu event, on the menu. */
   private menuKeyAt = 0;
   /** Where the pinned columns stick. */
@@ -396,6 +399,7 @@ export class Grid {
     this.patchObserver?.disconnect();
     this.editor?.input.remove();
     this.editor = null;
+    this.unfollowPanel();
     for (const cleanup of this.cleanups) cleanup();
     this.cleanups = [];
     this.observer?.disconnect();
@@ -686,7 +690,7 @@ export class Grid {
       const column = this.catalogColumn(key);
       const label = document.createElement("span");
       label.className = "masu-group-label";
-      const shown = column ? formatter(column.type, this.config.locale ?? undefined)(value) : String(value);
+      const shown = column ? formatter(column.type, this.config.locale ?? undefined, null, column.raw)(value) : String(value);
       label.textContent = `${column?.label ?? key}: ${value === null ? this.message("empty_value", {}) : shown}`;
       const counter = document.createElement("span");
       counter.className = "masu-group-count";
@@ -1085,7 +1089,7 @@ export class Grid {
       const col = this.columns.findIndex((column) => column.key === filter.key);
       const column = col >= 0 ? this.columns[col] : this.catalogColumn(filter.key);
       if (!column) return [];
-      const format = col >= 0 ? this.formatters[col] : formatter(column.type, this.config.locale ?? undefined);
+      const format = col >= 0 ? this.formatters[col] : formatter(column.type, this.config.locale ?? undefined, null, column.raw);
       const chip = document.createElement("span");
       chip.className = "masu-chip";
       const text = document.createElement("button");
@@ -1454,15 +1458,23 @@ export class Grid {
    */
   private placeActionPanel(): void {
     const panel = this.actionPanel();
-    if (!panel) return;
+    if (!panel) return this.unfollowPanel();
     const col = this.columns.findIndex((column) => column.key === panel.dataset.key);
     const anchor = this.actionAnchor ?? { col: Math.max(col, 0), row: -1, focus: false };
     const target = this.cellElement({ row: anchor.row, col: anchor.col }) ?? this.cellElement({ row: -1, col: anchor.col });
-    const root = this.el.getBoundingClientRect();
     const box = (target ?? this.gridEl).getBoundingClientRect();
-    const left = Math.max(0, Math.min(box.left - root.left, root.width - panel.offsetWidth));
-    setStyle(panel, "top", `${box.bottom - root.top + 4}px`);
-    setStyle(panel, "inset-inline-start", `${left}px`);
+    if (floats(panel)) {
+      lift(panel);
+      placeAt(panel, { left: box.left, below: box.bottom + 4, above: box.top - 4 }, (name, value) =>
+        setStyle(panel, name, value),
+      );
+      this.panelFollow ??= follow(() => this.placeActionPanel());
+    } else {
+      const root = this.el.getBoundingClientRect();
+      const left = Math.max(0, Math.min(box.left - root.left, root.width - panel.offsetWidth));
+      setStyle(panel, "top", `${box.bottom - root.top + 4}px`);
+      setStyle(panel, "inset-inline-start", `${left}px`);
+    }
 
     if (!this.wiredPanels.has(panel)) {
       this.wiredPanels.add(panel);
@@ -1484,10 +1496,17 @@ export class Grid {
   private closeActionPanel(focus: boolean): void {
     const panel = this.actionPanel();
     if (!panel) return;
+    drop(panel);
     panel.hidden = true;
+    this.unfollowPanel();
     this.actionAnchor = null;
     this.transport.push("masu:action_panel", { open: false });
     if (focus) this.gridEl.focus({ preventScroll: true });
+  }
+
+  private unfollowPanel(): void {
+    this.panelFollow?.();
+    this.panelFollow = null;
   }
 
   private applyWidths(): void {
@@ -1504,7 +1523,7 @@ export class Grid {
 
   private makeFormatters(): void {
     const locale = this.config.locale ?? undefined;
-    this.formatters = this.columns.map((column) => formatter(column.type, locale, column.decimals));
+    this.formatters = this.columns.map((column) => formatter(column.type, locale, column.decimals, column.raw));
     // A count is an integer; an average of integers has decimals.
     this.aggregateFormatters = this.columns.map((column, col) =>
       column.aggregate === "count" || column.aggregate === "count_distinct"
@@ -3987,8 +4006,10 @@ function escapeHTML(text: string): string {
   return text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
+/** The grid's config, and its words, which come apart so that they are sent once, not with each change of the config. */
 function readConfig(el: HTMLElement): Config {
-  return JSON.parse(el.dataset.masu ?? "{}") as Config;
+  const config = JSON.parse(el.dataset.masu ?? "{}") as Config;
+  return { ...config, messages: JSON.parse(el.dataset.masuMessages ?? "{}") as Record<string, string> };
 }
 
 function htmlText(value: CellValue): string {

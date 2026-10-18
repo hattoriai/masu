@@ -34,3 +34,11 @@ test("booleans show a check mark, and copy as TRUE and FALSE", () => {
   assert.equal(copyText(null), "");
   assert.equal(copyText(12.5), "12.5");
 });
+
+test("a raw column shows its values as the server sends them, whatever the locale", () => {
+  assert.equal(formatter("integer", "en-US", null, true)(12345), "12345");
+  assert.equal(formatter("datetime", "fr-FR", null, true)("2026-10-18T08:00:00Z"), "2026-10-18T08:00:00Z");
+  assert.equal(formatter("decimal", "de-DE", 2, true)("12.50"), "12.50");
+  assert.equal(formatter("boolean", "en-US", null, true)(true), "true");
+  assert.equal(formatter("text", "en-US", null, true)(null), "");
+});
