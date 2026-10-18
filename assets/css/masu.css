@@ -1349,7 +1349,8 @@
   background: color-mix(in oklab, var(--masu-accent) 7%, transparent);
 }
 
-.masu-row-chosen > .masu-pinned {
+/* Over an even row's tint too. */
+.masu-body > .masu-row.masu-row-chosen > .masu-pinned {
   background-image: linear-gradient(
     color-mix(in oklab, var(--masu-accent) 7%, transparent),
     color-mix(in oklab, var(--masu-accent) 7%, transparent)
