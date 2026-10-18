@@ -126,7 +126,7 @@ defmodule Masu.Write do
     """
 
     @type t :: %__MODULE__{
-            index: non_neg_integer(),
+            index: non_neg_integer() | nil,
             id: term(),
             row: term(),
             params: %{String.t() => term()},
@@ -139,7 +139,13 @@ defmodule Masu.Write do
 
   @type op :: :update | :create | :delete | :restore
   @type reason :: Ecto.Changeset.t() | String.t() | [{String.t() | atom(), String.t()}]
-  @type result :: {:ok, term()} | {:error, reason()} | :pending
+  @type result :: {:ok, term()} | {:error, reason()} | :pending | saved_stale()
+
+  # The grid's own update of a row whose other cells changed meanwhile:
+  # saved, with those cells refused; or none saved.
+  @typep saved_stale ::
+           {:ok, term(), {:stale, term(), [String.t()]}}
+           | {:error, {:stale, term(), [String.t()]}}
 
   @type t :: %__MODULE__{
           grid: String.t(),
