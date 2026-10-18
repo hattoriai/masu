@@ -177,6 +177,9 @@ in the same order.
 * [Editors of your own](guides/editors.md): a form of HEEx in a popover
   (Kotoba, Koyomi, a search of the server) or an editor of the
   browser's, for a column's cells.
+* [Kotoba](guides/kotoba.md) and [Koyomi](guides/koyomi.md): rich text
+  and pickers of dates, times and ranges in cells, and a picker that
+  filters the grid.
 * [Live rows](guides/live.md): a grid that follows a PubSub topic.
 * [Collaboration](guides/collaboration.md): who else has the grid open,
   and where they are.

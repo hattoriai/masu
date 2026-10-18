@@ -50,44 +50,15 @@ What the form posts goes to the changeset as the field's params, as a
 form's do: text for `cell[value]`, a map for `cell[value][from]` and
 `cell[value][to]`, a list for `cell[value][]`. Your Ecto type casts it.
 
-### Kotoba: rich text in a cell
+### Kotoba and Koyomi
 
-[Kotoba](https://hex.pm/packages/kotoba)'s editor posts its document in a
-hidden input of its field, and `Kotoba.Content` casts it: a cell of rich
-text is one component.
-
-```heex
-<:col field={:notes} editor={&notes_editor/1} sortable={false} filterable={false} width={320} />
-```
+A Kotoba editor or a Koyomi picker posts its value as a form field, so
+each is one component in an editor of your own:
 
 ```elixir
 defp notes_editor(assigns) do
   ~H"""
   <.kotoba field={@field} id={"notes-#{@id}"} label_id={@label_id} features={~w(bold italic links lists)} />
-  """
-end
-```
-
-`features` keeps the editor to what fits a cell. The cell shows the
-document's text, given by `Masu.Wire` (below); a `:col` with content
-shows it as you like, `<.kotoba_content>` too. The `Kotoba` hook is in
-your LiveSocket as for any Kotoba editor.
-
-### Koyomi: pickers for dates and ranges
-
-[Koyomi](https://hex.pm/packages/koyomi)'s pickers post what the
-browser's inputs post (`2027-03-15`, or `from` and `to` for a range), and
-its Ecto types cast it:
-
-```heex
-<:col field={:check_in} type={:date} editor={&date_editor/1} />
-<:col field={:stay} editor={&stay_editor/1} sortable={false} filterable={false} width={260} />
-```
-
-```elixir
-defp date_editor(assigns) do
-  ~H"""
-  <.date_picker field={@field} label_id={@label_id} />
   """
 end
 
@@ -98,9 +69,9 @@ defp stay_editor(assigns) do
 end
 ```
 
-The rules, locales and time zones of a picker are Koyomi's, as in any
-form, and `Koyomi.Changeset` checks the same rules in your changeset.
-Escape closes the picker's calendar first, then the editor.
+[Kotoba: rich text in cells](kotoba.md) and
+[Koyomi: pickers for dates, times and ranges](koyomi.md) have the whole
+of each: the schema, what the cell shows, paste, filters, tests.
 
 ### A search of the server
 

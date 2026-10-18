@@ -32,7 +32,10 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   copies and exports them (a rich text's text, a range of days).
 - `Masu.Test.open_editor/4` and `close_editor/2`; `edit/4` takes the
   params of an editor's form.
-- The [Editors of your own](editors.md) guide, with Kotoba and Koyomi.
+- Guides: [Editors of your own](editors.md), and how to plug in
+  [Kotoba](kotoba.md) (rich text in cells) and [Koyomi](koyomi.md)
+  (pickers in cells, and a picker above the grid that filters it through
+  its URL), with no dependency of Masu's on either.
 
 ### Changed
 
