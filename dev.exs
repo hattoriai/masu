@@ -161,6 +161,7 @@ defmodule MasuDev.Layouts do
           {"Look", "/look"},
           {"Menus", "/menus"},
           {"Actions", "/actions"},
+          {"Editors", "/editors"},
           {"Some filters", "/limited"},
           {"Results", "/results"},
           {"Slow", "/slow"},
@@ -207,7 +208,36 @@ defmodule MasuDev.Layouts do
         <script type="module">
           import { Socket } from "phoenix"
           import { LiveSocket } from "phoenix_live_view"
-          import { Masu } from "masu"
+          import { Masu, configure } from "masu"
+          // Editors of the browser's own, for the Editors page: a slider,
+          // and the browser's color input.
+          configure({
+            editors: {
+              score: ({ element, value, options, label, commit }) => {
+                const input = Object.assign(document.createElement("input"), {
+                  type: "range", min: options.min ?? 0, max: options.max ?? 100, step: options.step ?? 1,
+                  value: value ?? 0, className: "dev-score",
+                })
+                input.setAttribute("aria-label", label)
+                const shown = document.createElement("output")
+                shown.textContent = input.value
+                input.addEventListener("input", () => (shown.textContent = input.value))
+                // The arrows are the slider's; Enter and Tab are the grid's.
+                input.addEventListener("keydown", (event) => {
+                  if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") event.stopPropagation()
+                })
+                element.append(input, shown)
+                return { value: () => Number(input.value), focus: () => input.focus() }
+              },
+              color: ({ element, value, label, commit }) => {
+                const input = Object.assign(document.createElement("input"), { type: "color", value: value ?? "#000000" })
+                input.setAttribute("aria-label", label)
+                input.addEventListener("change", () => commit(input.value))
+                element.append(input)
+                return { value: () => input.value, focus: () => input.focus() }
+              },
+            },
+          })
           const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
           const liveSocket = new LiveSocket("/live", Socket, {
             hooks: { Masu },
@@ -1387,6 +1417,79 @@ defmodule MasuDev.ActionsLive do
   end
 end
 
+defmodule MasuDev.EditorsLive do
+  @moduledoc """
+  Editors of the app's own: forms of HEEx that the server renders in a
+  popover under the cell (notes in a text area, a window of two days), and
+  editors of the browser's, by name, given to `configure` in the page's
+  script (a slider with options, a color).
+  """
+  use Phoenix.LiveView
+
+  import Ecto.Changeset
+  import Masu.Components
+
+  @types %{title: :string, score: :integer, color: :string, notes: :string, window: :map}
+
+  @impl true
+  def mount(_params, _session, socket) do
+    rows =
+      for id <- 1..40 do
+        %{
+          id: id,
+          title: "Task #{id}",
+          score: rem(id * 37, 101),
+          color: Enum.at(~w(#e5484d #30a46c #0090ff #f76b15), rem(id, 4)),
+          notes: if(rem(id, 3) == 0, do: "Call back\nafter lunch"),
+          window: %{"from" => "2027-03-#{10 + rem(id, 9)}", "to" => "2027-03-#{20 + rem(id, 8)}"}
+        }
+      end
+
+    {:ok, assign(socket, rows: rows)}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="editors-label">Editors</h1>
+    <.data_grid id="editors" rows={@rows} changeset={&changeset/2} label_id="editors-label" height="24rem" sort={[:id]}>
+      <:col field={:title} />
+      <:col field={:score} type={:integer} editor={{"score", %{max: 100, step: 5}}} />
+      <:col field={:color} editor="color" />
+      <:col field={:notes} editor={&notes_editor/1} />
+      <:col :let={task} field={:window} editor={&window_editor/1} width={240} sortable={false} filterable={false}>
+        {task.window["from"]} → {task.window["to"]}
+      </:col>
+    </.data_grid>
+    """
+  end
+
+  defp notes_editor(assigns) do
+    ~H"""
+    <textarea name={@field.name} rows="4" cols="32" aria-labelledby={@label_id}>{@field.value}</textarea>
+    <p class="dev-hint">⌘/Ctrl+Enter saves, Escape lets it go.</p>
+    """
+  end
+
+  defp window_editor(assigns) do
+    ~H"""
+    <label>From <input type="date" name={@field.name <> "[from]"} value={@value["from"]} /></label>
+    <label>To <input type="date" name={@field.name <> "[to]"} value={@value["to"]} /></label>
+    <button type="submit">Save</button>
+    """
+  end
+
+  def changeset(task, params) do
+    {task, @types}
+    |> cast(params, Map.keys(@types))
+    |> validate_required([:title])
+    |> validate_number(:score, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
+    |> validate_change(:window, fn :window, window ->
+      if window["from"] <= window["to"], do: [], else: [window: "ends before it starts"]
+    end)
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -1420,6 +1523,7 @@ defmodule MasuDev.Router do
     live("/slow", MasuDev.SlowLive)
     live("/controlled", MasuDev.ControlledLive)
     live("/actions", MasuDev.ActionsLive)
+    live("/editors", MasuDev.EditorsLive)
     masu_exports()
   end
 end

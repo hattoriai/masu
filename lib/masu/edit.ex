@@ -171,7 +171,19 @@ defmodule Masu.Edit do
     do: {nil, Enum.map(edits, &[id, &1["key"], "This row is not in the grid."])}
 
   defp change(row, id, edits, assigns, index) do
-    before = for %{"key" => key, "before" => seen} <- edits, into: %{}, do: {key, seen}
+    # What the person saw: the value, or, for an editor's form, a version
+    # of it (version/1).
+    before =
+      for edit <- edits, Map.has_key?(edit, "before") or is_integer(edit["version"]), into: %{} do
+        case edit do
+          %{"key" => key, "version" => version} when is_integer(version) ->
+            {key, {:version, version}}
+
+          %{"key" => key, "before" => seen} ->
+            {key, seen}
+        end
+      end
+
     probe = %Change{before: before}
 
     {edits, locked} = Enum.split_with(edits, &cell_editable?(row, &1, assigns))
@@ -227,14 +239,39 @@ defmodule Masu.Edit do
 
   defp editable?(%{"id" => _id, "key" => key, "value" => value} = edit, columns)
        when is_binary(key) do
-    match?(%Column{editable: true}, Column.find(columns, key)) and value?(value) and
-      value?(Map.get(edit, "before"))
+    case Column.find(columns, key) do
+      %Column{editable: true} = column ->
+        value?(value, column) and value?(Map.get(edit, "before"))
+
+      _other ->
+        false
+    end
   end
 
   defp editable?(_edit, _columns), do: false
 
   defp value?(value),
     do: is_binary(value) or is_number(value) or is_boolean(value) or is_nil(value)
+
+  # An editor's form posts params: text, and maps and lists of them (a
+  # range's `from` and `to`, a list of tags).
+  defp value?(value, %Column{editor: {:form, _fun}}), do: params?(value, 4)
+  defp value?(value, _column), do: value?(value)
+
+  defp params?(_value, 0), do: false
+
+  defp params?(value, depth) when is_map(value),
+    do: Enum.all?(value, fn {k, v} -> is_binary(k) and params?(v, depth - 1) end)
+
+  defp params?(value, depth) when is_list(value), do: Enum.all?(value, &params?(&1, depth - 1))
+  defp params?(value, _depth), do: value?(value)
+
+  @doc false
+  # A version of a cell's value, for an editor's form: an edit of the cell
+  # carries it, and the cell is refused when its value is no longer the
+  # one of that version.
+  @spec version(term()) :: non_neg_integer()
+  def version(value), do: :erlang.phash2(value)
 
   # The params of a changeset: the column's field as a string, and an
   # empty value as nil.

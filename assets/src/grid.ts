@@ -25,6 +25,8 @@ import { sameView } from "./view";
 import type {
   ActionItem,
   BlockReply,
+  CellEditor,
+  CellEditorFactory,
   CellValue,
   ColumnConfig,
   ColumnType,
@@ -165,6 +167,10 @@ export class Grid {
   private queries = 0;
   /** The cell being edited. */
   private editor: Editor | null = null;
+  /** The cell being edited with a form of the app's, which the server renders in a popover. */
+  private formEditor: FormEditor | null = null;
+  /** Places the form editor's popover again as the page scrolls. */
+  private formFollow: (() => void) | null = null;
   /** The errors of cells the server did not save, by cellKey(). */
   private errors = new Map<string, string>();
   /** The cells being saved, by cellKey(). */
@@ -315,6 +321,7 @@ export class Grid {
     this.showNotice();
     this.measureDetails();
     this.placeActionPanel();
+    this.placeFormEditor();
 
     // A count that came in (count={:deferred}), with the same rows.
     if (config.revision === this.revision && (config.total !== this.total || (config.exact !== false) !== this.exact)) {
@@ -411,7 +418,7 @@ export class Grid {
     this.closePanel(false);
     this.detailObserver?.disconnect();
     this.patchObserver?.disconnect();
-    this.editor?.input.remove();
+    this.editor?.el.remove();
     this.editor = null;
     this.unfollowPanel();
     for (const cleanup of this.cleanups) cleanup();
@@ -550,7 +557,7 @@ export class Grid {
 
     this.markHeader(selection);
     this.updateActiveDescendant();
-    if (this.editor) this.editor.input.style.insetInlineStart = `${this.colLeft(this.editor.col)}px`;
+    if (this.editor) this.editor.el.style.insetInlineStart = `${this.colLeft(this.editor.col)}px`;
     this.placeDetails(headHeight);
     this.drawPeople();
     this.reportCursor();
@@ -2017,6 +2024,12 @@ export class Grid {
   private onKeyDown(event: KeyboardEvent): void {
     const mod = event.ctrlKey || event.metaKey;
     if (this.editor) return;
+    // A form editor opens: the keys before it takes the focus are not the grid's.
+    if (this.formEditor) {
+      event.preventDefault();
+      if (event.key === "Escape") this.closeFormEditor(true);
+      return;
+    }
 
     // The menu of the active cell, or of the header.
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
@@ -2705,7 +2718,11 @@ export class Grid {
     const column = this.columns[cell.col];
     const row = this.dataAt(cell.row);
     if (!column || !row || cell.row < 0 || !this.edits(row, cell.col)) return;
-    if (column.type === "boolean") return;
+    // An editor of the app's (not for a new row, which has no id yet).
+    const own = isDraft(row) ? null : column.editor;
+    const factory = own?.kind === "js" ? options.editors?.[own.name] : undefined;
+    if (own?.kind === "js" && !factory) console.warn(`Masu: no editor "${own.name}" given to configure({editors})`);
+    if (column.type === "boolean" && !own) return;
     const editor = this.people.find((person) => person.editing && person.cell && cellKey(person.cell[0], person.cell[1]) === cellKey(row[0], column.key));
     if (editor) {
       this.announce(this.message("peer_editing", { label: editor.name ?? "" }));
@@ -2716,6 +2733,9 @@ export class Grid {
     this.anchor = null;
     this.ensureVisible(cell);
     const raw = rawValue(row[cell.col + 1]);
+    if (own?.kind === "form") return this.openFormEditor(cell, column, row);
+    if (own?.kind === "js" && factory) return this.startOwnEdit(cell, column, row, raw, text ?? null, factory, own.options);
+    if (column.type === "boolean") return;
 
     const input = document.createElement("input");
     input.className = `masu-editor masu-align-${column.align}`;
@@ -2729,7 +2749,7 @@ export class Grid {
     input.style.width = `${this.widths[cell.col]}px`;
     input.style.height = `${this.config.rowHeight}px`;
 
-    this.editor = { input, row: cell.row, col: cell.col, id: row[0], original: raw, done: false, list: null, options: [], shown: [], highlight: -1 };
+    this.editor = { input, el: input, own: null, row: cell.row, col: cell.col, id: row[0], original: raw, done: false, list: null, options: [], shown: [], highlight: -1 };
     input.addEventListener("keydown", (event) => this.onEditorKey(event));
     input.addEventListener("blur", () => this.commitEdit(null, true));
     this.body.appendChild(input);
@@ -2737,6 +2757,227 @@ export class Grid {
     input.focus();
     if (text === undefined && input.type === "text") input.setSelectionRange(input.value.length, input.value.length);
     this.reportCursor();
+  }
+
+  /**
+   * An editor of the app's (`configure({editors})`): it draws in a box over
+   * the cell, and commits or cancels; the grid keeps Enter, Tab and Escape
+   * (unless the editor prevents them), the focus that leaves it, and the
+   * rest of an edit.
+   */
+  private startOwnEdit(
+    cell: Cell,
+    column: ColumnConfig,
+    row: Row,
+    raw: CellValue,
+    text: string | null,
+    factory: CellEditorFactory,
+    editorOptions: Record<string, unknown>,
+  ): void {
+    const box = document.createElement("div");
+    box.className = `masu-editor masu-own-editor masu-align-${column.align}`;
+    box.style.transform = `translateY(${this.rowTop(cell.row)}px)`;
+    box.style.insetInlineStart = `${this.colLeft(cell.col)}px`;
+    box.style.width = `${this.widths[cell.col]}px`;
+    box.style.minHeight = `${this.config.rowHeight}px`;
+    this.body.appendChild(box);
+
+    const input = document.createElement("input");
+    const editor: Editor = { input, el: box, own: null, row: cell.row, col: cell.col, id: row[0], original: raw, done: false, list: null, options: [], shown: [], highlight: -1 };
+    this.editor = editor;
+    const values = Object.fromEntries(this.columns.map((c, col) => [c.key, rawValue(row[col + 1])]));
+    editor.own = factory({
+      element: box,
+      value: raw,
+      text,
+      id: row[0],
+      row: values,
+      column,
+      options: editorOptions,
+      label: column.label,
+      locale: this.config.locale ?? null,
+      commit: (value, move) => {
+        if (this.editor === editor) this.commitOwn(value, move ? MOVES[move] : null, false);
+      },
+      cancel: () => {
+        if (this.editor === editor) this.closeEditor();
+      },
+    });
+
+    box.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.defaultPrevented || this.editor !== editor) return;
+      const value = () => (editor.own?.value ? editor.own.value() : editor.original);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        this.closeEditor();
+      } else if (event.key === "Enter" && !event.altKey) {
+        event.preventDefault();
+        this.commitOwn(value(), { row: event.shiftKey ? -1 : 1, col: 0 }, false);
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        this.commitOwn(value(), { row: 0, col: event.shiftKey ? -1 : 1 }, false);
+      }
+    });
+    // The focus that leaves the editor (and what it put elsewhere) commits.
+    box.addEventListener("focusout", () => {
+      setTimeout(() => {
+        const now = document.activeElement;
+        if (this.editor !== editor || (now && (box.contains(now) || editor.own?.contains?.(now)))) return;
+        this.commitEdit(null, true);
+      }, 0);
+    });
+
+    if (editor.own.focus) editor.own.focus();
+    else (box.querySelector<HTMLElement>(FOCUSABLE) ?? box).focus();
+    this.reportCursor();
+  }
+
+  /** Saves the value of an editor of the app's, checked by the column's type, and moves. */
+  private commitOwn(value: CellValue, step: { row: number; col: number } | null, blur: boolean): void {
+    const editor = this.editor;
+    if (!editor || editor.done) return;
+    const column = this.columns[editor.col];
+    const changed = JSON.stringify(value ?? null) !== JSON.stringify(editor.original ?? null);
+    const problem = changed && typeof value !== "number" ? invalid(column.type, value as string | boolean | null, column.values) : null;
+    if (problem && !blur) {
+      this.announce(`${column.label}: ${this.message(problem, {})}`);
+      return;
+    }
+    this.closeEditor();
+    if (problem) {
+      this.announce(`${column.label}: ${this.message(problem, {})} ${this.message("not_saved", {})}`);
+      return;
+    }
+    const sent = typeof value === "number" ? String(value) : (value as string | boolean | null);
+    if (changed) this.applyEdits([{ row: editor.row, col: editor.col, value: sent, before: editor.original }]);
+    if (step) {
+      this.active = {
+        row: Math.min(Math.max(editor.row + step.row, 0), this.rowCount() - 1),
+        col: Math.min(Math.max(editor.col + step.col, 0), this.columns.length - 1),
+      };
+      this.ensureVisible(this.active);
+      this.render();
+    }
+  }
+
+  /**
+   * An editor that is a form of the app's: the server renders it (the
+   * column's `editor` function) in a popover under the cell, with the
+   * cell's value as the row has it now. What its form posts is the new
+   * value.
+   */
+  private openFormEditor(cell: Cell, column: ColumnConfig, row: Row): void {
+    this.closeFormEditor(false);
+    this.closeActionPanel(false);
+    const editor: FormEditor = { row: cell.row, col: cell.col, id: row[0], key: column.key, version: null, initial: undefined, wired: false, done: false };
+    this.formEditor = editor;
+    this.render();
+    this.reportCursor();
+    this.transport.push("masu:cell_editor", { id: row[0], key: column.key }, (reply) => {
+      if (this.formEditor !== editor) return;
+      if (typeof reply.version !== "number") {
+        this.formEditor = null;
+        this.reportCursor();
+        this.announce(this.message("not_editable", { count: 1 }));
+        return;
+      }
+      editor.version = reply.version;
+      this.placeFormEditor();
+    });
+  }
+
+  /** The popover of the form editor, as the server rendered it. */
+  private formEditorEl(): HTMLElement | null {
+    return this.el.querySelector<HTMLElement>(":scope > .masu-panels > .masu-cell-editor");
+  }
+
+  /** Places the form editor's popover under its cell, and wires it the first time. */
+  private placeFormEditor(): void {
+    const editor = this.formEditor;
+    const popover = this.formEditorEl();
+    if (!editor || !popover || popover.dataset.key !== editor.key) {
+      this.formFollow?.();
+      this.formFollow = null;
+      return;
+    }
+    const target = this.cellElement({ row: editor.row, col: editor.col });
+    const box = (target ?? this.gridEl).getBoundingClientRect();
+    if (floats(popover)) {
+      lift(popover);
+      placeAt(popover, { left: box.left, below: box.bottom + 4, above: box.top - 4 }, (name, value) => setStyle(popover, name, value));
+      this.formFollow ??= follow(() => this.placeFormEditor());
+    } else {
+      const root = this.el.getBoundingClientRect();
+      setStyle(popover, "top", `${box.bottom - root.top + 4}px`);
+      setStyle(popover, "inset-inline-start", `${Math.max(0, Math.min(box.left - root.left, root.width - popover.offsetWidth))}px`);
+    }
+    if (editor.wired) return;
+    editor.wired = true;
+
+    const form = popover.querySelector<HTMLFormElement>("form")!;
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.commitForm(editor);
+    });
+    // Ctrl+Enter (⌘↩) saves, before the editor's own keys (a rich text
+    // editor takes it otherwise); Escape is the editor's first (its own
+    // calendar closes), then the grid's.
+    popover.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.commitForm(editor);
+      },
+      { capture: true },
+    );
+    popover.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeFormEditor(true);
+    });
+    // The focus that leaves the popover (a click away) commits.
+    popover.addEventListener("focusout", () => {
+      setTimeout(() => {
+        const now = document.activeElement;
+        if (this.formEditor !== editor || (now && popover.contains(now))) return;
+        this.commitForm(editor, false);
+      }, 0);
+    });
+    // What it posts when it opened (the values the server rendered in it).
+    editor.initial = formValue(form);
+    (popover.querySelector<HTMLElement>(FOCUSABLE) ?? popover).focus();
+  }
+
+  /** Saves what the form posts, when it changed, and closes the popover. */
+  private commitForm(editor: FormEditor, focus = true): void {
+    if (this.formEditor !== editor || editor.done) return;
+    const form = this.formEditorEl()?.querySelector<HTMLFormElement>("form");
+    const value = form ? formValue(form) : undefined;
+    editor.done = true;
+    this.closeFormEditor(focus);
+    if (value === undefined || editor.initial === undefined || JSON.stringify(value) === JSON.stringify(editor.initial)) return;
+    const data = this.dataAt(editor.row);
+    const before = data && data[0] === editor.id ? rawValue(data[editor.col + 1]) : null;
+    this.send([{ id: editor.id, key: editor.key, col: editor.col, row: editor.row, before, value, form: { before: editor.initial, version: editor.version } }], "edit", "edit");
+  }
+
+  private closeFormEditor(focus: boolean): void {
+    if (!this.formEditor) return;
+    this.formEditor = null;
+    this.formFollow?.();
+    this.formFollow = null;
+    const popover = this.formEditorEl();
+    if (popover) {
+      drop(popover);
+      popover.hidden = true;
+    }
+    this.transport.push("masu:cell_editor", { open: false });
+    this.reportCursor();
+    if (focus) this.gridEl.focus({ preventScroll: true });
   }
 
   /**
@@ -2862,6 +3103,12 @@ export class Grid {
   private commitEdit(step: { row: number; col: number } | null, blur = false): void {
     const editor = this.editor;
     if (!editor || editor.done) return;
+    if (editor.own) {
+      // The focus left an editor of the app's: its value as it is, if it says.
+      if (editor.own.value) this.commitOwn(editor.own.value(), step, blur);
+      else this.closeEditor();
+      return;
+    }
     const column = this.columns[editor.col];
     const changed = editor.input.value !== inputText(column.type, editor.original);
     const value = sendValue(column.type, editor.input.value, this.config.locale ?? undefined);
@@ -2898,7 +3145,8 @@ export class Grid {
     if (!editor) return;
     editor.done = true;
     this.editor = null;
-    editor.input.remove();
+    editor.own?.destroy?.();
+    editor.el.remove();
     editor.list?.remove();
     this.gridEl.focus({ preventScroll: true });
     this.render();
@@ -2960,7 +3208,10 @@ export class Grid {
 
     // Each edit says what the person saw: the server refuses it when the
     // cell changed meanwhile (see Masu.Edit).
-    const payload = edits.map((edit) => ({ id: edit.id, key: edit.key, value: edit.value, before: edit.before }));
+    // A form's edit says the version of the value it opened with instead.
+    const payload = edits.map((edit) =>
+      edit.form ? { id: edit.id, key: edit.key, value: edit.value, version: edit.form.version ?? undefined } : { id: edit.id, key: edit.key, value: edit.value, before: edit.before },
+    );
     this.transport.push("masu:edit", { edits: payload, origin }, (reply) => {
       const errors = (reply.errors as [unknown, string, string, CellValue?][]) ?? [];
       // Cells saved later (Masu.Write.async/1) stay saving until the reply.
@@ -2989,7 +3240,8 @@ export class Grid {
     // rows come again.
     for (const edit of edits) {
       const refusal = refused.get(cellKey(edit.id, edit.key));
-      if (refusal && edit.row !== undefined && this.valueAt(edit.row, edit.col) !== undefined) {
+      // A form's edit did not change the cell it shows: it stays as it is.
+      if (refusal && !edit.form && edit.row !== undefined && this.valueAt(edit.row, edit.col) !== undefined) {
         const column = this.columns[edit.col];
         const value = refusal.now ? refusal.value : edit.before;
         this.setValue(edit.row, edit.col, column.html ? [escapeHTML(String(value ?? "")), value] : value);
@@ -3032,9 +3284,11 @@ export class Grid {
 
   /** The edit that takes `edit` back. */
   private reverse(edit: Edit): Edit {
+    // A form's edit: back to what the form posted when it opened.
+    if (edit.form) return { ...edit, value: edit.form.before, row: undefined, form: { before: edit.value, version: null } };
     const column = this.columns[edit.col];
     const value = edit.before === null ? null : typeof edit.before === "boolean" ? edit.before : sendValue(column.type, inputText(column.type, edit.before), undefined);
-    return { ...edit, before: shownValue(column.type, edit.value), value, row: undefined };
+    return { ...edit, before: shownValue(column.type, edit.value as string | boolean | null), value, row: undefined };
   }
 
   private clearCells(): void {
@@ -3913,10 +4167,11 @@ export class Grid {
       // The first row on the screen, for those who follow this person.
       const first = this.cache.get(this.firstWholeRow());
       const top = first ? first[0] : null;
-      const cursor = JSON.stringify([cell, range, this.editor !== null, top]);
+      const editing = this.editor !== null || this.formEditor !== null;
+      const cursor = JSON.stringify([cell, range, editing, top]);
       if (cursor === this.sentCursor) return;
       this.sentCursor = cursor;
-      this.transport.push("masu:cursor", { cell, range, editing: this.editor !== null, top });
+      this.transport.push("masu:cursor", { cell, range, editing, top });
     }, CURSOR_DELAY);
   }
 
@@ -4243,6 +4498,10 @@ const FILTER_ICON =
 
 interface Editor {
   input: HTMLInputElement;
+  /** What the editor is drawn in: its input, or the box of an editor of the app's. */
+  el: HTMLElement;
+  /** An editor of the app's (`configure({editors})`). */
+  own: CellEditor | null;
   row: number;
   col: number;
   id: unknown;
@@ -4270,7 +4529,26 @@ interface Edit {
   /** The row's index when the edit was made; undefined for an undo. */
   row: number | undefined;
   before: CellValue;
-  value: string | boolean | null;
+  /** What a form posts is params: text, and maps and lists of it. */
+  value: string | boolean | null | FormValue;
+  /** An edit of a form of the app's: what it posted when it opened, and the version of the value it opened with. */
+  form?: { before: FormValue | string | boolean | null; version: number | null };
+}
+
+type FormValue = string | null | FormValue[] | { [key: string]: FormValue };
+
+/** A cell edited with a form of the app's, in a popover the server renders. */
+interface FormEditor {
+  row: number;
+  col: number;
+  id: unknown;
+  key: string;
+  /** The version of the value it opened with; null until the server says. */
+  version: number | null;
+  /** What its form posted when it opened. */
+  initial: FormValue | undefined;
+  wired: boolean;
+  done: boolean;
 }
 
 const MAX_EDITS = 5_000;
@@ -4299,6 +4577,36 @@ interface MessageValues {
   label?: string;
   done?: number;
   total?: number;
+}
+
+const FOCUSABLE = 'input:not([type="hidden"]), select, textarea, button, [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+
+const MOVES = { down: { row: 1, col: 0 }, up: { row: -1, col: 0 }, right: { row: 0, col: 1 }, left: { row: 0, col: -1 } };
+
+/**
+ * What a form editor posts for the cell, `cell[value]`: text, or the
+ * params under it (`cell[value][from]`, `cell[value][]`), as the server
+ * reads a form's params; null when it posts nothing.
+ */
+export function formValue(form: HTMLFormElement): FormValue {
+  let value: FormValue = null;
+  for (const [name, entry] of new FormData(form)) {
+    if (typeof entry !== "string" || !name.startsWith("cell[value]")) continue;
+    const path = [...name.slice("cell[value]".length).matchAll(/\[([^\]]*)\]/g)].map((m) => m[1]);
+    value = setPath(value, path, entry);
+  }
+  return value;
+}
+
+function setPath(into: FormValue, path: string[], entry: string): FormValue {
+  if (path.length === 0) return entry;
+  const [key, ...rest] = path;
+  if (key === "") {
+    const list = Array.isArray(into) ? into : [];
+    return [...list, setPath(null, rest, entry)];
+  }
+  const map = into !== null && typeof into === "object" && !Array.isArray(into) ? into : {};
+  return { ...map, [key]: setPath(map[key] ?? null, rest, entry) };
 }
 
 function cellKey(id: unknown, key: string): string {

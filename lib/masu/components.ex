@@ -52,6 +52,10 @@ defmodule Masu.Components do
       column, whatever the value has;
     * `filters` - the `Masu.Filter` operators the column offers, of its
       type: those the app runs, in a controlled grid (`on_query`).
+    * `editor` - an editor of your own for its cells: a function component
+      of a form field (a Koyomi picker, a Kotoba editor, any HEEx), or the
+      name of an editor of the browser's; see the Editors of your own
+      guide.
 
   A `:col` with content renders each cell, with the row as `:let`:
 
@@ -327,6 +331,7 @@ defmodule Masu.Components do
     attr :pinned, :atom
     attr :aggregate, :any
     attr :filters, :list
+    attr :editor, :any
   end
 
   slot :header_action,

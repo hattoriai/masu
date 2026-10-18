@@ -54,6 +54,10 @@ defmodule Masu.Column do
   given); `decimals` shows a `:decimal` or `:number` column with that
   many digits after the point, whatever the value has.
 
+  `editor` gives the column an editor of your own, in place of the one of
+  its type; see `t:editor/0` and the [Editors of your own](editors.md)
+  guide.
+
   ## Layout
 
   `hidden` starts the column hidden (a person shows it from the columns
@@ -105,9 +109,24 @@ defmodule Masu.Column do
           pinned: :start | :end | nil,
           aggregate: aggregate() | nil,
           filter_ops: [Masu.Filter.op()] | nil,
+          editor: editor() | nil,
           slot: map() | nil,
           auto: map() | nil
         }
+
+  @typedoc """
+  An editor of your own (`editor` on a `:col`):
+
+    * a function component, of a form field: the grid renders it on the
+      server, in a popover under the cell, and saves what its form posts
+      (a component of Koyomi or Kotoba, a search of the server, any HEEx);
+    * the name of an editor of the browser's, given to `configure` in the
+      app's JavaScript (`{editors: {color: ...}}`), or `{name, options}`
+      with options of it, which go to it as JSON.
+  """
+  @type editor ::
+          {:form, (map() -> Phoenix.LiveView.Rendered.t())}
+          | {:js, String.t(), map()}
 
   @aggregates [:sum, :avg, :min, :max, :count, :count_distinct]
 
@@ -144,6 +163,7 @@ defmodule Masu.Column do
     # The operators its source filters it by (c:Masu.Source.filters/2);
     # nil: every operator of its type.
     filter_ops: nil,
+    editor: nil,
     # A column of `type={:auto}`: its attributes, to make it again of the
     # type its values have (typed/2).
     auto: nil
@@ -200,9 +220,32 @@ defmodule Masu.Column do
       pinned: pinned!(Map.get(attrs, :pinned)),
       aggregate: aggregate!(Map.get(attrs, :aggregate)),
       filter_ops: filters!(Map.get(attrs, :filters), type),
+      editor: editor!(Map.get(attrs, :editor)),
       slot: if(Map.get(attrs, :inner_block), do: attrs)
     }
   end
+
+  defp editor!(nil), do: nil
+  defp editor!(fun) when is_function(fun, 1), do: {:form, fun}
+  defp editor!(name) when is_binary(name) and name != "", do: {:js, name, %{}}
+  defp editor!(name) when is_atom(name), do: editor!(Atom.to_string(name))
+
+  defp editor!({name, options}) when is_map(options) or is_list(options),
+    do: put_elem(editor!(name), 2, Map.new(options))
+
+  defp editor!(other),
+    do:
+      raise(
+        ArgumentError,
+        "a Masu column's editor is a function component, the name of an editor of the browser's, " <>
+          "or {name, options}, got: #{inspect(other)}"
+      )
+
+  @doc false
+  # Whether the column edits with a form of the app's (a function component).
+  @spec form_editor?(t()) :: boolean()
+  def form_editor?(%__MODULE__{editor: {:form, _fun}}), do: true
+  def form_editor?(%__MODULE__{}), do: false
 
   # The operators the app runs for the column (a controlled grid's): those
   # of its type, and between of at least and at most.
