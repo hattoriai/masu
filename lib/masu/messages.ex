@@ -17,7 +17,7 @@ defmodule Masu.Messages do
         }
       end
 
-  `{label}`, `{count}`, `{first}` and `{last}` in a message are
+  `{label}`, `{count}`, `{first}`, `{last}`, `{done}` and `{total}` in a message are
   replaced by the grid, and stay as they are in a translation.
   `defaults/0` has every key, so a test can check that none is left in
   English:
@@ -155,6 +155,12 @@ defmodule Masu.Messages do
     "view_delete" => "Delete {label}",
     "column_menu" => "{label} menu",
     "cell_menu" => "{label}: actions",
+    "row_actions" => "Row actions",
+    "action_done" => "{label}: done",
+    "action_running" => "{label}: running…",
+    "action_progress" => "{label}: {done} of {total}",
+    "saving_later" => "Saving…",
+    "deleting_later" => "Deleting…",
     "copy" => "Copy",
     "copy_with_headers" => "Copy with headers",
     "filter_value" => "Filter by {label}",

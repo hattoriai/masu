@@ -1,36 +1,113 @@
 defmodule Masu.Edit do
   @moduledoc false
-  # A batch of edits from the browser: a cell typed in, a paste, a fill
-  # down or an undo. Each edit is `%{"id" => id, "key" => key, "value" =>
-  # value}`. The edits of a row are saved together, through the grid's
-  # `update` function or its `changeset` (with the repo of an Ecto
-  # source, or applied to a row of a list). A row is found among the rows
-  # its source may show (`Masu.Source.fetch/3`), and only the editable
-  # columns take a value.
+  # The writes of the browser, as `Masu.Write`s: cells edited (a cell
+  # typed in, a paste, a fill or an undo, each `%{"id" => id, "key" =>
+  # key, "value" => value}`), new rows, rows deleted, rows back.
   #
-  # An edit may carry `"before"`, the value the person saw: when the
-  # cell's value is no longer that one, someone changed it meanwhile, and
-  # the edit is refused (optimistic concurrency, a compare-and-swap of the
-  # cell). For an Ecto source, the row is read, compared and saved in one
-  # transaction that locks it (`SELECT ... FOR UPDATE`, where the database
-  # has it), so that two saves cannot both pass the comparison.
+  # The grid does its part here: each row is found among the rows its
+  # source may show (`Masu.Source.fetch/3`), only the editable columns
+  # take a value, the cells that the row's state makes read-only are
+  # refused, and so are those someone changed meanwhile. An edit may
+  # carry `"before"`, the value the person saw: when the cell's value is
+  # no longer that one, the edit is refused (optimistic concurrency, a
+  # compare-and-swap of the cell). The rest goes to the grid's function
+  # for the write (`on_update`...), or Masu.Write.save/1, which for an
+  # Ecto source reads, compares and saves each row again in a
+  # transaction that locks it.
   #
-  # Returns the rows saved, and the errors as `[id, key, message]`, or
-  # `[id, key, message, value]` for a cell changed meanwhile, with its
+  # The errors go back as the browser takes them: `[id, key, message]`,
+  # or `[id, key, message, value]` for a cell changed meanwhile, with its
   # value now.
-  #
-  # New rows (`create/2`) and deleted ones (`delete/3`, `restore/2`) go
-  # through the grid's functions, or Ecto's.
 
-  alias Masu.{Column, Source, Value}
-  alias Masu.Source.Ecto, as: EctoSource
+  alias Masu.{Column, Source, Value, Write}
+  alias Masu.Write.Change
 
   @max_edits 5_000
+  @max_rows 1_000
 
   @type error :: [term()]
 
-  @spec run([map()], map(), (term() -> term())) :: {[term()], [error()]}
-  def run(edits, assigns, row_id) when is_list(edits) do
+  @doc false
+  # The most rows a grid creates or deletes at once.
+  def max_rows, do: @max_rows
+
+  @origins Map.new(
+             ~w(edit paste fill clear undo redo draft rows selection test)a,
+             &{Atom.to_string(&1), &1}
+           )
+
+  @doc false
+  # What the person did, as the browser says it.
+  @spec origin(term(), atom()) :: atom()
+  def origin(origin, default), do: Map.get(@origins, origin, default)
+
+  @doc false
+  # The grid's part of a write, for Masu.Write.save/1.
+  @spec config(map(), (term() -> term())) :: map()
+  def config(assigns, row_id) do
+    %{
+      source: assigns.source,
+      repo: assigns.repo,
+      repo_opts: assigns.repo_opts,
+      changeset: assigns[:changeset],
+      struct: assigns[:struct],
+      columns: assigns.all_columns,
+      row_id: row_id
+    }
+  end
+
+  # A write, through the grid's function for it or the grid's own way.
+  # A change left without a result is a mistake of the function.
+  defp run(%Write{changes: []} = write, _handler), do: write
+
+  defp run(%Write{} = write, handler) do
+    case (handler || (&Write.save/1)).(write) do
+      %Write{} = done ->
+        case Write.open(done) do
+          [] ->
+            done
+
+          open ->
+            raise ArgumentError,
+                  "the on_#{write.op} of the grid #{write.grid} left #{length(open)} of its changes " <>
+                    "without a result: give each one with Masu.Write.each/2, all/2, ok/3, error/3, " <>
+                    "save/1 or async/1"
+        end
+
+      other ->
+        raise ArgumentError,
+              "the on_#{write.op} of the grid #{write.grid} gave #{inspect(other)}, not the Masu.Write"
+    end
+  end
+
+  defp new_write(op, assigns, row_id, origin, changes) do
+    {ref, token} = Masu.Ref.new(assigns.id)
+
+    write = %Write{
+      grid: assigns.id,
+      op: op,
+      origin: origin,
+      scope: assigns[:scope],
+      ref: ref,
+      changes: changes,
+      grid_config: config(assigns, row_id)
+    }
+
+    {write, token}
+  end
+
+  ## Cells
+
+  @doc false
+  # Edits of cells: the rows saved, the errors, and the cells that are
+  # saved later (`Masu.Write.async/1`), with the write's token.
+  @spec update([map()], map(), (term() -> term()), atom()) :: %{
+          saved: [term()],
+          errors: [error()],
+          pending: [[term()]],
+          token: String.t() | nil
+        }
+  def update(edits, assigns, row_id, origin) when is_list(edits) do
     {edits, refused} =
       edits
       |> Enum.take(@max_edits)
@@ -38,93 +115,107 @@ defmodule Masu.Edit do
 
     errors = Enum.map(refused, &[&1["id"], &1["key"], "This cell cannot be edited."])
     by_id = Enum.group_by(edits, & &1["id"])
-    ids = by_id |> Map.keys()
-    save = saver(ids, assigns, row_id)
+    ids = Map.keys(by_id)
 
-    Enum.reduce(ids, {[], errors}, fn id, {saved, errors} ->
-      case save.(id, Map.fetch!(by_id, id)) do
-        {:ok, row} -> {[row | saved], errors}
-        {:partial, row, row_errors} -> {[row | saved], errors ++ row_errors}
-        {:error, row_errors} -> {saved, errors ++ row_errors}
-      end
-    end)
-    |> then(fn {saved, errors} -> {Enum.reverse(saved), errors} end)
-  end
-
-  # An Ecto source reads, compares and saves each row in a transaction
-  # that locks it; another source finds the rows of the batch at once.
-  defp saver(_ids, %{source: %{module: EctoSource} = source} = assigns, _row_id) do
-    fn id, edits ->
-      EctoSource.locked(source.state, id, &save_row(&1, id, edits, assigns))
-    end
-  end
-
-  defp saver(ids, assigns, row_id) do
     rows =
       assigns.source |> Source.fetch(ids, row_id) |> Map.new(&{Value.to_wire(row_id.(&1)), &1})
 
-    fn id, edits -> save_row(Map.get(rows, id), id, edits, assigns) end
+    {changes, errors} =
+      ids
+      |> Enum.reduce({[], errors}, fn id, {changes, errors} ->
+        case change(Map.get(rows, id), id, Map.fetch!(by_id, id), assigns, length(changes)) do
+          {nil, refused} -> {changes, errors ++ refused}
+          {change, refused} -> {[change | changes], errors ++ refused}
+        end
+      end)
+      |> then(fn {changes, errors} -> {Enum.reverse(changes), errors} end)
+
+    {write, token} = new_write(:update, assigns, row_id, origin, changes)
+    write = run(write, assigns[:on_update])
+
+    Enum.reduce(
+      write.changes,
+      %{saved: [], errors: errors, pending: [], token: nil},
+      fn change, acc ->
+        case Map.fetch!(write.results, change.index) do
+          {:ok, row} ->
+            %{acc | saved: acc.saved ++ [row]}
+
+          {:ok, row, {:stale, now, keys}} ->
+            %{
+              acc
+              | saved: acc.saved ++ [row],
+                errors: acc.errors ++ conflicts(now, change, keys, assigns)
+            }
+
+          {:error, {:stale, now, keys}} ->
+            %{acc | errors: acc.errors ++ conflicts(now, change, keys, assigns)}
+
+          {:error, reason} ->
+            %{
+              acc
+              | errors: acc.errors ++ errors_of(reason, change.id, change.keys, assigns.columns)
+            }
+
+          :pending ->
+            %{acc | pending: acc.pending ++ Enum.map(change.keys, &[change.id, &1]), token: token}
+        end
+      end
+    )
   end
 
-  defp save_row(nil, id, edits, _assigns),
-    do: {:error, Enum.map(edits, &[id, &1["key"], "This row is not in the grid."])}
+  # The change of a row, of its edits that are left: the cells that the
+  # row's state makes read-only are refused, and so are those changed
+  # meanwhile.
+  defp change(nil, id, edits, _assigns, _index),
+    do: {nil, Enum.map(edits, &[id, &1["key"], "This row is not in the grid."])}
 
-  # The cells that the row's state makes read-only (`row_editable`, or a
-  # column's `editable` function) are refused; the others are saved.
-  # A cell changed meanwhile is refused, with its value now.
-  defp save_row(row, id, edits, assigns) do
+  defp change(row, id, edits, assigns, index) do
+    before = for %{"key" => key, "before" => seen} <- edits, into: %{}, do: {key, seen}
+    probe = %Change{before: before}
+
     {edits, locked} = Enum.split_with(edits, &cell_editable?(row, &1, assigns))
-    {edits, stale} = Enum.split_with(edits, &current?(row, &1, assigns.columns))
+
+    {edits, stale} =
+      Enum.split_with(edits, &Write.current?(row, probe, &1["key"], assigns.columns))
 
     refused =
       Enum.map(locked, &[id, &1["key"], "This cell cannot be edited."]) ++
-        Enum.map(stale, &conflict(row, id, &1, assigns))
+        conflicts(row, %Change{id: id}, Enum.map(stale, & &1["key"]), assigns)
 
     case edits do
       [] ->
-        {:error, refused}
+        {nil, refused}
 
       edits ->
-        case save(row, params(edits, assigns.columns), assigns) do
-          {:ok, row} when refused == [] -> {:ok, row}
-          {:ok, row} -> {:partial, row, refused}
-          {:error, reason} -> {:error, refused ++ errors_of(reason, id, edits, assigns.columns)}
-        end
+        keys = Enum.map(edits, & &1["key"])
+
+        change = %Change{
+          index: index,
+          id: id,
+          row: row,
+          params: params(edits, assigns.columns),
+          keys: keys,
+          before: Map.take(before, keys)
+        }
+
+        {change, refused}
     end
   end
-
-  # Whether the cell still has the value the person saw. An edit without
-  # `"before"` (from Masu.Test, say) is not compared. The values compare by
-  # the column's type: "120.50" is 120.5, a date is its day.
-  defp current?(_row, edit, _columns) when not is_map_key(edit, "before"), do: true
-
-  defp current?(row, %{"key" => key, "before" => before}, columns) do
-    column = Column.find(columns, key)
-    now = Column.get(column, row)
-
-    case Value.cast(column.type, before) do
-      {:ok, before} -> same?(now, before)
-      :error -> Value.to_wire(now) == before
-    end
-  end
-
-  defp same?(nil, nil), do: true
-  defp same?(nil, _before), do: false
-  defp same?(_now, nil), do: false
-  defp same?(now, before), do: Value.compare(now, before) == :eq
 
   # The refusal names who saved the row, when the grid knows (from its
   # live topic).
-  defp conflict(row, id, %{"key" => key}, assigns) do
-    value = assigns.columns |> Column.find(key) |> Column.get(row) |> Value.to_wire()
-
+  defp conflicts(row, change, keys, assigns) do
     message =
-      case Map.get(Map.get(assigns, :saved_by, %{}), id) do
+      case Map.get(Map.get(assigns, :saved_by, %{}), change.id) do
         nil -> "Changed by someone else meanwhile."
         name -> "Changed by #{name} meanwhile."
       end
 
-    [id, key, message, value]
+    for key <- keys do
+      value = assigns.columns |> Column.find(key) |> Column.get(row) |> Value.to_wire()
+      [change.id, key, message, value]
+    end
   end
 
   defp cell_editable?(row, %{"key" => key}, assigns) do
@@ -154,48 +245,17 @@ defmodule Masu.Edit do
     end)
   end
 
-  defp save(row, params, %{update: update}) when is_function(update, 2) do
-    case update.(row, params) do
-      {:ok, row} ->
-        {:ok, row}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        raise ArgumentError,
-              "a Masu grid's update gave #{inspect(other)}, not {:ok, row} or {:error, reason}"
-    end
-  end
-
-  defp save(row, params, %{changeset: changeset} = assigns) when is_function(changeset, 2) do
-    changeset = changeset.(row, params)
-
-    if assigns.source.module == EctoSource,
-      do: repo_update(changeset, assigns),
-      else: Ecto.Changeset.apply_action(changeset, :update)
-  end
-
-  # A schema with Ecto's optimistic_lock (a lock_version) refuses a row
-  # that changed since it was read.
-  defp repo_update(changeset, assigns) do
-    assigns.repo.update(changeset, assigns.repo_opts)
-  rescue
-    error in [Ecto.StaleEntryError] ->
-      _ = error
-      {:error, "Changed by someone else meanwhile."}
-  end
-
-  # The errors of a changeset go on the cells of their fields; an error
-  # of a field that was not edited goes on the row's first edited cell.
-  defp errors_of(%{__struct__: Ecto.Changeset} = changeset, id, edits, columns) do
-    edited = Enum.map(edits, & &1["key"])
-    first = hd(edited)
+  # The errors of a row's change, on its cells: a changeset's go on the
+  # cells of their fields, and an error of a field that was not edited
+  # on the row's first edited cell; the row is saved whole or not at all,
+  # so its other edited cells say so.
+  defp errors_of(%{__struct__: Ecto.Changeset} = changeset, id, keys, columns) do
+    first = hd(keys)
 
     errors =
       for {field, {message, opts}} <- changeset.errors do
         key =
-          case Enum.find(columns, &(&1.field == field and &1.key in edited)) do
+          case Enum.find(columns, &(&1.field == field and &1.key in keys)) do
             nil -> first
             column -> column.key
           end
@@ -204,21 +264,32 @@ defmodule Masu.Edit do
       end
 
     errors = if errors == [], do: [[id, first, "The row could not be saved."]], else: errors
-
-    # The row is saved whole or not at all: its other edited cells say so.
-    with_error = MapSet.new(errors, fn [_id, key | _] -> key end)
-
-    errors ++
-      for key <- edited,
-          not MapSet.member?(with_error, key),
-          do: [id, key, "Not saved: the row has an error."]
+    errors ++ not_saved(errors, id, keys)
   end
 
-  defp errors_of(message, id, edits, _columns) when is_binary(message),
-    do: Enum.map(edits, &[id, &1["key"], message])
+  defp errors_of(message, id, keys, _columns) when is_binary(message),
+    do: Enum.map(keys, &[id, &1, message])
 
-  defp errors_of(reason, id, [edit | _], _columns),
-    do: [[id, edit["key"], "The row could not be saved: #{inspect(reason)}"]]
+  defp errors_of([{_key, message} | _] = list, id, keys, _columns) when is_binary(message) do
+    errors =
+      for {key, message} <- list do
+        key = to_string(key)
+        [id, if(key in keys, do: key, else: hd(keys)), message]
+      end
+
+    errors ++ not_saved(errors, id, keys)
+  end
+
+  defp errors_of(reason, id, [key | _], _columns),
+    do: [[id, key, "The row could not be saved: #{inspect(reason)}"]]
+
+  defp not_saved(errors, id, keys) do
+    with_error = MapSet.new(errors, fn [_id, key | _] -> key end)
+
+    for key <- keys,
+        not MapSet.member?(with_error, key),
+        do: [id, key, "Not saved: the row has an error."]
+  end
 
   defp interpolate(message, opts) do
     Enum.reduce(opts, message, fn {key, value}, message ->
@@ -226,24 +297,40 @@ defmodule Masu.Edit do
     end)
   end
 
-  @max_rows 1_000
+  ## New rows
 
   @doc false
-  # The most rows a grid creates or deletes at once.
-  def max_rows, do: @max_rows
+  # New rows, each the values of its cells by column key. Gives, for
+  # each, `{:ok, row}`, or `{:error, [[key, message]]}`: its errors on its
+  # cells (a key of nil for the row).
+  @spec create([map()], map(), (term() -> term()), atom()) :: [
+          {:ok, term()} | {:error, [list()]}
+        ]
+  def create(drafts, assigns, row_id, origin) when is_list(drafts) do
+    drafts = Enum.take(drafts, @max_rows)
 
-  # New rows, each the values of its cells by column key: through the
-  # grid's `create` function, or its `changeset` of its `struct` (inserted
-  # by the repo of an Ecto source, applied for a list). Gives, for each,
-  # `{:ok, row}`, or `{:error, [[key, message]]}`: its errors on its cells.
-  @spec create([map()], map(), (term() -> term())) :: [{:ok, term()} | {:error, [list()]}]
-  def create(drafts, assigns, row_id) when is_list(drafts) do
-    drafts
-    |> Enum.take(@max_rows)
-    |> Enum.map(fn draft -> create_one(draft, assigns, row_id) end)
+    built =
+      drafts
+      |> Enum.with_index()
+      |> Enum.map(fn {draft, index} -> new_change(draft, index, assigns) end)
+
+    changes = for %Change{} = change <- built, do: change
+    {write, _token} = new_write(:create, assigns, row_id, origin, changes)
+    write = run(write, assigns[:on_create])
+
+    Enum.map(built, fn
+      {:error, errors} ->
+        {:error, errors}
+
+      %Change{} = change ->
+        case Map.fetch!(write.results, change.index) do
+          {:ok, row} -> check_id(row, row_id)
+          {:error, reason} -> {:error, new_errors(reason, change.keys, assigns.columns)}
+        end
+    end)
   end
 
-  defp create_one(draft, assigns, row_id) when is_map(draft) do
+  defp new_change(draft, index, assigns) when is_map(draft) do
     {cells, refused} =
       draft
       |> Enum.filter(fn {_key, value} -> value != "" and not is_nil(value) end)
@@ -251,57 +338,29 @@ defmodule Masu.Edit do
         match?(%Column{creatable: true}, Column.find(assigns.columns, key)) and value?(value)
       end)
 
-    edits = Enum.map(cells, fn {key, value} -> %{"key" => key, "value" => value} end)
-
     case refused do
       [] ->
-        params = params(edits, assigns.columns)
-        keys = Enum.map(edits, & &1["key"])
+        edits = Enum.map(cells, fn {key, value} -> %{"key" => key, "value" => value} end)
 
-        case insert(params, assigns) do
-          {:ok, row} -> check_id(row, row_id)
-          {:error, reason} -> {:error, new_errors(reason, keys, assigns.columns)}
-        end
+        %Change{
+          index: index,
+          params: params(edits, assigns.columns),
+          keys: Enum.map(edits, & &1["key"])
+        }
 
       refused ->
         {:error, Enum.map(refused, fn {key, _value} -> [key, "This cell cannot be set."] end)}
     end
   end
 
-  defp create_one(_draft, _assigns, _row_id), do: {:error, [[nil, "Not a row."]]}
+  defp new_change(_draft, _index, _assigns), do: {:error, [[nil, "Not a row."]]}
 
-  # A new row of a list must have an id, as every row of a grid does.
+  # A new row must have an id, as every row of a grid does.
   defp check_id(row, row_id) do
     if is_nil(row_id.(row)),
       do: {:error, [[nil, "The new row has no id."]]},
       else: {:ok, row}
   end
-
-  defp insert(params, %{create: create}) when is_function(create, 1) do
-    case create.(params) do
-      {:ok, row} ->
-        {:ok, row}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        raise ArgumentError,
-              "a Masu grid's create gave #{inspect(other)}, not {:ok, row} or {:error, reason}"
-    end
-  end
-
-  defp insert(params, %{changeset: changeset, struct: struct} = assigns)
-       when is_function(changeset, 2) and struct != nil do
-    changeset = changeset.(new_struct(struct), params)
-
-    if assigns.source.module == EctoSource,
-      do: assigns.repo.insert(changeset, assigns.repo_opts),
-      else: Ecto.Changeset.apply_action(changeset, :insert)
-  end
-
-  defp new_struct(fun) when is_function(fun, 0), do: fun.()
-  defp new_struct(struct), do: struct
 
   # The errors of a new row, on its cells: an error of a field the person
   # did not fill goes on that field's column when it shows, else on the
@@ -323,146 +382,121 @@ defmodule Masu.Edit do
 
   defp new_errors(message, _keys, _columns) when is_binary(message), do: [[nil, message]]
 
+  defp new_errors([{_key, message} | _] = list, _keys, _columns) when is_binary(message),
+    do: Enum.map(list, fn {key, message} -> [key && to_string(key), message] end)
+
   defp new_errors(reason, _keys, _columns),
     do: [[nil, "The row could not be saved: #{inspect(reason)}"]]
 
-  # Rows deleted by their ids: through the grid's `delete` function, or
-  # the repo of an Ecto source (in a transaction that locks the row), or
-  # out of a list. A row is found among the rows its source may show, and
-  # `deletable` (a function of the row) may refuse it. Gives the rows
-  # deleted, and the errors as `[id, message]`.
-  @spec delete([term()], map(), (term() -> term())) :: {[term()], [list()]}
-  def delete(ids, assigns, row_id) when is_list(ids) do
+  ## Deleted rows
+
+  @doc false
+  # Rows deleted by their ids: a row is found among the rows its source
+  # may show, and `deletable` (a function of the row) may refuse it.
+  # Gives the rows deleted, the errors as `[id, message]`, and the ids of
+  # those deleted later, with the write's token.
+  @spec delete([term()], map(), (term() -> term()), atom()) :: %{
+          deleted: [term()],
+          errors: [list()],
+          pending: [term()],
+          token: String.t() | nil
+        }
+  def delete(ids, assigns, row_id, origin) when is_list(ids) do
     ids = Enum.take(ids, @max_rows)
-    remove = remover(ids, assigns, row_id)
 
-    {deleted, errors} =
-      Enum.reduce(ids, {[], []}, fn id, {deleted, errors} ->
-        case remove.(id) do
-          {:ok, row} -> {[row | deleted], errors}
-          {:error, message} -> {deleted, [[id, message] | errors]}
-        end
-      end)
-
-    {Enum.reverse(deleted), Enum.reverse(errors)}
-  end
-
-  defp remover(_ids, %{source: %{module: EctoSource} = source} = assigns, _row_id) do
-    fn id -> EctoSource.locked(source.state, id, &delete_row(&1, assigns)) end
-  end
-
-  defp remover(ids, assigns, row_id) do
     rows =
       assigns.source |> Source.fetch(ids, row_id) |> Map.new(&{Value.to_wire(row_id.(&1)), &1})
 
-    fn id -> delete_row(Map.get(rows, id), assigns) end
+    {changes, errors} =
+      Enum.reduce(ids, {[], []}, fn id, {changes, errors} ->
+        case to_delete(Map.get(rows, id), id, assigns, length(changes)) do
+          {:ok, change} -> {changes ++ [change], errors}
+          {:error, error} -> {changes, errors ++ [error]}
+        end
+      end)
+
+    {write, token} = new_write(:delete, assigns, row_id, origin, changes)
+    write = run(write, assigns[:on_delete])
+
+    Enum.reduce(
+      write.changes,
+      %{deleted: [], errors: errors, pending: [], token: nil},
+      fn change, acc ->
+        case Map.fetch!(write.results, change.index) do
+          {:ok, row} -> %{acc | deleted: acc.deleted ++ [row || change.row]}
+          {:error, reason} -> %{acc | errors: acc.errors ++ [[change.id, delete_message(reason)]]}
+          :pending -> %{acc | pending: acc.pending ++ [change.id], token: token}
+        end
+      end
+    )
   end
 
-  defp delete_row(nil, _assigns), do: {:error, "This row is not in the grid."}
+  defp to_delete(nil, id, _assigns, _index), do: {:error, [id, "This row is not in the grid."]}
 
-  defp delete_row(row, assigns) do
+  defp to_delete(row, id, assigns, index) do
     if deletable?(assigns, row),
-      do: remove(row, assigns),
-      else: {:error, "This row cannot be deleted."}
+      do: {:ok, %Change{index: index, id: id, row: row}},
+      else: {:error, [id, "This row cannot be deleted."]}
   end
 
   @doc false
-  # Whether the grid deletes the row: `deletable` (or a `delete`
-  # function) says it deletes, and a `deletable` function says so for the
-  # row.
+  # Whether the grid deletes the row: it deletes, and a `deletable`
+  # function says so for the row.
   @spec deletable?(map(), term()) :: boolean()
   def deletable?(%{deletable: fun}, row) when is_function(fun, 1), do: fun.(row) == true
   def deletable?(assigns, _row), do: deletes?(assigns)
 
   @doc false
+  # Whether the grid deletes rows: `deletable` (`true`, or a function of
+  # the row), or an `on_delete` of its own; `deletable={false}` never.
   @spec deletes?(map()) :: boolean()
   def deletes?(%{deletable: false}), do: false
 
   def deletes?(%{deletable: deletable}) when deletable == true or is_function(deletable, 1),
     do: true
 
-  def deletes?(%{delete: delete}), do: is_function(delete, 1)
-
-  defp remove(row, %{delete: delete}) when is_function(delete, 1) do
-    case delete.(row) do
-      :ok ->
-        {:ok, row}
-
-      {:ok, _deleted} ->
-        {:ok, row}
-
-      {:error, reason} ->
-        {:error, delete_message(reason)}
-
-      other ->
-        raise ArgumentError,
-              "a Masu grid's delete gave #{inspect(other)}, not :ok, {:ok, row} or {:error, reason}"
-    end
-  end
-
-  defp remove(row, %{source: %{module: EctoSource}} = assigns) do
-    if is_struct(row) and function_exported?(row.__struct__, :__schema__, 1) do
-      case assigns.repo.delete(row, assigns.repo_opts) do
-        {:ok, _deleted} -> {:ok, row}
-        {:error, reason} -> {:error, delete_message(reason)}
-      end
-    else
-      {:error, "This row cannot be deleted: it is not a schema's struct."}
-    end
-  rescue
-    error in [Ecto.StaleEntryError] ->
-      _ = error
-      {:error, "Changed or deleted by someone else meanwhile."}
-
-    error in [Ecto.ConstraintError] ->
-      _ = error
-      {:error, "Other records refer to this row."}
-  end
-
-  # A list: the grid takes the row out of its copy.
-  defp remove(row, _assigns), do: {:ok, row}
+  def deletes?(assigns), do: is_function(assigns[:on_delete], 1)
 
   defp delete_message(%{__struct__: Ecto.Changeset, errors: [{_field, {message, opts}} | _]}),
     do: interpolate(message, opts)
 
   defp delete_message(message) when is_binary(message), do: message
+  defp delete_message([{_key, message} | _]) when is_binary(message), do: message
   defp delete_message(reason), do: "The row could not be deleted: #{inspect(reason)}"
+
+  ## Rows back
 
   @doc false
   # Whether the grid brings deleted rows back (an undo): with its
-  # `restore` function, by inserting them again into an Ecto source's
-  # repo (when it deletes with the repo), or into a list.
+  # `on_restore`, or its own way, when it deletes its own way too.
   @spec restores?(map()) :: boolean()
-  def restores?(%{restore: restore}) when is_function(restore, 1), do: true
-  def restores?(%{delete: delete}) when is_function(delete, 1), do: false
-  def restores?(assigns), do: deletes?(assigns)
+  def restores?(assigns) do
+    cond do
+      is_function(assigns[:on_restore], 1) -> true
+      is_function(assigns[:on_delete], 1) -> false
+      true -> deletes?(assigns)
+    end
+  end
 
+  @doc false
   # Deleted rows, back: `{rows, errors}`, the errors as `[id, message]`.
   @spec restore([term()], map(), (term() -> term())) :: {[term()], [list()]}
   def restore(rows, assigns, row_id) do
-    {restored, errors} =
-      Enum.reduce(rows, {[], []}, fn row, {restored, errors} ->
-        case restore_row(row, assigns) do
-          {:ok, row} ->
-            {[row | restored], errors}
-
-          {:error, reason} ->
-            {restored, [[Value.to_wire(row_id.(row)), delete_message(reason)] | errors]}
-        end
+    changes =
+      rows
+      |> Enum.with_index()
+      |> Enum.map(fn {row, index} ->
+        %Change{index: index, id: Value.to_wire(row_id.(row)), row: row}
       end)
 
-    {Enum.reverse(restored), Enum.reverse(errors)}
+    {write, _token} = new_write(:restore, assigns, row_id, :undo, changes)
+    write = run(write, assigns[:on_restore])
+
+    Enum.reduce(write.changes, {[], []}, fn change, {restored, errors} ->
+      case Map.fetch!(write.results, change.index) do
+        {:ok, row} -> {restored ++ [row], errors}
+        {:error, reason} -> {restored, errors ++ [[change.id, delete_message(reason)]]}
+      end
+    end)
   end
-
-  defp restore_row(row, %{restore: restore}) when is_function(restore, 1), do: restore.(row)
-
-  defp restore_row(row, %{source: %{module: EctoSource}} = assigns) do
-    row |> Ecto.put_meta(state: :built) |> assigns.repo.insert(assigns.repo_opts)
-  rescue
-    error in [Ecto.ConstraintError] ->
-      _ = error
-      {:error, "The row could not be brought back."}
-  end
-
-  defp restore_row(row, _assigns), do: {:ok, row}
 end

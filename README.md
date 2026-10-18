@@ -46,13 +46,14 @@ does not run Node.js for it: you add the hook and one style sheet.
 | --- | --- |
 | Rows | the rows on the screen and a few more are in the page; the others come from the server in blocks of a hundred as the person scrolls, once the scrolling pauses |
 | Sources | `rows={@users}` for a list; `source={query} repo={Repo}` for Ecto, where a sort is an `ORDER BY`, a filter and the search a `WHERE`, and each block a `LIMIT` and `OFFSET`; `Masu.Source` for your own; `load={:async}` reads a slow source in a task, with "Running…", Stop, a timeout and its errors; `on_query` for an app that runs its own queries, the grid a view of them |
-| Editing | `changeset={&Order.changeset/2}`: a cell edits on a key typed, Enter, F2 or a double click; the edits of a row saved together with `Repo.update`, the errors on their cells, the old values back; paste of tab-separated text, fill down, Delete, undo and redo; read-only rows and cells by their state (`row_editable`, `editable={&...}`), checked on the server; a cell changed by someone else meanwhile refused (a compare-and-swap of each cell, in a transaction that locks the row); `update` for your own persistence and `on_save` to hear of each save; a row found again through the grid's own query; new rows (`create`, or `struct` with the changeset) as drafts until they save, and a paste past the last row; deleting rows (`deletable`, `delete`) after a question, with undo; an enum's list of values, `decimals`, and values checked in the browser |
+| Editing | `changeset={&Order.changeset/2}`: a cell edits on a key typed, Enter, F2 or a double click; the edits of a row saved together with `Repo.update`, the errors on their cells, the old values back; paste of tab-separated text, fill down, Delete, undo and redo; read-only rows and cells by their state (`row_editable`, `editable={&...}`), checked on the server; a cell changed by someone else meanwhile refused (a compare-and-swap of each cell, in a transaction that locks the row); every write a `Masu.Write` for your own functions (`on_update`, `on_create`, `on_delete`, `on_restore`): row by row, a whole batch in one transaction (`Ecto.Multi`), the grid's own way and more, or later in a job (`Masu.Write.async/1`, `Masu.reply/2`), with the person's `scope` and what they did (a paste, a fill, an undo); a row found again through the grid's own query; new rows (`struct` with the changeset, or `on_create`) as drafts until they save, and a paste past the last row; deleting rows (`deletable`, `on_delete`) after a question, with undo; an enum's list of values, `decimals`, and values checked in the browser |
 | Live rows | `live={{MyApp.PubSub, "orders"}}` and `Masu.Live.broadcast_upsert/3`: changes come into the person's query, a batch at a time, the scroll stays, the rows do not blink, the changed ones flash |
 | Collaboration | `presence={MyAppWeb.Presence} user={...}`: avatars (a `:person` slot of your own), each person's cell by row id and column key whatever the others' order and filters, "Ada is typing" and a lock on that cell, flashes in the saver's color; a click on an avatar follows that person in their view (`share_view={false}` keeps it), each person's selected range in their color, "Changed by Ada meanwhile."; `configure({peerLabel})` and CSS for the rest |
 | Layout and views | `pinned={:start}` and `hidden` columns; headers that move by dragging; a columns menu to show, hide, pin and move them; the person's view (order, filters, search, columns) in the URL (`url`) and kept per person, with named views to save and share (`views`, with an Ecto store and `mix masu.gen.views`) |
 | Trees and details | `tree={:parent_id}`: rows in a tree, opened with →, ← and `*`, virtualized as a list of the open rows (a list or an Ecto source, children read as they open), siblings sorted among themselves, filters that keep the ancestors of a match; a `:detail` slot that opens a row on any HEEx under it, another grid too |
 | Groups and totals | `group_by` and "Group by" in the header menu: groups with their counts and totals, opened as a tree, sorted by value or by a total; `aggregate={:sum}` and a row of totals at the bottom; counted and totalled by the database, a `GROUP BY` a level |
 | Export and selection | an Export menu of CSV and XLSX of the whole query, streamed to the browser from a route of your router (`masu_exports`); `Masu.Live.export/1` for an app's own export; `selectable` rows, ranges, and every row of the query as an `Ecto.Query` (`Masu.Live.selected/1`); blocks of an Ecto source read by key, not `OFFSET`; counts deferred, on demand, or not known (`count`), and pages with a pager (`paging={:pages}`) |
+| Actions | `:action` on the rows selected, buttons of the bar above the grid, with every row of the query as one `Ecto.Query`; `:row_action` on each row, in a menu at its end (and on a right click, the context-menu key, Shift+F10), as functions, events to the LiveView, or links (`navigate`, `patch`); shown and disabled by the row, a question first (`confirm`), checked on the server; results said above the grid, and actions that go on in a job, with their progress (`Masu.progress/3`, `Masu.reply/2`) |
 | Menus | `cell_menu`: a right click on a cell, or the context-menu key or Shift+F10, opens a menu of copy, copy with headers, filter by the value, exclude it, empty, and sort; `:header_action` and `:cell_action` add your items, each a function, an event to the LiveView, a JS command, or a panel of your HEEx under the header or the cell; for some columns (`columns`, `types`, `show`) or some people (`:if`), run only as the grid offers them |
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server; columns not known in advance, as a query tool's results: rows as lists, `columns` with no `:col` slots, types learned from the values (`type={:auto}`) |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
@@ -170,8 +171,8 @@ in the same order.
   sources of your own.
 * [Filters](guides/filters.md): the menu of each column, the values of
   an enum, and the filters of the LiveView.
-* [Editing](guides/editing.md): cells saved through your changeset,
-  paste, fill down and undo.
+* [Editing](guides/editing.md): cells saved through your changeset, or
+  your own functions of a `Masu.Write`; paste, fill down and undo.
 * [Live rows](guides/live.md): a grid that follows a PubSub topic.
 * [Collaboration](guides/collaboration.md): who else has the grid open,
   and where they are.
@@ -183,6 +184,8 @@ in the same order.
   their counts and totals, and a row of totals.
 * [Export, selection and large tables](guides/export.md): CSV and XLSX,
   selecting rows and every row of a query, paging by key.
+* [Actions](guides/actions.md): actions of your own on the rows
+  selected and on each row, and actions that go on in a job.
 * [Menus of your own](guides/menus.md): items in the header menus, and
   a menu on each cell.
 * [Keyboard and copy](guides/keyboard.md): the keys, the selection, and

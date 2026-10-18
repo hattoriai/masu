@@ -1349,7 +1349,8 @@
   background: color-mix(in oklab, var(--masu-accent) 7%, transparent);
 }
 
-.masu-row-chosen > .masu-pinned {
+/* Over an even row's tint too. */
+.masu-body > .masu-row.masu-row-chosen > .masu-pinned {
   background-image: linear-gradient(
     color-mix(in oklab, var(--masu-accent) 7%, transparent),
     color-mix(in oklab, var(--masu-accent) 7%, transparent)
@@ -1375,6 +1376,7 @@
 }
 
 .masu .masu-selection-delete,
+.masu .masu-selection-action,
 .masu .masu-confirm button {
   border: 1px solid var(--masu-border);
   border-radius: var(--masu-radius);
@@ -1403,9 +1405,97 @@
 }
 
 .masu .masu-selection-delete:focus-visible,
+.masu .masu-selection-action:focus-visible,
 .masu .masu-confirm button:focus-visible {
   outline: none;
   box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
+}
+
+.masu .masu-selection-action:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Actions of the app's (Masu.Action): the cell at the end of each row,
+   with the button of its menu, stuck to the end as a pinned column. */
+.masu-row-actions,
+.masu-row-actions-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inset-inline-end: 0;
+}
+
+.masu .masu-row-actions-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--masu-radius) - 2px);
+  background: transparent;
+  color: var(--masu-muted);
+  cursor: pointer;
+}
+
+.masu .masu-row-actions-button[hidden] {
+  display: none;
+}
+
+.masu .masu-row-actions-button:hover,
+.masu .masu-row-actions-button:focus-visible {
+  outline: none;
+  background: var(--masu-surface);
+  color: var(--masu-text);
+}
+
+.masu .masu-row-actions-button:focus-visible {
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
+}
+
+/* A link of a menu (a row action's navigate or patch), and an item that
+   is not available. */
+.masu a.masu-menuitem {
+  display: block;
+  text-decoration: none;
+}
+
+.masu .masu-menuitem[aria-disabled="true"] {
+  color: var(--masu-muted);
+  cursor: default;
+}
+
+.masu .masu-menuitem.masu-danger:not([aria-disabled="true"]) {
+  color: var(--masu-invalid);
+}
+
+/* What an action does: running, how far, how it went. */
+.masu-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.masu-tasks:not(:empty) {
+  margin-bottom: var(--masu-space);
+}
+
+.masu-task {
+  border-inline-start: 3px solid var(--masu-accent);
+  padding: 0.125rem 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.masu-task[data-state="running"] {
+  color: var(--masu-muted);
+}
+
+.masu-task[data-state="error"] {
+  border-color: var(--masu-invalid);
+  color: var(--masu-invalid);
 }
 
 /* A question above the grid: delete rows, add the rest of a paste. */

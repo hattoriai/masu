@@ -7,6 +7,54 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+Breaking: every write goes through a `Masu.Write`, and the functions
+that write rows your way take one.
+
+- `on_update`, `on_create`, `on_delete` and `on_restore` take the place
+  of `update`, `create`, `delete` and `restore`. Each is a function of a
+  `Masu.Write`, a batch of changes (the cells of an edit, a paste or a
+  fill; new rows; rows deleted or back) with the rows found again
+  through the grid's query, the read-only and stale cells already
+  refused, what the person did (`origin`), the grid's `scope`, and a
+  `ref`. It gives the write back with a result for each change:
+  `Masu.Write.each/2` (row by row), `all/2` (the whole batch, an
+  `Ecto.Multi`), `ok/3`, `error/3`, `save/1` (the grid's own way, which
+  your function may wrap), or `async/1` (later, by a job).
+- `on_save` is gone, and `on_delete` writes: hear of what was saved in
+  your `on_update` (`Masu.Write.saved/1`). A grid that has one of the
+  old attributes raises, naming the new one.
+- A grid with `on_delete` undoes a delete only with `on_restore`
+  (`on_restore={&Masu.Write.save/1}` when the rows delete the grid's
+  way).
+- The items of `:header_action` and `:cell_action` get `scope` and `ref`
+  in their context, and their results are said: `{:ok, message}`,
+  `{:error, message}`, `:async`.
+
+### Added
+
+- `:action`: actions on the rows selected (`selectable`), buttons of
+  the bar above the grid, with the selection as `Masu.Live.selected/1`
+  gives it (`{:query, query}` for every row of the query), `confirm`
+  ("Delete {count} orders?"), `danger` and `keep_selection`; the grid
+  reads its rows again when one is done, and clears the selection.
+- `:row_action`: actions on a row, in a menu at the end of each row
+  (and in the menu of its cells: a right click, the context-menu key,
+  Shift+F10), as a function, an event to the LiveView, or a link
+  (`navigate`, `patch`); `show` and `disabled` by the row, read again on
+  the server; `editors` in the context, the people editing the row.
+- `scope` on the grid: in every write and every action's context.
+- `Masu.reply/2` and `Masu.progress/3`: a write or an action that goes
+  on in a job (`Masu.Write.async/1`, `:async`) says how far it is and
+  how it went, from any process; the grid shows it running, its
+  progress, and its result.
+- `Masu.Test.action/3`, `row_action/4`, `actions/3` (`:selection`) and
+  `actions/4` (`:row`); `origin:` for `edit/4`, `add_rows/4` and
+  `delete_rows/4`, which give `:async` for a write saved later.
+- Messages: `row_actions`, `action_done`, `action_running`,
+  `action_progress`, `saving_later`, `deleting_later`.
+
 ## [0.1.2] - 2026-10-18
 
 ### Added

@@ -160,6 +160,7 @@ defmodule MasuDev.Layouts do
           {"Pages", "/pages"},
           {"Look", "/look"},
           {"Menus", "/menus"},
+          {"Actions", "/actions"},
           {"Some filters", "/limited"},
           {"Results", "/results"},
           {"Slow", "/slow"},
@@ -1294,6 +1295,98 @@ defmodule MasuDev.ControlledLive do
   end
 end
 
+defmodule MasuDev.ActionsLive do
+  @moduledoc """
+  Actions of the app's own (Masu.Action): on the rows selected (the bar
+  above the grid) and on each row (the menu at its end, and in the menu
+  of its cells), one that is a link, one that asks first, and one that
+  goes on in a task and says how far it is.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, rows: Enum.take(MasuDev.Customers.all(), 200), said: nil)}
+  end
+
+  @impl true
+  def handle_params(%{"open" => id}, _uri, socket) do
+    row = Enum.find(socket.assigns.rows, &(to_string(&1.id) == id))
+    {:noreply, assign(socket, said: "Opened #{row && row.name}")}
+  end
+
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_info({:deactivate, ids}, socket) do
+    ids = MapSet.new(ids)
+    rows = Enum.map(socket.assigns.rows, &if(&1.id in ids, do: %{&1 | active: false}, else: &1))
+    {:noreply, assign(socket, rows: rows)}
+  end
+
+  def handle_info({:remove, ids}, socket) do
+    ids = MapSet.new(ids)
+    {:noreply, update(socket, :rows, fn rows -> Enum.reject(rows, &(&1.id in ids)) end)}
+  end
+
+  @impl true
+  def render(assigns) do
+    pid = self()
+
+    assigns =
+      assign(assigns,
+        deactivate: fn %{selected: {:ids, ids}} ->
+          send(pid, {:deactivate, ids})
+          {:ok, "#{length(ids)} deactivated"}
+        end,
+        deactivate_row: fn %{row: row} ->
+          send(pid, {:deactivate, [row.id]})
+          {:ok, "#{row.name} deactivated"}
+        end,
+        remove: fn %{selected: {:ids, ids}} ->
+          send(pid, {:remove, ids})
+          {:ok, "#{length(ids)} removed"}
+        end,
+        export_later: &export_later/1
+      )
+
+    ~H"""
+    <h1 id="actions-label">Actions</h1>
+    <p id="said" role="status">{@said}</p>
+    <.data_grid id="actions" rows={@rows} label_id="actions-label" height="24rem" selectable>
+      <:col field={:name} />
+      <:col field={:city} />
+      <:col field={:plan} type={:enum} values={~w(free starter team business enterprise)} />
+      <:col field={:active} type={:boolean} />
+
+      <:action label="Deactivate" on_action={@deactivate} />
+      <:action label="Export later" on_action={@export_later} />
+      <:action label="Remove" on_action={@remove} confirm="Remove {count} customers?" danger />
+
+      <:row_action label="Open" patch={&"/actions?open=#{&1.id}"} />
+      <:row_action label="Deactivate" on_action={@deactivate_row} disabled={&(!&1.active)} />
+      <:row_action label="Remove" on_action={&send(pid, {:remove, [&1.row.id]})} confirm="Remove this customer?" danger />
+    </.data_grid>
+    """
+  end
+
+  # A task: how far it is, then how it went.
+  defp export_later(%{ref: ref, count: count}) do
+    Task.start(fn ->
+      for done <- 1..count do
+        Process.sleep(150)
+        Masu.progress(ref, done, count)
+      end
+
+      Masu.reply(ref, {:ok, "#{count} exported"})
+    end)
+
+    :async
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -1326,6 +1419,7 @@ defmodule MasuDev.Router do
     live("/results", MasuDev.ResultsLive)
     live("/slow", MasuDev.SlowLive)
     live("/controlled", MasuDev.ControlledLive)
+    live("/actions", MasuDev.ActionsLive)
     masu_exports()
   end
 end

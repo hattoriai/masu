@@ -32,8 +32,11 @@ import type {
   FilterSpec,
   Options,
   Person,
+  Progress,
   QuerySpec,
+  Reply,
   Row,
+  RowsAction,
   Transport,
 } from "./types";
 
@@ -57,6 +60,10 @@ const MAX_COPY_ROWS = 10_000;
 const MAX_AUTO_WIDTH = 640;
 const FLASH = 1600;
 const CURSOR_DELAY = 150;
+/** The width of the cell at the end of each row with its row actions' button. */
+const ROW_ACTIONS_WIDTH = 40;
+/** How long the line of an action's result stays. */
+const TASK_SHOWN = 6000;
 
 interface RowElement extends HTMLDivElement {
   masuIndex?: number;
@@ -174,8 +181,12 @@ export class Grid {
   private toLastPage = false;
   /** The draft the active cell was on, saved when it leaves it. */
   private activeDraft: string | null = null;
-  /** A question above the grid: delete rows, add the rest of a paste. */
+  /** A question above the grid: delete rows, add the rest of a paste, an action's `confirm`. */
   private confirmEl: HTMLElement | null = null;
+  /** The writes and actions that go on later (Masu.Write.async/1, `:async`), by their token. */
+  private later = new Map<string, Later>();
+  /** Lines above the grid: an action that runs, how far it is, how it went. */
+  private tasksEl: HTMLElement | null = null;
 
   /** The rows that changed (Masu.Live), each until its flash ends. */
   private flash = new Map<string, { until: number; color: string | undefined }>();
@@ -263,7 +274,9 @@ export class Grid {
     const previous = this.config;
     // The columns that show, in their order: the rows of others are of no use.
     const keysChanged = keysOf(config.columns) !== keysOf(previous.columns);
-    const columnsChanged = JSON.stringify(withoutWidths(config.columns)) !== JSON.stringify(withoutWidths(previous.columns));
+    const columnsChanged =
+      JSON.stringify(withoutWidths(config.columns)) !== JSON.stringify(withoutWidths(previous.columns)) ||
+      (config.rowActions?.length ?? 0) > 0 !== (previous.rowActions?.length ?? 0) > 0;
     const widthsChanged = JSON.stringify(config.columns.map((c) => [c.key, c.width])) !== JSON.stringify(previous.columns.map((c) => [c.key, c.width]));
     this.config = config;
 
@@ -488,7 +501,7 @@ export class Grid {
     setStyle(this.body, "height", `${totalHeight(count, rh, gaps)}px`);
     // -1 while the count is not known (ARIA).
     setAttribute(this.gridEl, "aria-rowcount", this.exact ? String(this.rowCount() + 1) : "-1");
-    setAttribute(this.gridEl, "aria-colcount", String(this.columns.length));
+    setAttribute(this.gridEl, "aria-colcount", String(this.columns.length + (this.hasRowActions() ? 1 : 0)));
     if (this.emptyEl) this.emptyEl.hidden = this.total > 0 || this.drafts.length > 0;
     this.leaveDraft();
 
@@ -564,7 +577,35 @@ export class Grid {
     rowEl.className = "masu-row";
     rowEl.setAttribute("role", "row");
     this.columns.forEach((column, col) => rowEl.appendChild(this.makeCell(column, col)));
+    if (this.hasRowActions()) rowEl.appendChild(this.makeRowActionsCell());
     return rowEl;
+  }
+
+  /** The cell at the end of a row, with the button of its row actions' menu: it sticks to the end. */
+  private makeRowActionsCell(): HTMLDivElement {
+    const cell = document.createElement("div");
+    cell.className = `masu-row-actions ${this.rowActionsPin()}`;
+    cell.setAttribute("role", "gridcell");
+    cell.setAttribute("aria-colindex", String(this.columns.length + 1));
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "masu-row-actions-button";
+    button.tabIndex = -1;
+    button.setAttribute("aria-label", this.message("row_actions", {}));
+    button.setAttribute("aria-haspopup", "menu");
+    button.innerHTML = MORE_ICON;
+    cell.appendChild(button);
+    return cell;
+  }
+
+  /** The row actions' cells stick to the end, as the columns pinned there; the first pinned to the end draws the edge. */
+  private rowActionsPin(): string {
+    const edge = this.columns[this.columns.length - 1]?.pinned !== "end";
+    return `masu-pinned masu-pinned-end${edge ? " masu-pinned-edge" : ""}`;
+  }
+
+  private hasRowActions(): boolean {
+    return (this.config.rowActions?.length ?? 0) > 0;
   }
 
   private makeCell(column: ColumnConfig, col: number): HTMLDivElement {
@@ -653,6 +694,15 @@ export class Grid {
       }
     });
 
+    if (this.hasRowActions()) {
+      const actions = cells[this.columns.length] as HTMLElement | undefined;
+      if (actions) {
+        actions.id = `${this.id}-r${index}-actions`;
+        const button = actions.firstElementChild as HTMLElement | null;
+        if (button) button.hidden = row === null || this.rowActionsOf(row).length === 0;
+      }
+    }
+
     // A row of a tree says where it is.
     const node = row === null ? null : this.nodeOf(row);
     if (node) {
@@ -666,10 +716,22 @@ export class Grid {
     }
   }
 
-  /** The place in the tree of a row (Masu.Tree), after its cells and its read-only cells. */
+  /** Where a row's own state starts: after its id, its cells and its read-only cells. */
+  private afterCells(): number {
+    return this.columns.length + 1 + (this.config.locks ? 1 : 0);
+  }
+
+  /** The row actions a row shows: `[id, disabled, href]` of each (Masu.Action). */
+  private rowActionsOf(row: Row): [number, boolean, string | null][] {
+    if (!this.hasRowActions() || isGroup(row) || isDraft(row)) return [];
+    const own = (row as unknown[])[this.afterCells()];
+    return Array.isArray(own) ? (own as [number, boolean, string | null][]) : [];
+  }
+
+  /** The place in the tree of a row (Masu.Tree), after its cells, its read-only cells and its row actions. */
   private nodeOf(row: Row): TreeNode | null {
     if (!this.config.tree) return null;
-    const meta = (row as unknown[])[this.columns.length + 1 + (this.config.locks ? 1 : 0)];
+    const meta = (row as unknown[])[this.afterCells() + (this.hasRowActions() ? 1 : 0)];
     if (!Array.isArray(meta)) return null;
     const [level, children, expanded, position, size] = meta as [number, boolean, boolean, number, number];
     return { level, children, expanded, position, size };
@@ -686,7 +748,7 @@ export class Grid {
 
     if (node && isGroup(row)) {
       // A group's label: its column, its value, how many rows.
-      const meta = (row as unknown[])[this.columns.length + 2 + (this.config.locks ? 1 : 0)] as [string, CellValue, number];
+      const meta = (row as unknown[])[this.afterCells() + 1 + (this.hasRowActions() ? 1 : 0)] as [string, CellValue, number];
       const [key, value, count] = meta;
       const column = this.catalogColumn(key);
       const label = document.createElement("span");
@@ -816,7 +878,16 @@ export class Grid {
     clear.className = "masu-selection-clear";
     clear.textContent = this.message("clear_selection", {});
     clear.addEventListener("click", () => this.chooseAll(false));
-    this.selectionBar.replaceChildren(text, clear);
+    this.selectionBar.replaceChildren(text);
+    for (const action of this.config.actions ?? []) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `masu-selection-action${action.danger ? " masu-danger" : ""}`;
+      button.textContent = action.label;
+      button.addEventListener("click", () => this.runSelectionAction(action));
+      this.selectionBar.appendChild(button);
+    }
+    this.selectionBar.appendChild(clear);
     if (this.config.deletes) {
       const remove = document.createElement("button");
       remove.type = "button";
@@ -1061,6 +1132,14 @@ export class Grid {
       cell.appendChild(resizer);
       return cell;
     });
+    if (this.hasRowActions()) {
+      const head = document.createElement("div");
+      head.className = `masu-row-actions-head ${this.rowActionsPin()}`;
+      head.setAttribute("role", "columnheader");
+      head.setAttribute("aria-colindex", String(this.columns.length + 1));
+      head.setAttribute("aria-label", this.message("row_actions", {}));
+      cells.push(head);
+    }
     this.headerRow.replaceChildren(...cells);
     this.renderChips();
   }
@@ -1253,6 +1332,14 @@ export class Grid {
       }
       return;
     }
+    // The cell of a row's actions: their menu.
+    const more = target.closest<HTMLElement>(".masu-row-actions");
+    const moreRow = more?.parentElement as RowElement | null;
+    if (more && moreRow?.masuIndex !== undefined) {
+      event.preventDefault();
+      this.openRowMenu(moreRow.masuIndex, more);
+      return;
+    }
     // From the keyboard, the event is on the grid: the active cell's menu.
     const cell = target === this.gridEl ? (this.active.row >= 0 ? this.active : null) : this.cellAt(target);
     if (!cell) return;
@@ -1390,7 +1477,136 @@ export class Grid {
         run: () => this.runAction("cell", action, cell.col, cell.row, inRange),
       })),
     );
+    group(this.rowItems(data));
     return items;
+  }
+
+  /** The items of a row's actions (Masu.Action): those it shows, links, disabled ones too. */
+  private rowItems(data: Row): MenuItem[] {
+    const actions = new Map((this.config.rowActions ?? []).map((action) => [action.id, action]));
+    return this.rowActionsOf(data).flatMap(([id, disabled, href]) => {
+      const action = actions.get(id);
+      if (!action) return [];
+      const item: MenuItem = {
+        label: action.label,
+        disabled,
+        danger: action.danger,
+        run: () => this.runRowAction(action, data),
+      };
+      if (action.link && href) {
+        item.href = href;
+        item.link = action.link;
+      }
+      return [item];
+    });
+  }
+
+  /** Opens the menu of a row's actions, under its button. */
+  private openRowMenu(index: number, button: HTMLElement): void {
+    const data = this.dataAt(index);
+    if (!data || isGroup(data) || isDraft(data)) return;
+    const items = this.rowItems(data);
+    if (items.length === 0) return;
+    this.closeMenu(false);
+    this.closeCellMenu(false);
+    this.closeActionPanel(false);
+    this.active = { row: index, col: Math.max(0, this.active.col) };
+    this.anchor = null;
+    this.render();
+    const box = button.getBoundingClientRect();
+    this.cellMenu = new ActionMenu(
+      { root: this.uiEl, label: this.message("row_actions", {}), close: (focus) => this.closeCellMenu(focus) },
+      items,
+      { x: box.left, y: box.bottom },
+    );
+  }
+
+  /** Runs a row action on the server, after its question. */
+  private runRowAction(action: RowsAction, data: Row): void {
+    const run = () =>
+      this.transport.push("masu:action", { kind: "row", action: action.id, label: action.label, id: data[0] }, (reply) =>
+        this.actionReply(action.label, reply),
+      );
+    if (action.confirm) this.confirm(action.confirm, action.label, run, action.danger);
+    else run();
+  }
+
+  /** Runs an action on the rows selected, after its question ("Delete {count} orders?"). */
+  private runSelectionAction(action: RowsAction): void {
+    const run = () => {
+      this.selectionBar?.querySelectorAll("button").forEach((button) => (button.disabled = true));
+      this.transport.push("masu:action", { kind: "selection", action: action.id, label: action.label }, (reply) => {
+        this.selectionBar?.querySelectorAll("button").forEach((button) => (button.disabled = false));
+        this.actionReply(action.label, reply);
+      });
+    };
+    if (action.confirm) this.confirm(this.fill(action.confirm, { count: this.chosen.count }), action.label, run, action.danger);
+    else run();
+  }
+
+  /** What an action's answer says: done (with its message), failed, or going on until Masu.reply/2. */
+  private actionReply(label: string, reply: Record<string, unknown>): void {
+    if (typeof reply.async === "string") {
+      this.later.set(reply.async, { kind: "action", label });
+      this.showTask(reply.async, this.message("action_running", { label }), "running");
+    } else if (typeof reply.failed === "string") {
+      this.showTask(null, reply.failed, "error");
+    } else if (reply.error) {
+      this.showTask(null, this.message("action_failed", {}), "error");
+    } else {
+      const message = typeof reply.message === "string" ? reply.message : this.message("action_done", { label });
+      this.showTask(null, message, "done");
+    }
+  }
+
+  /**
+   * A line above the grid: an action that runs (until its reply), or how
+   * one went (for a few seconds); a screen reader hears it.
+   */
+  private showTask(token: string | null, text: string, state: "running" | "done" | "error"): void {
+    if (!this.tasksEl) {
+      this.tasksEl = document.createElement("div");
+      this.tasksEl.className = "masu-tasks";
+      this.uiEl.appendChild(this.tasksEl);
+    }
+    const existing = token ? this.tasksEl.querySelector<HTMLElement>(`[data-token="${CSS.escape(token)}"]`) : null;
+    const line = existing ?? document.createElement("div");
+    line.className = "masu-task";
+    line.dataset.state = state;
+    if (token) line.dataset.token = token;
+    line.textContent = text;
+    if (!existing) this.tasksEl.appendChild(line);
+    this.announce(text);
+    if (state !== "running") {
+      delete line.dataset.token;
+      setTimeout(() => line.remove(), TASK_SHOWN);
+    }
+  }
+
+  /** A write or an action that went on later replied (Masu.reply/2). */
+  receiveReply(reply: Reply): void {
+    const later = this.later.get(reply.token);
+    if (!later) return;
+    this.later.delete(reply.token);
+
+    if (later.kind === "action") {
+      const text = reply.message ?? (reply.ok ? this.message("action_done", { label: later.label }) : this.message("action_failed", {}));
+      this.showTask(reply.token, text, reply.ok ? "done" : "error");
+    } else if (later.kind === "edits") {
+      this.takeEditReply(later.edits, reply.errors as [unknown, string, string, CellValue?][], later.mode);
+      if (reply.ok && reply.message) this.announce(reply.message);
+    } else {
+      const errors = reply.errors as [unknown, string][];
+      if (!reply.ok) this.announce(errors[0]?.[1] ?? reply.message ?? this.message("action_failed", {}));
+      else this.announce(reply.message ?? (later.count === 1 ? this.message("deleted_one", {}) : this.message("deleted", { count: later.count })));
+    }
+  }
+
+  /** How far an action that went on later is (Masu.progress/3). */
+  receiveProgress(progress: Progress): void {
+    const later = this.later.get(progress.token);
+    if (later?.kind !== "action") return;
+    this.showTask(progress.token, this.message("action_progress", { label: later.label, done: progress.done, total: progress.total }), "running");
   }
 
   /** Copies a range, with its columns' labels first when `headers`. */
@@ -1531,12 +1747,12 @@ export class Grid {
   }
 
   private applyWidths(): void {
-    this.contentEl.style.setProperty("--masu-cols", this.widths.map((width) => `${width}px`).join(" "));
-    this.contentEl.style.setProperty("--masu-width", `${this.widths.reduce((a, b) => a + b, 0)}px`);
-    this.pinned = pins(
-      this.columns.map((column) => column.pinned ?? null),
-      this.widths,
-    );
+    // The row actions' cell is a column of its own, pinned to the end.
+    const extra = this.hasRowActions() ? [ROW_ACTIONS_WIDTH] : [];
+    const widths = [...this.widths, ...extra];
+    this.contentEl.style.setProperty("--masu-cols", widths.map((width) => `${width}px`).join(" "));
+    this.contentEl.style.setProperty("--masu-width", `${widths.reduce((a, b) => a + b, 0)}px`);
+    this.pinned = pins([...this.columns.map((column) => column.pinned ?? null), ...extra.map(() => "end" as const)], widths);
     for (const [col, offset] of [...this.pinned.start, ...this.pinned.end]) {
       this.contentEl.style.setProperty(`--masu-pin-${col}`, `${offset}px`);
     }
@@ -1706,6 +1922,13 @@ export class Grid {
       if (target.closest(".masu-add-row")) {
         event.preventDefault();
         this.addDraft();
+        return;
+      }
+      const more = target.closest<HTMLElement>(".masu-row-actions-button");
+      if (more) {
+        event.preventDefault();
+        const rowEl = more.closest<RowElement>(".masu-row");
+        if (rowEl?.masuIndex !== undefined) this.openRowMenu(rowEl.masuIndex, more);
         return;
       }
       const button = target.closest<HTMLElement>(".masu-filter-button");
@@ -2689,7 +2912,7 @@ export class Grid {
    */
   private applyEdits(
     cells: { row: number; col: number; value: string | boolean | null; before?: CellValue }[],
-    record = true,
+    origin: "edit" | "paste" | "fill" | "clear" = "edit",
   ): void {
     const edits: Edit[] = [];
     let skipped = 0;
@@ -2723,10 +2946,10 @@ export class Grid {
     if (skipped > 0) this.announce(this.message("not_editable", { count: skipped }));
     if (firstProblem) this.announce(firstProblem);
     if (drafted || firstProblem) this.refreshRows();
-    this.send(edits, record ? "edit" : "redo");
+    this.send(edits, "edit", origin);
   }
 
-  private send(edits: Edit[], mode: "edit" | "undo" | "redo"): void {
+  private send(edits: Edit[], mode: "edit" | "undo" | "redo", origin: string = mode): void {
     if (edits.length === 0) return;
     for (const edit of edits) {
       const key = cellKey(edit.id, edit.key);
@@ -2738,48 +2961,61 @@ export class Grid {
     // Each edit says what the person saw: the server refuses it when the
     // cell changed meanwhile (see Masu.Edit).
     const payload = edits.map((edit) => ({ id: edit.id, key: edit.key, value: edit.value, before: edit.before }));
-    this.transport.push("masu:edit", { edits: payload }, (reply) => {
+    this.transport.push("masu:edit", { edits: payload, origin }, (reply) => {
       const errors = (reply.errors as [unknown, string, string, CellValue?][]) ?? [];
-      for (const edit of edits) this.saving.delete(cellKey(edit.id, edit.key));
-      const refused = new Map<string, { value: CellValue; now: boolean }>();
-      for (const [id, key, message, ...now] of errors) {
-        const cell = cellKey(id, key);
-        // A cell changed meanwhile comes with its value now.
-        refused.set(cell, { value: (now[0] ?? null) as CellValue, now: now.length > 0 });
-        this.errors.set(cell, message);
+      // Cells saved later (Masu.Write.async/1) stay saving until the reply.
+      const later = new Set(((reply.saving as [unknown, string][]) ?? []).map(([id, key]) => cellKey(id, key)));
+      const now = edits.filter((edit) => !later.has(cellKey(edit.id, edit.key)));
+      if (typeof reply.async === "string" && later.size > 0) {
+        this.later.set(reply.async, { kind: "edits", edits: edits.filter((edit) => later.has(cellKey(edit.id, edit.key))), mode });
+        if (errors.length === 0) this.announce(this.message("saving_later", {}));
       }
-      // A refused cell shows its old value (or its value now) until the
-      // rows come again.
-      for (const edit of edits) {
-        const refusal = refused.get(cellKey(edit.id, edit.key));
-        if (refusal && edit.row !== undefined && this.valueAt(edit.row, edit.col) !== undefined) {
-          const column = this.columns[edit.col];
-          const value = refusal.now ? refusal.value : edit.before;
-          this.setValue(edit.row, edit.col, column.html ? [escapeHTML(String(value ?? "")), value] : value);
-        }
-      }
-
-      const saved = edits.filter((edit) => !refused.has(cellKey(edit.id, edit.key)));
-      if (saved.length > 0) {
-        if (mode === "undo") this.redoStack.push({ kind: "edits", edits: saved });
-        else {
-          this.undoStack.push({ kind: "edits", edits: saved });
-          if (this.undoStack.length > 100) this.undoStack.shift();
-          if (mode === "edit") this.redoStack = [];
-        }
-      }
-
-      if (errors.length > 0) {
-        const [id, key, message] = errors[0];
-        const column = this.columns.find((c) => c.key === key);
-        const more = errors.length > 1 ? ` ${this.message("more_errors", { count: errors.length - 1 })}` : "";
-        this.announce(`${column?.label ?? key}: ${message}${more}`);
-        void id;
-      } else if (edits.length > 1) {
-        this.announce(this.message("saved", { count: saved.length }));
-      }
-      this.refreshRows();
+      if (now.length > 0 || errors.length > 0) this.takeEditReply(now, errors, mode);
+      else this.refreshRows();
     });
+  }
+
+  /** The answer to edits: the cells refused show their old values (or their values now), with their errors. */
+  private takeEditReply(edits: Edit[], errors: [unknown, string, string, CellValue?][], mode: "edit" | "undo" | "redo"): void {
+    for (const edit of edits) this.saving.delete(cellKey(edit.id, edit.key));
+    const refused = new Map<string, { value: CellValue; now: boolean }>();
+    for (const [id, key, message, ...now] of errors) {
+      const cell = cellKey(id, key);
+      // A cell changed meanwhile comes with its value now.
+      refused.set(cell, { value: (now[0] ?? null) as CellValue, now: now.length > 0 });
+      this.errors.set(cell, message);
+    }
+    // A refused cell shows its old value (or its value now) until the
+    // rows come again.
+    for (const edit of edits) {
+      const refusal = refused.get(cellKey(edit.id, edit.key));
+      if (refusal && edit.row !== undefined && this.valueAt(edit.row, edit.col) !== undefined) {
+        const column = this.columns[edit.col];
+        const value = refusal.now ? refusal.value : edit.before;
+        this.setValue(edit.row, edit.col, column.html ? [escapeHTML(String(value ?? "")), value] : value);
+      }
+    }
+
+    const saved = edits.filter((edit) => !refused.has(cellKey(edit.id, edit.key)));
+    if (saved.length > 0) {
+      if (mode === "undo") this.redoStack.push({ kind: "edits", edits: saved });
+      else {
+        this.undoStack.push({ kind: "edits", edits: saved });
+        if (this.undoStack.length > 100) this.undoStack.shift();
+        if (mode === "edit") this.redoStack = [];
+      }
+    }
+
+    if (errors.length > 0) {
+      const [id, key, message] = errors[0];
+      const column = this.columns.find((c) => c.key === key);
+      const more = errors.length > 1 ? ` ${this.message("more_errors", { count: errors.length - 1 })}` : "";
+      this.announce(`${column?.label ?? key}: ${message}${more}`);
+      void id;
+    } else if (edits.length > 1) {
+      this.announce(this.message("saved", { count: saved.length }));
+    }
+    this.refreshRows();
   }
 
   private undo(): void {
@@ -2804,7 +3040,7 @@ export class Grid {
   private clearCells(): void {
     const selection = this.selection();
     if (!selection) return;
-    this.withRows(selection, (cells) => this.applyEdits(cells.map(({ row, col }) => ({ row, col, value: null }))));
+    this.withRows(selection, (cells) => this.applyEdits(cells.map(({ row, col }) => ({ row, col, value: null })), "clear"));
   }
 
   private fillDown(): void {
@@ -2819,7 +3055,7 @@ export class Grid {
           const value = typeof top === "boolean" || top === null ? top : sendValue(column.type, inputText(column.type, top), undefined);
           return { row, col, value };
         });
-      this.applyEdits(edits);
+      this.applyEdits(edits, "fill");
     });
   }
 
@@ -2851,7 +3087,10 @@ export class Grid {
     this.active = { row: bottom, col: right };
     this.load(selection.top, bottom, () => {
       const locale = this.config.locale ?? undefined;
-      this.applyEdits(placed.map((p) => ({ row: p.row, col: p.col, value: sendValue(this.columns[p.col].type, p.text, locale) })));
+      this.applyEdits(
+        placed.map((p) => ({ row: p.row, col: p.col, value: sendValue(this.columns[p.col].type, p.text, locale) })),
+        "paste",
+      );
     });
   }
 
@@ -3107,7 +3346,7 @@ export class Grid {
     this.refreshRows();
 
     const rows = saving.map((draft) => Object.fromEntries(draft.values));
-    this.transport.push("masu:create", { rows }, (reply) => {
+    this.transport.push("masu:create", { rows, origin: showRefused ? "paste" : "draft" }, (reply) => {
       for (const draft of saving) {
         draft.saving = false;
         for (const key of draft.values.keys()) this.saving.delete(cellKey(draft.id, key));
@@ -3234,10 +3473,20 @@ export class Grid {
 
   /** Deletes rows; the step goes on the undo stack (or, for a redo, back on it). */
   private pushDelete(payload: { ids: unknown[] } | { selection: true }, redo: boolean): void {
-    this.transport.push("masu:delete", payload, (reply) => {
+    const origin = redo ? "redo" : "selection" in payload ? "selection" : "rows";
+    this.transport.push("masu:delete", { ...payload, origin }, (reply) => {
       if (typeof reply.error === "string") {
         this.announce(reply.error);
         return;
+      }
+      // Rows deleted later (Masu.Write.async/1): the reply says how it went.
+      const later = (reply.saving as unknown[]) ?? [];
+      if (typeof reply.async === "string" && later.length > 0) {
+        this.later.set(reply.async, { kind: "delete", count: later.length });
+        if (((reply.deleted as number) ?? 0) === 0) {
+          this.announce(this.message("deleting_later", {}));
+          return;
+        }
       }
       const deleted = (reply.deleted as number) ?? 0;
       const errors = (reply.errors as [unknown, string][]) ?? [];
@@ -3324,6 +3573,10 @@ export class Grid {
     for (const name of ["aria-level", "aria-posinset", "aria-setsize", "aria-expanded"]) rowEl.removeAttribute(name);
     Array.from(rowEl.children).forEach((child, col) => {
       const cell = child as HTMLElement;
+      if (col >= this.columns.length) {
+        (cell.firstElementChild as HTMLElement | null)?.toggleAttribute("hidden", true);
+        return;
+      }
       cell.id = `${this.id}-r${index}-c${col}`;
       cell.textContent = col === 0 ? `+ ${this.message("new_row", {})}` : "";
       cell.classList.remove("masu-invalid", "masu-saving", "masu-editable", "masu-locked", "masu-null");
@@ -3745,12 +3998,20 @@ export class Grid {
 
   // Words for a screen reader.
 
-  private message(name: string, values: { count?: number; label?: string }): string {
+  private message(name: string, values: MessageValues): string {
     const messages = this.messages();
-    const count = values.count ?? 0;
-    const template = name === "rows" && count === 1 ? messages.row : messages[name] ?? name;
-    const formatted = new Intl.NumberFormat(this.config.locale ?? undefined).format(count);
-    return template.replace("{count}", formatted).replace("{label}", values.label ?? "");
+    const template = name === "rows" && values.count === 1 ? messages.row : messages[name] ?? name;
+    return this.fill(template, { count: 0, ...values });
+  }
+
+  /** A message's `{count}`, `{label}`, `{done}` and `{total}`, the numbers in the grid's locale. */
+  private fill(template: string, values: MessageValues): string {
+    const number = (n: number | undefined) => (n === undefined ? "" : new Intl.NumberFormat(this.config.locale ?? undefined).format(n));
+    return template
+      .replace("{count}", number(values.count))
+      .replace("{label}", values.label ?? "")
+      .replace("{done}", number(values.done))
+      .replace("{total}", number(values.total));
   }
 
   private announceCount(): void {
@@ -3936,6 +4197,12 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   view_dropped: "Part of this view no longer applies: {label}",
   column_menu: "{label} menu",
   cell_menu: "{label}: actions",
+  row_actions: "Row actions",
+  action_done: "{label}: done",
+  action_running: "{label}: running…",
+  action_progress: "{label}: {done} of {total}",
+  saving_later: "Saving…",
+  deleting_later: "Deleting…",
   copy: "Copy",
   copy_with_headers: "Copy with headers",
   filter_value: "Filter by {label}",
@@ -4020,6 +4287,19 @@ interface Draft {
 
 /** A step to undo or redo: edits of cells, a delete, or a delete undone. */
 type Step = { kind: "edits"; edits: Edit[] } | { kind: "delete"; undo: string } | { kind: "restore"; ids: unknown[] };
+
+/** A write or an action that goes on later, until its reply (Masu.reply/2). */
+type Later =
+  | { kind: "edits"; edits: Edit[]; mode: "edit" | "undo" | "redo" }
+  | { kind: "delete"; count: number }
+  | { kind: "action"; label: string };
+
+interface MessageValues {
+  count?: number;
+  label?: string;
+  done?: number;
+  total?: number;
+}
 
 function cellKey(id: unknown, key: string): string {
   return `${JSON.stringify(id)}\u0000${key}`;

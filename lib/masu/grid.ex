@@ -85,6 +85,10 @@ defmodule Masu.Grid do
        initial_from: 0,
        header_actions: [],
        cell_actions: [],
+       actions: [],
+       row_actions: [],
+       scope: nil,
+       pending: %{},
        cell_menu: [],
        action_panel: nil,
        column_specs: nil,
@@ -113,6 +117,31 @@ defmodule Masu.Grid do
 
   def update(%{masu_timeout: _name}, socket), do: {:ok, socket}
 
+  # A write or an action that went on later replied (Masu.reply/2).
+  def update(%{masu_reply: {token, result}}, socket) do
+    case Map.pop(socket.assigns.pending, token) do
+      {nil, _pending} ->
+        {:ok, socket}
+
+      {entry, pending} ->
+        {:ok, socket |> assign(pending: pending) |> replied(token, entry, result)}
+    end
+  end
+
+  def update(%{masu_progress: {token, done, total}}, socket) do
+    if Map.has_key?(socket.assigns.pending, token) do
+      {:ok,
+       push_event(socket, "masu:progress", %{
+         "id" => socket.assigns.id,
+         "token" => token,
+         "done" => done,
+         "total" => total
+       })}
+    else
+      {:ok, socket}
+    end
+  end
+
   def update(%{masu_changes: true}, socket) do
     case Masu.Live.take(socket.assigns.id) do
       [] -> {:ok, socket}
@@ -139,10 +168,12 @@ defmodule Masu.Grid do
   def update(assigns, socket) do
     socket =
       socket
-      |> assign(Map.drop(assigns, [:input, :header_action, :cell_action]))
+      |> assign(Map.drop(assigns, [:input, :header_action, :cell_action, :action, :row_action]))
       |> assign(
         header_actions: Action.all(Map.get(assigns, :header_action, []), :header),
-        cell_actions: Action.all(Map.get(assigns, :cell_action, []), :cell)
+        cell_actions: Action.all(Map.get(assigns, :cell_action, []), :cell),
+        actions: Action.all(Map.get(assigns, :action, []), :selection),
+        row_actions: Action.all(Map.get(assigns, :row_action, []), :row)
       )
 
     slots = Enum.map(Map.get(assigns, :col, []), &Column.new/1)
@@ -732,7 +763,7 @@ defmodule Masu.Grid do
   # A column takes a value on a new row when the grid creates rows, as it
   # takes one in an edit. An enum's values are its own, or its schema's.
   defp supported(source, columns, assigns) do
-    edits? = assigns.changeset != nil or assigns.update != nil
+    edits? = edits?(assigns)
     creates? = creates?(assigns)
 
     Enum.map(columns, fn column ->
@@ -771,8 +802,11 @@ defmodule Masu.Grid do
   defp named_field?(%Column{value: nil, field: field}) when is_binary(field), do: true
   defp named_field?(%Column{}), do: false
 
+  defp edits?(assigns),
+    do: is_function(assigns[:on_update], 1) or is_function(assigns[:changeset], 2)
+
   defp creates?(assigns) do
-    is_function(Map.get(assigns, :create), 1) or
+    is_function(Map.get(assigns, :on_create), 1) or
       (is_function(Map.get(assigns, :changeset), 2) and Map.get(assigns, :struct) != nil)
   end
 
@@ -963,26 +997,35 @@ defmodule Masu.Grid do
   # Edits of cells: saved, then the rows of the query again, as for a
   # live change. Other LiveViews that follow the grid's topic get the
   # saved rows; this one has them already.
-  def handle_event("masu:edit", %{"edits" => edits}, socket) when is_list(edits) do
-    {saved, errors} = Masu.Edit.run(edits, socket.assigns, row_id(socket.assigns))
-    socket = take_saved(socket, Enum.map(saved, &{:upsert, &1}))
+  def handle_event("masu:edit", %{"edits" => edits} = params, socket) when is_list(edits) do
+    origin = Masu.Edit.origin(params["origin"], :edit)
+    result = Masu.Edit.update(edits, socket.assigns, row_id(socket.assigns), origin)
+
+    socket =
+      socket
+      |> take_saved(Enum.map(result.saved, &{:upsert, &1}))
+      |> put_pending(result.token, %{kind: :write, op: :update, cells: result.pending})
 
     {:reply,
      %{
        "revision" => socket.assigns.revision,
-       "rows" => encode_rows(saved, socket.assigns),
-       "errors" => errors
-     }, socket}
+       "rows" => encode_rows(result.saved, socket.assigns),
+       "errors" => result.errors,
+       "async" => result.token,
+       "saving" => result.pending
+     }
+     |> drop_nil("async"), socket}
   end
 
   # New rows (`create`, or `changeset` and `struct`), each the values of
   # its cells: the answer has, for each, its id, or the errors of its
   # cells (`[key, message]`, a key of nil for the row); and the place of
   # the first new row in the person's order, when it is in their query.
-  def handle_event("masu:create", %{"rows" => drafts}, socket) when is_list(drafts) do
+  def handle_event("masu:create", %{"rows" => drafts} = params, socket) when is_list(drafts) do
     if creates?(socket.assigns) do
       row_id = row_id(socket.assigns)
-      results = Masu.Edit.create(drafts, socket.assigns, row_id)
+      origin = Masu.Edit.origin(params["origin"], :draft)
+      results = Masu.Edit.create(drafts, socket.assigns, row_id, origin)
       created = for {:ok, row} <- results, do: row
       socket = take_saved(socket, Enum.map(created, &{:upsert, &1}))
 
@@ -1018,8 +1061,17 @@ defmodule Masu.Grid do
          {:ok, ids} <- ids_to_delete(params, socket.assigns) do
       row_id = row_id(socket.assigns)
       places = places(socket.assigns.source, ids, row_id)
-      {deleted, errors} = Masu.Edit.delete(ids, socket.assigns, row_id)
-      socket = socket |> take_saved([], deleted) |> unselect(deleted)
+      default = if params["selection"] == true, do: :selection, else: :rows
+      origin = Masu.Edit.origin(params["origin"], default)
+      result = Masu.Edit.delete(ids, socket.assigns, row_id, origin)
+      deleted = result.deleted
+
+      socket =
+        socket
+        |> take_saved([], deleted)
+        |> unselect(deleted)
+        |> put_pending(result.token, %{kind: :write, op: :delete, ids: result.pending})
+
       {undo, socket} = put_trash(socket, deleted, places)
 
       {:reply,
@@ -1027,9 +1079,12 @@ defmodule Masu.Grid do
          "revision" => socket.assigns.revision,
          "total" => socket.assigns.total,
          "deleted" => length(deleted),
-         "errors" => errors,
-         "undo" => undo
-       }, socket}
+         "errors" => result.errors,
+         "undo" => undo,
+         "async" => result.token,
+         "saving" => result.pending
+       }
+       |> drop_nil("async"), socket}
     else
       message when is_binary(message) -> {:reply, %{"error" => message}, socket}
       {:error, message} -> {:reply, %{"error" => message}, socket}
@@ -1201,11 +1256,55 @@ defmodule Masu.Grid do
         panel = %{kind: action.kind, index: action.index, context: context}
         {:reply, %{"panel" => true}, assign(socket, action_panel: panel)}
       else
-        Action.run(action, context)
-        {:reply, %{"ok" => true}, socket}
+        run_action(socket, action, context)
       end
     else
       {:error, error} -> {:reply, %{"error" => error}, socket}
+    end
+  end
+
+  # An action on the rows selected (`:action`), which the grid offers
+  # while rows are selected.
+  def handle_event("masu:action", %{"kind" => "selection", "action" => index} = params, socket)
+      when is_integer(index) do
+    assigns = socket.assigns
+    summary = selection_summary(assigns)
+
+    with %Action{} = action <- Enum.at(assigns.actions, index),
+         true <- params["label"] in [nil, action.label],
+         true <- assigns.selectable and summary.count > 0 do
+      context =
+        assigns
+        |> base_context()
+        |> Map.merge(%{selected: selected(assigns), count: summary.count})
+
+      run_action(socket, action, context)
+    else
+      _other -> {:reply, %{"error" => "action"}, socket}
+    end
+  end
+
+  # An action on a row (`:row_action`): the row read again from the
+  # source, which must show the action, available.
+  def handle_event("masu:action", %{"kind" => "row", "action" => index} = params, socket)
+      when is_integer(index) do
+    assigns = socket.assigns
+    row_id = row_id(assigns)
+
+    with %Action{} = action <- Enum.at(assigns.row_actions, index),
+         true <- params["label"] in [nil, action.label],
+         true <- action.on_action != nil or action.event != nil,
+         {:row, [row | _]} <- {:row, fetch_row(assigns, params["id"], row_id)},
+         true <- Action.shown?(action, row) and not Action.disabled?(action, row) do
+      context =
+        assigns
+        |> base_context()
+        |> Map.merge(%{id: row_id.(row), row: row, editors: editors(assigns, params["id"])})
+
+      run_action(socket, action, context)
+    else
+      {:row, _none} -> {:reply, %{"error" => "row"}, socket}
+      _other -> {:reply, %{"error" => "action"}, socket}
     end
   end
 
@@ -1423,21 +1522,21 @@ defmodule Masu.Grid do
   end
 
   defp action_context(assigns, %Action{kind: :header}, column, _params),
-    do: {:ok, %{grid: assigns.id, column: column.key}}
+    do: {:ok, Map.put(base_context(assigns), :column, column.key)}
 
   defp action_context(assigns, %Action{kind: :cell}, column, %{"id" => id} = params) do
     row_id = row_id(assigns)
 
     case Source.fetch(assigns.source, [id], row_id) do
       [row | _] ->
-        context = %{
-          grid: assigns.id,
-          column: column.key,
-          id: row_id.(row),
-          row: row,
-          value: Column.get(column, row),
-          range: action_range(assigns, params["range"])
-        }
+        context =
+          Map.merge(base_context(assigns), %{
+            column: column.key,
+            id: row_id.(row),
+            row: row,
+            value: Column.get(column, row),
+            range: action_range(assigns, params["range"])
+          })
 
         {:ok, context}
 
@@ -1447,6 +1546,136 @@ defmodule Masu.Grid do
   end
 
   defp action_context(_assigns, _action, _column, _params), do: {:error, "row"}
+
+  # What every action's context has: the grid, the scope, and a ref of
+  # its own (for `:async`).
+  defp base_context(assigns) do
+    {ref, _token} = Masu.Ref.new(assigns.id)
+    %{grid: assigns.id, scope: assigns.scope, ref: ref}
+  end
+
+  defp fetch_row(_assigns, nil, _row_id), do: []
+  defp fetch_row(assigns, id, row_id), do: Source.fetch(assigns.source, [id], row_id)
+
+  # The people whose editor is open on a cell of the row (Masu.Presence).
+  defp editors(assigns, id) do
+    for %{editing: true, cell: [^id | _]} = person <- assigns.people,
+        do: Map.take(person, [:id, :name, :color])
+  end
+
+  # Runs an action that is not a panel, and answers with its result: done
+  # (with a message), failed, or going on (`:async`) until Masu.reply/2.
+  # An action on rows reads them again when it is done, and clears the
+  # selection it was on.
+  defp run_action(socket, action, context) do
+    {_pid, _grid, token} = Masu.Ref.decode!(context.ref)
+
+    case Action.run(action, context) do
+      :async ->
+        socket =
+          socket
+          |> put_pending(token, %{kind: :action, action: action})
+          |> accepted(action)
+
+        {:reply, %{"async" => token}, socket}
+
+      {:error, message} ->
+        {:reply, %{"failed" => message}, socket}
+
+      done ->
+        reply = with {:ok, message} <- done, do: %{"ok" => true, "message" => message}
+        reply = if reply == :ok, do: %{"ok" => true}, else: reply
+        {:reply, reply, socket |> accepted(action) |> done_action(action)}
+    end
+  end
+
+  # An action on the selection, accepted: the selection is cleared,
+  # unless the action keeps it.
+  defp accepted(socket, %Action{kind: :selection, keep_selection: false}) do
+    socket = assign(socket, selection: %{all: false, ids: MapSet.new(), except: MapSet.new()})
+
+    if is_function(socket.assigns.on_select, 1),
+      do: socket.assigns.on_select.(selection_summary(socket.assigns))
+
+    socket
+  end
+
+  defp accepted(socket, _action), do: socket
+
+  defp done_action(socket, %Action{kind: kind}) when kind in [:selection, :row],
+    do: refresh(socket)
+
+  defp done_action(socket, _action), do: socket
+
+  defp put_pending(socket, nil, _entry), do: socket
+
+  defp put_pending(socket, token, entry),
+    do: assign(socket, pending: Map.put(socket.assigns.pending, token, entry))
+
+  # A reply of a write or an action that went on later: to the browser,
+  # which says it; the rows read again.
+  defp replied(socket, token, entry, result) do
+    {ok?, message} = outcome(result)
+
+    socket =
+      case entry do
+        %{kind: :action, action: action} when ok? -> done_action(socket, action)
+        %{kind: :action} -> socket
+        %{op: :delete, ids: ids} when ok? -> socket |> unselect_ids(ids) |> refresh()
+        _write -> refresh(socket)
+      end
+
+    push_event(socket, "masu:reply", %{
+      "id" => socket.assigns.id,
+      "token" => token,
+      "ok" => ok?,
+      "message" => message,
+      "errors" => if(ok?, do: [], else: refused(entry, message)),
+      "revision" => socket.assigns.revision,
+      "total" => socket.assigns.total
+    })
+  end
+
+  defp outcome(:ok), do: {true, nil}
+  defp outcome({:ok, message}) when is_binary(message), do: {true, message}
+  defp outcome({:error, message}) when is_binary(message), do: {false, message}
+  defp outcome(other), do: {false, "It failed: #{inspect(other)}"}
+
+  # What a write that failed later refused: its cells, or its rows.
+  defp refused(%{kind: :write, op: :update, cells: cells}, message),
+    do: for([id, key] <- cells, do: [id, key, message])
+
+  defp refused(%{kind: :write, op: :delete, ids: ids}, message),
+    do: for(id <- ids, do: [id, message])
+
+  defp refused(_entry, _message), do: []
+
+  # The rows again, as the source has them now (an action changed them):
+  # the LiveView of a controlled grid gives its own.
+  defp refresh(socket) do
+    %{source: source, query: query, all_columns: all, revision: revision} = socket.assigns
+
+    cond do
+      controlled?(socket.assigns) ->
+        socket
+
+      async?(socket.assigns) ->
+        read_async(socket, source, query, socket.assigns.page, false)
+
+      true ->
+        socket
+        |> assign(
+          source: Source.prepare(source, query, all),
+          revision: revision + 1,
+          initial: nil,
+          changed: []
+        )
+        |> recount(keep: true)
+        |> refresh_details()
+    end
+  end
+
+  defp drop_nil(map, key), do: if(is_nil(map[key]), do: Map.delete(map, key), else: map)
 
   # A range of rows and columns, as the browser has it: the columns that
   # the grid shows, and no more rows than a copy takes.
@@ -1679,7 +1908,8 @@ defmodule Masu.Grid do
   defp first_rows(assigns), do: {0, assigns.block_size}
 
   # A row as the browser gets it: its id, its cells, then its read-only
-  # cells (`locks?/1`), then its place in the tree (Masu.Tree). `from` is
+  # cells (`locks?/1`), then its row actions (`[id, disabled, href]` of
+  # each it shows), then its place in the tree (Masu.Tree). `from` is
   # the place of the first row: a row's id with `row_id={:position}`, or
   # of a row without one in a grid that needs none.
   defp encode_rows(rows, assigns, from \\ 0) do
@@ -1696,6 +1926,7 @@ defmodule Masu.Grid do
           [Group.id(group) | Enum.map(assigns.columns, &Value.to_wire(group.aggregates[&1.key]))]
 
         cells = if locks?, do: cells ++ [true], else: cells
+        cells = if assigns.row_actions != [], do: cells ++ [[]], else: cells
         cells ++ [Tree.to_wire(info), [group.key, Value.to_wire(group.value), group.count]]
 
       {row_or_node, index} ->
@@ -1707,6 +1938,12 @@ defmodule Masu.Grid do
 
         cells = [id_of.(row, index) | cells(assigns.columns, row)]
         cells = if locks?, do: cells ++ [locks(assigns, row)], else: cells
+
+        cells =
+          if assigns.row_actions != [],
+            do: cells ++ [Action.row_wire(assigns.row_actions, row)],
+            else: cells
+
         if info, do: cells ++ [Tree.to_wire(info)], else: cells
     end)
   end
@@ -1741,10 +1978,6 @@ defmodule Masu.Grid do
 
     broadcast(socket.assigns.live, saved, socket.assigns.user)
     broadcast_deleted(socket.assigns.live, deleted)
-    if saved != [] and is_function(socket.assigns.on_save, 1), do: socket.assigns.on_save.(saved)
-
-    if deleted != [] and is_function(socket.assigns.on_delete, 1),
-      do: socket.assigns.on_delete.(deleted)
 
     socket
     |> assign(
@@ -1780,7 +2013,10 @@ defmodule Masu.Grid do
 
   defp unselect(socket, deleted) do
     row_id = row_id(socket.assigns)
-    ids = Enum.map(deleted, &Value.to_wire(row_id.(&1)))
+    unselect_ids(socket, Enum.map(deleted, &Value.to_wire(row_id.(&1))))
+  end
+
+  defp unselect_ids(socket, ids) do
     %{selection: selection} = socket.assigns
 
     assign(socket,
@@ -1871,9 +2107,10 @@ defmodule Masu.Grid do
   @spec stable_id_features(map()) :: [String.t()]
   def stable_id_features(assigns) do
     [
-      edit: assigns[:changeset] != nil or assigns[:update] != nil,
-      create: assigns[:create] != nil or assigns[:struct] != nil,
-      delete: assigns[:delete] != nil or assigns[:deletable] not in [nil, false],
+      edit: assigns[:changeset] != nil or assigns[:on_update] != nil,
+      create: assigns[:on_create] != nil or assigns[:struct] != nil,
+      delete: assigns[:on_delete] != nil or assigns[:deletable] not in [nil, false],
+      row_action: assigns[:row_action] not in [nil, []],
       selectable: assigns[:selectable] == true,
       live: assigns[:live] != nil,
       presence: assigns[:presence] != nil,
@@ -1882,9 +2119,10 @@ defmodule Masu.Grid do
     ]
     |> Enum.filter(&elem(&1, 1))
     |> Enum.map(fn
-      {:edit, _on} -> "changeset or update"
-      {:create, _on} -> "create or struct"
-      {:delete, _on} -> "delete or deletable"
+      {:edit, _on} -> "changeset or on_update"
+      {:create, _on} -> "on_create or struct"
+      {:delete, _on} -> "on_delete or deletable"
+      {:row_action, _on} -> ":row_action"
       {:detail, _on} -> ":detail"
       {key, _on} -> Atom.to_string(key)
     end)
@@ -2234,6 +2472,8 @@ defmodule Masu.Grid do
       "groupable" => assigns.tree == nil and not controlled?(assigns),
       "export" => Enum.map(export_formats(assigns), &Atom.to_string/1),
       "cellMenu" => Enum.map(assigns.cell_menu, &Atom.to_string/1),
+      "actions" => Action.to_wire(assigns.actions),
+      "rowActions" => Action.to_wire(assigns.row_actions),
       "running" => running?(assigns),
       "multiSort" => assigns.multi_sort,
       "selection" => selection_config(assigns),

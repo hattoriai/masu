@@ -94,6 +94,9 @@ defmodule MasuTest.Orders do
         "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT, points DECIMAL)"
       )
 
+      # Chores that the actions of a grid change (Masu.Action), of their own.
+      Repo.query!("CREATE TABLE chores (id INTEGER PRIMARY KEY, title TEXT, done BOOLEAN)")
+
       # Items with empty values and repeated ones, for paging by key.
       Repo.query!("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, score INTEGER)")
 
@@ -154,5 +157,26 @@ defmodule MasuTest.Task do
     |> cast(params, [:title, :status, :points])
     |> validate_required([:title])
     |> validate_number(:points, greater_than_or_equal_to: 0)
+  end
+end
+
+defmodule MasuTest.Chore do
+  @moduledoc "A chore, which the actions of a grid change."
+  use Ecto.Schema
+
+  schema "chores" do
+    field(:title, :string)
+    field(:done, :boolean, default: false)
+  end
+
+  @doc "The chores again: four, the first done."
+  def reset! do
+    MasuTest.Repo.delete_all(__MODULE__)
+
+    for {title, id} <- Enum.with_index(~w(Dishes Laundry Floors Windows), 1) do
+      MasuTest.Repo.insert!(%__MODULE__{id: id, title: title, done: id == 1})
+    end
+
+    :ok
   end
 end

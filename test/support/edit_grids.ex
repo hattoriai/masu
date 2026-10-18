@@ -62,7 +62,7 @@ defmodule MasuTest.EditOrdersLive do
 end
 
 defmodule MasuTest.UpdateLive do
-  @moduledoc "A grid that saves with an update function of its own."
+  @moduledoc "A grid that saves with an on_update of its own, row by row."
   use Phoenix.LiveView
 
   import Masu.Components
@@ -73,14 +73,16 @@ defmodule MasuTest.UpdateLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <.data_grid id="things" rows={@rows} update={&update/2}>
+    <.data_grid id="things" rows={@rows} on_update={&save/1}>
       <:col field={:name} />
     </.data_grid>
     """
   end
 
-  defp update(_row, %{"name" => "nope"}), do: {:error, "Not that name."}
-  defp update(row, %{"name" => name}), do: {:ok, %{row | name: String.upcase(name)}}
+  defp save(write), do: Masu.Write.each(write, &save_row(&1.row, &1.params))
+
+  defp save_row(_row, %{"name" => "nope"}), do: {:error, "Not that name."}
+  defp save_row(row, %{"name" => name}), do: {:ok, %{row | name: String.upcase(name)}}
 end
 
 defmodule MasuTest.LockedLive do
@@ -101,7 +103,7 @@ defmodule MasuTest.LockedLive do
       rows={@people}
       changeset={&MasuTest.EditPeopleLive.changeset/2}
       row_editable={&(&1.id != 1)}
-      on_save={&send(self(), {:saved, &1})}
+      on_update={&save/1}
       sort={[:id]}
     >
       <:col field={:name} />
@@ -109,6 +111,11 @@ defmodule MasuTest.LockedLive do
     </.data_grid>
     <p id="saved">{Enum.join(@saved, ", ")}</p>
     """
+  end
+
+  # The grid's own way, then the LiveView hears of what was saved.
+  defp save(write) do
+    write |> Masu.Write.save() |> tap(&send(self(), {:saved, Masu.Write.saved(&1)}))
   end
 
   @impl true
