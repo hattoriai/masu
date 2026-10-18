@@ -92,6 +92,23 @@ defmodule Masu.FilterOpsTest do
     end
   end
 
+  describe "a column's own operators (filters)" do
+    test "are those it offers, of its type, with between; a source's narrow them" do
+      column = Column.new(field: :age, type: :integer, filters: [:eq, :gte, :lte, :contains])
+      assert column.filter_ops == [:eq, :gte, :lte, :between]
+
+      assert_raise ArgumentError, ~r/operators of Masu.Filter, got: \[:like\]/, fn ->
+        Column.new(field: :name, filters: [:like])
+      end
+    end
+
+    test "a controlled grid's column refuses the others" do
+      columns = [Column.new(key: "name", field: 0, filters: [:eq, :contains])]
+      assert {:error, error} = Query.new([filters: [{"name", :starts_with, "A"}]], columns)
+      assert error =~ "does not filter by starts_with"
+    end
+  end
+
   describe "operators" do
     test "of a type" do
       assert :contains in Filter.ops(:text)

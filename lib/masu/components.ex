@@ -49,7 +49,9 @@ defmodule Masu.Components do
       a function of the row that says whether its cell edits;
     * `values` - the values of an `:enum` column, which its editor offers;
     * `decimals` - the digits after the point of a `:decimal` or `:number`
-      column, whatever the value has.
+      column, whatever the value has;
+    * `filters` - the `Masu.Filter` operators the column offers, of its
+      type: those the app runs, in a controlled grid (`on_query`).
 
   A `:col` with content renders each cell, with the row as `:let`:
 
@@ -283,7 +285,10 @@ defmodule Masu.Components do
     default: nil,
     doc: "the height of a row, in pixels; of the `density` unless given"
 
-  attr :height, :string, default: "32rem", doc: "the height of the grid, as CSS"
+  attr :height, :string,
+    default: "32rem",
+    doc:
+      "the height of the whole grid, as CSS (`100%` fills its container); the rows take what its toolbar leaves"
 
   attr :locale, :string,
     default: nil,
@@ -292,7 +297,7 @@ defmodule Masu.Components do
   attr :messages, :map,
     default: %{},
     doc:
-      "words that replace the built-in ones (`search`, `empty`, `rows`, `loading`; the pager's `previous`, `next`, `page`, `of_pages`, `range`)"
+      "words that replace the built-in ones, by key (`search`, `empty`, `rows`...): `Masu.Messages` has every key, for a grid in another language"
 
   attr :class, :any, default: nil, doc: "classes for the grid element"
   attr :rest, :global, doc: "attributes for the grid element"
@@ -312,9 +317,11 @@ defmodule Masu.Components do
     attr :editable, :any
     attr :values, :list
     attr :decimals, :integer
+    attr :raw, :boolean
     attr :hidden, :boolean
     attr :pinned, :atom
     attr :aggregate, :any
+    attr :filters, :list
   end
 
   slot :header_action,

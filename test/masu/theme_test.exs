@@ -31,6 +31,15 @@ defmodule Masu.ThemeTest do
     assert html |> grid("normal") |> LazyHTML.attribute("class") |> classes() == "masu"
   end
 
+  test "height is the whole grid's, so that a percentage fills its container" do
+    {:ok, _view, html} = live(build_conn(), "/theme")
+
+    assert html |> grid("normal") |> LazyHTML.attribute("style") == ["height: 32rem"]
+
+    [style] = html |> grid("normal-grid") |> LazyHTML.attribute("style")
+    refute style =~ "height: 32rem"
+  end
+
   test "every second row, as :nth-child(even) counts, is marked, from the first render" do
     {:ok, _view, html} = live(build_conn(), "/theme")
 

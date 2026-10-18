@@ -23,8 +23,13 @@
   --masu-rule: #ececef;
   --masu-accent: #2f5bd3;
   --masu-accent-text: #ffffff;
-  --masu-header-background: var(--masu-surface);
-  --masu-header-text: var(--masu-text);
+  /* The tokens made of others have no default here: --masu-header-background
+     (--masu-surface unless set), --masu-header-text (--masu-text),
+     --masu-header-border and --masu-grid-border (a 1px --masu-border),
+     --masu-grid-radius (--masu-radius), --masu-active (--masu-accent) and
+     --masu-focus-ring (a --masu-accent ring). Made of the others on the
+     grid itself, they follow a grid's own --masu-accent (a custom property
+     takes its value where it is set). */
   /* The header: its type, the line or shadow under it, and its cell on
      hover. --masu-header-height (the rows' height unless set) and
      --masu-header-padding (the cells' unless set) have no default here:
@@ -33,12 +38,9 @@
   --masu-header-font-weight: 600;
   --masu-header-text-transform: none;
   --masu-header-letter-spacing: normal;
-  --masu-header-border: 1px solid var(--masu-border);
   --masu-header-shadow: none;
   --masu-header-hover: transparent;
   /* The box of the grid. */
-  --masu-grid-border: 1px solid var(--masu-border);
-  --masu-grid-radius: var(--masu-radius);
   --masu-grid-shadow: none;
   /* The rows: their background, every second one's (zebra), and the
      hover of a row and of a cell. */
@@ -49,7 +51,6 @@
   --masu-row-hover: rgba(31, 31, 35, 0.035);
   --masu-cell-hover: transparent;
   --masu-selection: rgba(47, 91, 211, 0.12);
-  --masu-active: var(--masu-accent);
   --masu-loading: color-mix(in oklab, var(--masu-border) 55%, transparent);
   --masu-invalid: color-mix(in oklab, #dc2626 85%, var(--masu-text));
   --masu-radius: 6px;
@@ -58,7 +59,6 @@
   --masu-field-height: 2.25rem;
   --masu-avatar-size: 1.625rem;
   --masu-indent: 1.25rem;
-  --masu-focus-ring: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent);
   --masu-transition: 120ms ease-out;
 }
 
@@ -82,19 +82,14 @@
   --masu-selection: rgba(123, 156, 255, 0.22);
   --masu-loading: color-mix(in oklab, var(--masu-border) 70%, transparent);
   --masu-invalid: #f87171;
-  /* Tokens made of others, made again of the dark ones (a custom
-     property takes its value where it is set). */
-  --masu-header-background: var(--masu-surface);
-  --masu-header-text: var(--masu-text);
-  --masu-header-border: 1px solid var(--masu-border);
-  --masu-grid-border: 1px solid var(--masu-border);
-  --masu-active: var(--masu-accent);
-  --masu-focus-ring: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent);
 }
 
+/* The grid's height (`height`) is the whole grid's: the rows take what the
+   toolbar, the chips and the status line leave. */
 .masu {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   max-width: 100%;
   color: var(--masu-text);
   font-family: var(--masu-font);
@@ -121,7 +116,7 @@
   margin-bottom: var(--masu-space);
 }
 
-.masu-search {
+.masu .masu-search {
   width: min(100%, 20rem);
   height: var(--masu-field-height);
   padding: 0 0.75rem;
@@ -132,18 +127,33 @@
   font: inherit;
 }
 
-.masu-search:focus-visible {
+.masu .masu-search:focus-visible {
   outline: none;
-  box-shadow: var(--masu-focus-ring);
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }
 
 /* The grid: one scroll box, with the header that stays on top. */
 
+/* Its selects, checkboxes and radios are the browser's own, whatever an
+   app's form styles draw (@tailwindcss/forms draws its own, and an arrow
+   as a background image). */
+.masu select,
+.masu input[type="checkbox"],
+.masu input[type="radio"] {
+  appearance: auto;
+}
+
+.masu select {
+  background-image: none;
+}
+
 .masu-grid {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
-  border: var(--masu-grid-border);
-  border-radius: var(--masu-grid-radius);
+  border: var(--masu-grid-border, 1px solid var(--masu-border));
+  border-radius: var(--masu-grid-radius, var(--masu-radius));
   box-shadow: var(--masu-grid-shadow);
   background: var(--masu-background);
   overscroll-behavior: contain;
@@ -152,7 +162,7 @@
 
 .masu-grid:focus-visible {
   outline: none;
-  box-shadow: var(--masu-focus-ring);
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }
 
 .masu-row {
@@ -170,13 +180,13 @@
   z-index: 5;
   width: var(--masu-width, max-content);
   min-width: 100%;
-  background: var(--masu-header-background);
+  background: var(--masu-header-background, var(--masu-surface));
   box-shadow: var(--masu-header-shadow);
 }
 
 .masu-header {
   height: var(--masu-header-height, var(--masu-row-height, 36px));
-  border-bottom: var(--masu-header-border);
+  border-bottom: var(--masu-header-border, 1px solid var(--masu-border));
 }
 
 .masu-hcell {
@@ -186,7 +196,7 @@
   gap: 0.375rem;
   min-width: 0;
   padding: var(--masu-header-padding, var(--masu-cell-padding));
-  color: var(--masu-header-text);
+  color: var(--masu-header-text, var(--masu-text));
   font-size: var(--masu-header-font-size);
   font-weight: var(--masu-header-font-weight);
   letter-spacing: var(--masu-header-letter-spacing);
@@ -377,11 +387,11 @@
 /* The grid's own cells: not those of a grid in one of its details. */
 .masu-grid:focus-visible > .masu-content .masu-active,
 .masu-grid:focus > .masu-content .masu-active {
-  box-shadow: inset 0 0 0 2px var(--masu-active);
+  box-shadow: inset 0 0 0 2px var(--masu-active, var(--masu-accent));
 }
 
 .masu-col-selected {
-  background: color-mix(in oklab, var(--masu-selection) 60%, var(--masu-header-background));
+  background: color-mix(in oklab, var(--masu-selection) 60%, var(--masu-header-background, var(--masu-surface)));
 }
 
 /* A row the grid is still asking for. */
@@ -450,7 +460,7 @@
 
 /* The filter button of a header: on hover and on focus, and always when
    its column is filtered. */
-.masu-filter-button {
+.masu .masu-filter-button {
   position: absolute;
   top: 50%;
   inset-inline-end: 0.375rem;
@@ -462,7 +472,7 @@
   padding: 0;
   border: 0;
   border-radius: calc(var(--masu-radius) - 2px);
-  background: var(--masu-header-background);
+  background: var(--masu-header-background, var(--masu-surface));
   color: var(--masu-muted);
   cursor: pointer;
   opacity: 0;
@@ -471,29 +481,29 @@
 }
 
 /* A header that aligns to the end has its funnel at the start. */
-.masu-hcell.masu-align-end .masu-filter-button {
+.masu .masu-hcell.masu-align-end .masu-filter-button {
   inset-inline-start: 0.375rem;
   inset-inline-end: auto;
 }
 
-.masu-hcell:hover .masu-filter-button,
-.masu-hcell.masu-active .masu-filter-button,
-.masu-filter-button[aria-expanded="true"],
-.masu-filter-button[data-active] {
+.masu .masu-hcell:hover .masu-filter-button,
+.masu .masu-hcell.masu-active .masu-filter-button,
+.masu .masu-filter-button[aria-expanded="true"],
+.masu .masu-filter-button[data-active] {
   opacity: 1;
 }
 
-.masu-filter-button:hover,
-.masu-filter-button[aria-expanded="true"] {
+.masu .masu-filter-button:hover,
+.masu .masu-filter-button[aria-expanded="true"] {
   background: color-mix(in oklab, var(--masu-text) 8%, transparent);
   color: var(--masu-text);
 }
 
-.masu-filter-button[data-active] {
+.masu .masu-filter-button[data-active] {
   color: var(--masu-accent);
 }
 
-.masu-filter-button[data-active] svg path {
+.masu .masu-filter-button[data-active] svg path {
   fill: currentColor;
 }
 
@@ -512,13 +522,22 @@
   font-weight: 400;
 }
 
+/* A menu or panel above the page (the popover top layer), placed by the
+   browser in the viewport: not the browser's own popover look. */
+.masu .masu-menu:popover-open {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  overflow: auto;
+}
+
 .masu-menu-form {
   display: grid;
   gap: 0.5rem;
 }
 
-.masu-menu-op,
-.masu-menu-input {
+.masu .masu-menu-op,
+.masu .masu-menu-input {
   width: 100%;
   min-width: 0;
   height: 2rem;
@@ -530,13 +549,13 @@
   font: inherit;
 }
 
-.masu-menu-op:focus-visible,
-.masu-menu-input:focus-visible,
-.masu-menu-button:focus-visible,
-.masu-chip button:focus-visible,
-.masu-chips-clear:focus-visible {
+.masu .masu-menu-op:focus-visible,
+.masu .masu-menu-input:focus-visible,
+.masu .masu-menu-button:focus-visible,
+.masu .masu-chip button:focus-visible,
+.masu .masu-chips-clear:focus-visible {
   outline: none;
-  box-shadow: var(--masu-focus-ring);
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }
 
 .masu-menu-fields {
@@ -575,7 +594,7 @@
   background: var(--masu-row-hover);
 }
 
-.masu-menu-value input {
+.masu .masu-menu-value input {
   accent-color: var(--masu-accent);
 }
 
@@ -599,7 +618,7 @@
   margin-top: 0.25rem;
 }
 
-.masu-menu-button {
+.masu .masu-menu-button {
   height: 2rem;
   padding: 0 0.875rem;
   border: 1px solid var(--masu-border);
@@ -610,7 +629,7 @@
   cursor: pointer;
 }
 
-.masu-menu-apply {
+.masu .masu-menu-apply {
   border-color: var(--masu-accent);
   background: var(--masu-accent);
   color: var(--masu-accent-text);
@@ -638,7 +657,7 @@
   background: var(--masu-surface);
 }
 
-.masu-chip button {
+.masu .masu-chip button {
   border: 0;
   background: transparent;
   color: inherit;
@@ -646,7 +665,7 @@
   cursor: pointer;
 }
 
-.masu-chip-text {
+.masu .masu-chip-text {
   overflow: hidden;
   max-width: 24rem;
   padding: 0.125rem 0.25rem 0.125rem 0.75rem;
@@ -655,7 +674,7 @@
   border-radius: 999px;
 }
 
-.masu-chip-remove {
+.masu .masu-chip-remove {
   width: 1.5rem;
   height: 1.5rem;
   margin-inline-end: 0.125rem;
@@ -665,12 +684,12 @@
   line-height: 1;
 }
 
-.masu-chip-remove:hover {
+.masu .masu-chip-remove:hover {
   background: color-mix(in oklab, var(--masu-text) 8%, transparent) !important;
   color: var(--masu-text) !important;
 }
 
-.masu-chips-clear {
+.masu .masu-chips-clear {
   padding: 0.125rem 0.5rem;
   border: 0;
   background: transparent;
@@ -686,7 +705,7 @@
   cursor: text;
 }
 
-.masu-editor {
+.masu .masu-editor {
   position: absolute;
   top: 0;
   z-index: 3;
@@ -695,14 +714,14 @@
   border: 0;
   border-radius: 0;
   outline: none;
-  box-shadow: inset 0 0 0 2px var(--masu-active);
+  box-shadow: inset 0 0 0 2px var(--masu-active, var(--masu-accent));
   background: var(--masu-background);
   color: var(--masu-text);
   font: inherit;
   font-variant-numeric: tabular-nums;
 }
 
-.masu-editor.masu-align-end {
+.masu .masu-editor.masu-align-end {
   text-align: end;
 }
 
@@ -746,7 +765,7 @@
   display: none;
 }
 
-.masu-person {
+.masu .masu-person {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -766,21 +785,21 @@
   transition: box-shadow var(--masu-transition), transform var(--masu-transition);
 }
 
-button.masu-person:hover {
+.masu button.masu-person:hover {
   transform: translateY(-1px);
 }
 
-button.masu-person:focus-visible {
+.masu button.masu-person:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-peer-color, var(--masu-accent));
 }
 
 /* The person followed. */
-.masu-person[aria-pressed="true"] {
+.masu .masu-person[aria-pressed="true"] {
   box-shadow: 0 0 0 2px var(--masu-background), 0 0 0 4.5px var(--masu-peer-color, var(--masu-accent));
 }
 
-.masu-person img {
+.masu .masu-person img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -816,7 +835,7 @@ button.masu-person:focus-visible {
   transform: translate(-50%, -50%);
 }
 
-.masu-following-stop {
+.masu .masu-following-stop {
   border: 0;
   border-radius: 999px;
   padding: 0 0.5rem;
@@ -826,8 +845,8 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-following-stop:hover,
-.masu-following-stop:focus-visible {
+.masu .masu-following-stop:hover,
+.masu .masu-following-stop:focus-visible {
   background: rgba(255, 255, 255, 0.36);
   outline: none;
 }
@@ -892,7 +911,7 @@ button.masu-person:focus-visible {
   gap: 0.375rem;
 }
 
-.masu-toolbar-button {
+.masu .masu-toolbar-button {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
@@ -906,14 +925,14 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-toolbar-button:hover,
-.masu-toolbar-button[aria-expanded="true"] {
+.masu .masu-toolbar-button:hover,
+.masu .masu-toolbar-button[aria-expanded="true"] {
   background: var(--masu-surface);
 }
 
-.masu-toolbar-button:focus-visible {
+.masu .masu-toolbar-button:focus-visible {
   outline: none;
-  box-shadow: var(--masu-focus-ring);
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }
 
 .masu-toolbar-text {
@@ -934,11 +953,11 @@ button.masu-person:focus-visible {
 
 .masu-head .masu-pinned {
   z-index: 2;
-  background-color: var(--masu-header-background);
+  background-color: var(--masu-header-background, var(--masu-surface));
 }
 
 .masu-head .masu-pinned.masu-col-selected {
-  background-color: color-mix(in oklab, var(--masu-selection) 60%, var(--masu-header-background));
+  background-color: color-mix(in oklab, var(--masu-selection) 60%, var(--masu-header-background, var(--masu-surface)));
 }
 
 .masu-body > .masu-row.masu-row-even > .masu-pinned {
@@ -963,7 +982,7 @@ button.masu-person:focus-visible {
 
 .masu-grid:focus-visible > .masu-content .masu-pinned.masu-active,
 .masu-grid:focus > .masu-content .masu-pinned.masu-active {
-  box-shadow: inset 0 0 0 2px var(--masu-active);
+  box-shadow: inset 0 0 0 2px var(--masu-active, var(--masu-accent));
 }
 
 .masu-body > .masu-row.masu-changed > .masu-pinned {
@@ -1038,7 +1057,7 @@ button.masu-person:focus-visible {
   text-overflow: ellipsis;
 }
 
-.masu-columns-pin {
+.masu .masu-columns-pin {
   height: 1.75rem;
   max-width: 9rem;
   border: 1px solid var(--masu-border);
@@ -1049,8 +1068,8 @@ button.masu-person:focus-visible {
   font-size: 0.8125rem;
 }
 
-.masu-columns-move,
-.masu-views-delete {
+.masu .masu-columns-move,
+.masu .masu-views-delete {
   width: 1.75rem;
   height: 1.75rem;
   border: 0;
@@ -1061,19 +1080,19 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-columns-move:hover:not(:disabled),
-.masu-views-delete:hover {
+.masu .masu-columns-move:hover:not(:disabled),
+.masu .masu-views-delete:hover {
   background: var(--masu-surface);
   color: var(--masu-text);
 }
 
-.masu-columns-move:disabled {
+.masu .masu-columns-move:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-.masu-panel-action,
-.masu-views-apply {
+.masu .masu-panel-action,
+.masu .masu-views-apply {
   justify-self: start;
   border: 0;
   padding: 0.25rem 0.375rem;
@@ -1084,8 +1103,8 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-panel-action:hover,
-.masu-views-apply:hover {
+.masu .masu-panel-action:hover,
+.masu .masu-views-apply:hover {
   background: var(--masu-surface);
 }
 
@@ -1095,7 +1114,7 @@ button.masu-person:focus-visible {
   gap: 0.375rem;
 }
 
-.masu-views-apply {
+.masu .masu-views-apply {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1105,11 +1124,11 @@ button.masu-person:focus-visible {
   text-overflow: ellipsis;
 }
 
-.masu-views-apply[aria-current="true"] {
+.masu .masu-views-apply[aria-current="true"] {
   font-weight: 600;
 }
 
-.masu-views-apply[aria-current="true"]::before {
+.masu .masu-views-apply[aria-current="true"]::before {
   content: "✓ ";
   color: var(--masu-accent);
 }
@@ -1145,7 +1164,7 @@ button.masu-person:focus-visible {
   display: none;
 }
 
-.masu-views-form .masu-menu-button {
+.masu .masu-views-form .masu-menu-button {
   justify-self: end;
 }
 
@@ -1224,7 +1243,7 @@ button.masu-person:focus-visible {
 
 .masu-detail:focus-visible {
   outline: none;
-  box-shadow: inset var(--masu-focus-ring);
+  box-shadow: inset var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }
 
 /* Groups (Masu.Group): a group's row, its label and count, and the row of
@@ -1263,7 +1282,7 @@ button.masu-person:focus-visible {
   width: var(--masu-width, max-content);
   min-width: 100%;
   border-top: 1px solid var(--masu-border);
-  background: var(--masu-header-background);
+  background: var(--masu-header-background, var(--masu-surface));
 }
 
 .masu-totals {
@@ -1271,7 +1290,7 @@ button.masu-person:focus-visible {
 }
 
 .masu-foot .masu-pinned {
-  background-color: var(--masu-header-background);
+  background-color: var(--masu-header-background, var(--masu-surface));
 }
 
 .masu-menu-group {
@@ -1284,19 +1303,19 @@ button.masu-person:focus-visible {
   border-style: dashed;
 }
 
-.masu-chip-group .masu-chip-text {
+.masu .masu-chip-group .masu-chip-text {
   padding: 0 0.25rem 0 0.625rem;
 }
 
-.masu-chip-text:disabled {
+.masu .masu-chip-text:disabled {
   color: inherit;
   cursor: default;
 }
 
 /* Selecting rows (`selectable`): a box in the first cell of each row and
    of the header, the rows selected, and how many above the grid. */
-.masu-select,
-.masu-select-all {
+.masu .masu-select,
+.masu .masu-select-all {
   flex: none;
   width: 1rem;
   height: 1rem;
@@ -1306,23 +1325,23 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-hcell .masu-select-all {
+.masu .masu-hcell .masu-select-all {
   order: -1;
 }
 
 /* At the start of the cell, whatever the cell's alignment. */
-.masu-align-end > .masu-select,
-.masu-align-end > .masu-select-all {
+.masu .masu-align-end > .masu-select,
+.masu .masu-align-end > .masu-select-all {
   margin-inline-end: auto;
 }
 
 /* A header of the end lays out in reverse: its box goes last, which is
    first; its funnel, at its start, goes after the box. */
-.masu-hcell.masu-align-end > .masu-select-all {
+.masu .masu-hcell.masu-align-end > .masu-select-all {
   order: 99;
 }
 
-.masu-hcell.masu-align-end:has(> .masu-select-all) .masu-filter-button {
+.masu .masu-hcell.masu-align-end:has(> .masu-select-all) .masu-filter-button {
   inset-inline-start: 2rem;
 }
 
@@ -1346,7 +1365,7 @@ button.masu-person:focus-visible {
   font-weight: 500;
 }
 
-.masu-selection-clear {
+.masu .masu-selection-clear {
   border: 0;
   padding: 0;
   background: transparent;
@@ -1355,8 +1374,8 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-selection-delete,
-.masu-confirm button {
+.masu .masu-selection-delete,
+.masu .masu-confirm button {
   border: 1px solid var(--masu-border);
   border-radius: var(--masu-radius);
   padding: 0.125rem 0.625rem;
@@ -1366,27 +1385,27 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-danger {
+.masu .masu-danger {
   border-color: color-mix(in oklab, var(--masu-invalid) 45%, var(--masu-border));
   color: var(--masu-invalid);
 }
 
-.masu-confirm .masu-confirm-ok:not(.masu-danger) {
+.masu .masu-confirm .masu-confirm-ok:not(.masu-danger) {
   border-color: var(--masu-accent);
   background: var(--masu-accent);
   color: var(--masu-accent-text);
 }
 
-.masu-confirm .masu-confirm-ok.masu-danger {
+.masu .masu-confirm .masu-confirm-ok.masu-danger {
   border-color: var(--masu-invalid);
   background: var(--masu-invalid);
   color: var(--masu-accent-text);
 }
 
-.masu-selection-delete:focus-visible,
-.masu-confirm button:focus-visible {
+.masu .masu-selection-delete:focus-visible,
+.masu .masu-confirm button:focus-visible {
   outline: none;
-  box-shadow: var(--masu-focus-ring);
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }
 
 /* A question above the grid: delete rows, add the rest of a paste. */
@@ -1425,7 +1444,7 @@ button.masu-person:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.masu-pager button {
+.masu .masu-pager button {
   border: 1px solid var(--masu-border);
   border-radius: var(--masu-radius);
   padding: 0.125rem 0.625rem;
@@ -1435,7 +1454,7 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-pager button:disabled {
+.masu .masu-pager button:disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -1453,7 +1472,7 @@ button.masu-person:focus-visible {
   gap: 0.375rem;
 }
 
-.masu-pager input {
+.masu .masu-pager input {
   width: 4.5em;
   border: 1px solid var(--masu-border);
   border-radius: var(--masu-radius);
@@ -1464,10 +1483,10 @@ button.masu-person:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.masu-pager button:focus-visible,
-.masu-pager input:focus-visible {
+.masu .masu-pager button:focus-visible,
+.masu .masu-pager input:focus-visible {
   outline: none;
-  box-shadow: var(--masu-focus-ring);
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }
 
 /* An enum's editor: its values, under the cell. */
@@ -1502,7 +1521,7 @@ button.masu-person:focus-visible {
   background: var(--masu-selection);
 }
 
-.masu-editor[aria-invalid="true"] {
+.masu .masu-editor[aria-invalid="true"] {
   box-shadow: inset 0 0 0 2px var(--masu-invalid);
 }
 
@@ -1536,13 +1555,13 @@ button.masu-person:focus-visible {
   margin-bottom: 0.5rem;
 }
 
-.masu-menu-item {
+.masu .masu-menu-item {
   width: 100%;
   border-color: transparent;
   text-align: start;
 }
 
-.masu-menu-item:hover {
+.masu .masu-menu-item:hover {
   background: var(--masu-surface);
 }
 
@@ -1554,7 +1573,7 @@ button.masu-person:focus-visible {
   padding: 0.25rem;
 }
 
-.masu-menuitem {
+.masu .masu-menuitem {
   overflow: hidden;
   padding: 0.375rem 0.625rem;
   border: 0;
@@ -1568,14 +1587,14 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-menuitem:hover,
-.masu-menuitem:focus-visible {
+.masu .masu-menuitem:hover,
+.masu .masu-menuitem:focus-visible {
   outline: none;
   background: var(--masu-surface);
 }
 
-.masu-menuitem:focus-visible {
-  box-shadow: var(--masu-focus-ring);
+.masu .masu-menuitem:focus-visible {
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }
 
 .masu-menu-separator {
@@ -1597,7 +1616,7 @@ button.masu-person:focus-visible {
 
 .masu-action-panel:focus-visible {
   outline: none;
-  box-shadow: var(--masu-focus-ring), 0 8px 24px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent)), 0 8px 24px rgba(0, 0, 0, 0.14);
 }
 
 /* A read that runs (`load={:async}`, `on_query`): its state, with Stop;
@@ -1653,7 +1672,7 @@ button.masu-person:focus-visible {
   flex: 1;
 }
 
-.masu-state-button {
+.masu .masu-state-button {
   padding: 0.125rem 0.625rem;
   border: 1px solid var(--masu-border);
   border-radius: calc(var(--masu-radius) - 2px);
@@ -1663,7 +1682,7 @@ button.masu-person:focus-visible {
   cursor: pointer;
 }
 
-.masu-state-button:focus-visible {
+.masu .masu-state-button:focus-visible {
   outline: none;
-  box-shadow: var(--masu-focus-ring);
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
 }

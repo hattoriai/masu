@@ -55,6 +55,12 @@ it is written, with no zone.
 Numbers, dates and times use tabular figures, so the digits of a column
 line up.
 
+`raw` shows a column's values as the source gives them, not formatted
+for the locale: `12345` and not `12,345`, `2026-10-18T08:00:00Z` and not
+the date and time in the person's language. The column keeps its type,
+for its alignment, its filters and its editor. A tool that shows data
+as it is, as a SQL client does, wants it.
+
 ## Width and alignment
 
 `width` is the first width of the column, in pixels; the person may

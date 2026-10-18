@@ -1,7 +1,7 @@
 defmodule Masu.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.1"
   @source_url "https://github.com/hattoriai/masu"
 
   # MASU_OLDEST=1 resolves the oldest Phoenix and LiveView that Masu
@@ -154,7 +154,8 @@ defmodule Masu.MixProject do
           Masu.Presence,
           Masu.Tree,
           Masu.Group,
-          Masu.Action
+          Masu.Action,
+          Masu.Messages
         ],
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],

@@ -168,3 +168,71 @@ test("a grid with no menu of its cells leaves the browser's own", async ({ page 
   expect(await prevented).toBe(false);
   await expect(page.locator('#small [role="menu"]')).toHaveCount(0);
 });
+
+test("in a short box that cuts its overflow, a menu and a panel float above the page, whole", async ({ page }) => {
+  // The grid in a box as short as Lotus Web's results, which hides what
+  // overflows it.
+  await page.locator("#menus").evaluate((el) => {
+    const box = document.createElement("div");
+    Object.assign(box.style, { height: "140px", overflow: "hidden" });
+    el.replaceWith(box);
+    box.appendChild(el);
+    el.style.height = "100%";
+  });
+
+  const whole = async (selector: string) => {
+    const shown = await page.locator(selector).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const x = Math.min(Math.max(r.left + 8, 0), innerWidth - 1);
+      // The element is what the page shows at its corners: no box clips it.
+      const at = (y: number) => el.contains(document.elementFromPoint(x, y));
+      return {
+        open: el.matches(":popover-open"),
+        inside: r.top >= 0 && r.bottom <= innerHeight,
+        top: at(r.top + 4),
+        bottom: at(r.bottom - 4),
+      };
+    });
+    expect(shown).toEqual({ open: true, inside: true, top: true, bottom: true });
+  };
+
+  await header(page, "menus", "name").hover();
+  await header(page, "menus", "name").locator(".masu-filter-button").click();
+  await whole('#menus .masu-menu[role="dialog"]');
+  await page.keyboard.press("Escape");
+
+  await header(page, "menus", "revenue").click({ button: "right" });
+  await page.locator('#menus .masu-menu[role="dialog"] .masu-menu-item', { hasText: "Column stats" }).click();
+  await expect(page.locator("#stats dt")).toHaveText(["Lowest", "Highest", "Average"]);
+  await whole("#menus-action-panel");
+});
+
+test("a cell of numbers filters by its value as a bound, and one of text by a part", async ({ page }) => {
+  const [name, , , revenue] = await rowText(page, "menus", 0);
+
+  await cell(page, 0, 3).click({ button: "right" });
+  await expect(menu(page).getByRole("menuitem")).toContainText([
+    `Filter by ${revenue}`,
+    `Exclude ${revenue}`,
+    `Greater than ${revenue}`,
+    `Less than ${revenue}`,
+    `At least ${revenue}`,
+    `At most ${revenue}`,
+    "Filter by empty",
+  ]);
+  await item(page, `At least ${revenue}`).click();
+  await settled(page, "menus");
+  await expect(page.locator("#menus .masu-chip-text")).toHaveText([`Revenue at least ${revenue}`]);
+  const bound = Number(revenue.replace(/,/g, ""));
+  for (let row = 0; row < 3; row++) {
+    const text = (await rowText(page, "menus", row))[3];
+    if (text !== undefined) expect(Number(text.replace(/,/g, ""))).toBeGreaterThanOrEqual(bound);
+  }
+
+  await cell(page, 0, 0).click({ button: "right" });
+  await expect(item(page, `Greater than ${name}`)).toHaveCount(0);
+  const [first] = await rowText(page, "menus", 0);
+  await item(page, `Contains ${first}`).click();
+  await settled(page, "menus");
+  await expect(page.locator("#menus .masu-chip-text")).toContainText([`Name contains ${first}`]);
+});

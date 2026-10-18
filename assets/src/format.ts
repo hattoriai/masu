@@ -12,7 +12,9 @@ const ISO_DATE = /^(-?\d{4,})-(\d{2})-(\d{2})$/;
 const ISO_TIME = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/;
 const ZONED = /(Z|[+-]\d{2}:?\d{2})$/;
 
-export function formatter(type: ColumnType, locale: string | undefined, decimals?: number | null): Formatter {
+export function formatter(type: ColumnType, locale: string | undefined, decimals?: number | null, raw = false): Formatter {
+  // A raw column shows its values as the server sends them.
+  if (raw) return plain;
   // A column of `decimals` digits shows them all, whatever the value has.
   if ((type === "decimal" || type === "number") && typeof decimals === "number") {
     const nf = new Intl.NumberFormat(locale, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
