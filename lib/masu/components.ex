@@ -59,6 +59,16 @@ defmodule Masu.Components do
         <.link navigate={~p"/users/\#{user}"}>{user.name}</.link>
       </:col>
 
+  ## Writes and actions
+
+  A grid with a `changeset` edits its cells, and with `struct` and
+  `deletable` adds and deletes rows, its own way; `on_update`,
+  `on_create`, `on_delete` and `on_restore` write them your way, each a
+  function of a `Masu.Write`; see the [Editing](editing.md) guide.
+  `:action` acts on the rows selected, and `:row_action` on a row; see
+  `Masu.Action` and the [Actions](actions.md) guide. `scope` is in every
+  write and every action.
+
   ## Menus
 
   `cell_menu` gives each cell a menu (a right click, or the context-menu
@@ -88,49 +98,44 @@ defmodule Masu.Components do
   attr :changeset, :any,
     default: nil,
     doc:
-      "a function of a row and params that gives a changeset: the person edits the cells, see the Editing guide"
-
-  attr :update, :any,
-    default: nil,
-    doc:
-      "a function of a row and params that saves them: `{:ok, row}` or `{:error, changeset_or_message}`; instead of `changeset`"
-
-  attr :create, :any,
-    default: nil,
-    doc:
-      "a function of params that inserts a new row: `{:ok, row}` or `{:error, changeset_or_message}`; the person adds rows, see the Editing guide"
+      "a function of a row and params that gives a changeset: the person edits the cells, which the grid saves its own way (`Masu.Write.save/1`), see the Editing guide"
 
   attr :struct, :any,
     default: nil,
     doc:
       "with `changeset`: the struct of a new row (or a function that gives it), which the changeset casts and the repo inserts; the person adds rows"
 
-  attr :delete, :any,
+  attr :on_update, :any,
     default: nil,
     doc:
-      "a function of a row that deletes it: `:ok`, `{:ok, row}` or `{:error, changeset_or_message}`; the person deletes rows"
+      "a function of a `Masu.Write` of edited cells, which saves them and gives the write back with their results; the person edits the cells, see `Masu.Write`"
+
+  attr :on_create, :any,
+    default: nil,
+    doc: "a function of a `Masu.Write` of new rows, as `on_update`; the person adds rows"
+
+  attr :on_delete, :any,
+    default: nil,
+    doc: "a function of a `Masu.Write` of rows to delete, as `on_update`; the person deletes rows"
+
+  attr :on_restore, :any,
+    default: nil,
+    doc:
+      "a function of a `Masu.Write` of deleted rows to bring back (an undo), as `on_update`; a grid that deletes its own way brings them back its own way"
 
   attr :deletable, :any,
     default: nil,
     doc:
-      "`true` to delete rows with the repo of an Ecto source (or from a list), or a function of a row that says whether it deletes"
-
-  attr :restore, :any,
-    default: nil,
-    doc:
-      "with `delete`: a function of a deleted row that brings it back (an undo); a grid that deletes with the repo inserts it again"
-
-  attr :on_delete, :any,
-    default: nil,
-    doc: "a function called with the rows deleted, in the LiveView's process"
+      "`true` to delete rows (the grid's own way: with the repo of an Ecto source, or from a list; or with `on_delete`), `false` never, or a function of a row that says whether it deletes"
 
   attr :row_editable, :any,
     default: nil,
     doc: "a function of a row: `false` makes every cell of the row read-only"
 
-  attr :on_save, :any,
+  attr :scope, :any,
     default: nil,
-    doc: "a function called with the rows saved by an edit, in the LiveView's process"
+    doc:
+      "what your app knows of the person (`@current_scope`): every `Masu.Write` and every action's context has it"
 
   attr :live, :any,
     default: nil,
@@ -347,6 +352,31 @@ defmodule Masu.Components do
     attr :show, :any
   end
 
+  slot :action,
+    doc:
+      "an action on the rows selected, a button of the bar above the grid while rows are selected; needs `selectable`; see `Masu.Action`" do
+    attr :label, :string, required: true
+    attr :on_action, :any
+    attr :event, :string
+    attr :confirm, :string
+    attr :danger, :boolean
+    attr :keep_selection, :boolean
+  end
+
+  slot :row_action,
+    doc:
+      "an action on a row, in the menu at the end of each row and in the menu of its cells: a function, an event, or a link (`navigate`, `patch`); see `Masu.Action`" do
+    attr :label, :string, required: true
+    attr :on_action, :any
+    attr :event, :string
+    attr :navigate, :any
+    attr :patch, :any
+    attr :show, :any
+    attr :disabled, :any
+    attr :confirm, :string
+    attr :danger, :boolean
+  end
+
   slot :empty, doc: "what the grid shows when it has no rows"
 
   slot :detail,
@@ -365,6 +395,8 @@ defmodule Masu.Components do
     check_blocks!(assigns)
     check_row_id!(assigns)
     check_controlled!(assigns)
+
+    check_declared!(assigns)
 
     if assigns.views && is_nil(assigns.user) do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with views needs user"
@@ -385,14 +417,14 @@ defmodule Masu.Components do
       repo_opts={@repo_opts}
       live={@live}
       changeset={@changeset}
-      update={@update}
-      create={@create}
       struct={@struct}
-      delete={@delete}
-      deletable={@deletable}
-      restore={@restore}
+      on_update={@on_update}
+      on_create={@on_create}
       on_delete={@on_delete}
+      on_restore={@on_restore}
+      deletable={@deletable}
       row_editable={@row_editable}
+      scope={@scope}
       presence={@presence}
       user={@user}
       share_view={@share_view}
@@ -408,6 +440,8 @@ defmodule Masu.Components do
       cell_menu={cell_menu!(@id, @cell_menu)}
       header_action={@header_action}
       cell_action={@cell_action}
+      action={@action}
+      row_action={@row_action}
       selectable={@selectable}
       on_select={@on_select}
       expanded={@expanded}
@@ -417,7 +451,6 @@ defmodule Masu.Components do
       views_key={@views_key}
       columns_menu={@columns_menu}
       person={@person}
-      on_save={@on_save}
       row_id={@row_id}
       count={@count}
       paging={@paging}
@@ -489,12 +522,34 @@ defmodule Masu.Components do
 
   # A controlled grid's rows are the LiveView's page: what reads the
   # source's rows beyond them, or writes them, is not for it.
+  # What a grid of Masu 0.1 took, and what takes its place.
+  @renamed [
+    update: "on_update, a function of a Masu.Write",
+    create: "on_create, a function of a Masu.Write",
+    delete: "on_delete, a function of a Masu.Write",
+    restore: "on_restore, a function of a Masu.Write",
+    on_save: "gone: save in on_update (Masu.Write.save/1), and do more there"
+  ]
+
+  defp check_declared!(assigns) do
+    if assigns.action != [] and not assigns.selectable do
+      raise ArgumentError,
+            "<.data_grid id=#{inspect(assigns.id)}> has :action, which acts on the rows selected: it needs selectable"
+    end
+
+    for {old, new} <- @renamed, Map.has_key?(assigns, old) do
+      raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> has #{old}: it is #{new} now"
+    end
+
+    :ok
+  end
+
   @not_controlled [
     changeset: "changeset",
-    update: "update",
-    create: "create",
+    on_update: "on_update",
+    on_create: "on_create",
     struct: "struct",
-    delete: "delete",
+    on_delete: "on_delete",
     deletable: "deletable",
     selectable: "selectable",
     export: "export",

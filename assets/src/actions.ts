@@ -2,7 +2,9 @@
 // or the context-menu key or Shift+F10 on the active cell), with the
 // grid's own items and the app's (Masu.Action). The arrow keys move
 // between the items, Enter or Space runs one, a letter goes to the next
-// item that starts with it; Escape, Tab or a click away closes it.
+// item that starts with it; Escape, Tab or a click away closes it. An
+// item may be a link (a row action's `navigate` or `patch`), which
+// LiveView follows, or disabled: it stays in the menu, and does nothing.
 
 import { floats, follow, lift, place as placeAt } from "./float";
 
@@ -13,6 +15,13 @@ export interface MenuItem {
   separated?: boolean;
   /** For a test, or a style: `masu-menuitem-<name>`. */
   name?: string;
+  /** A link (a row action's `navigate` or `patch`): LiveView follows it, and a middle click opens it in a tab. */
+  href?: string;
+  link?: "navigate" | "patch";
+  /** Shown, not available. */
+  disabled?: boolean;
+  /** It destroys. */
+  danger?: boolean;
 }
 
 export interface ActionMenuHost {
@@ -28,7 +37,7 @@ let menus = 0;
 export class ActionMenu {
   readonly el: HTMLElement;
   private host: ActionMenuHost;
-  private items: HTMLButtonElement[];
+  private items: HTMLElement[];
   private cleanups: (() => void)[] = [];
 
   /** A menu at `at`, a point of the screen (a click's), or under a cell's box. */
@@ -47,13 +56,29 @@ export class ActionMenu {
         line.setAttribute("role", "separator");
         this.el.appendChild(line);
       }
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `masu-menuitem${item.name ? ` masu-menuitem-${item.name}` : ""}`;
+      const button = item.href && !item.disabled ? document.createElement("a") : document.createElement("button");
+      if (button instanceof HTMLAnchorElement) {
+        // A LiveView link: its click is LiveView's (the menu closes after it).
+        button.href = item.href!;
+        button.dataset.phxLink = item.link === "patch" ? "patch" : "redirect";
+        button.dataset.phxLinkState = "push";
+      } else {
+        (button as HTMLButtonElement).type = "button";
+      }
+      button.className = `masu-menuitem${item.name ? ` masu-menuitem-${item.name}` : ""}${item.danger ? " masu-danger" : ""}`;
       button.setAttribute("role", "menuitem");
       button.tabIndex = -1;
       button.textContent = item.label;
-      button.addEventListener("click", () => {
+      if (item.disabled) button.setAttribute("aria-disabled", "true");
+      button.addEventListener("click", (event) => {
+        if (item.disabled) {
+          event.preventDefault();
+          return;
+        }
+        if (button instanceof HTMLAnchorElement) {
+          setTimeout(() => host.close(false), 0);
+          return;
+        }
         host.close(true);
         item.run();
       });
@@ -102,7 +127,7 @@ export class ActionMenu {
   }
 
   private onKey(event: KeyboardEvent): void {
-    const current = this.items.indexOf(document.activeElement as HTMLButtonElement);
+    const current = this.items.indexOf(document.activeElement as HTMLElement);
     const go = (index: number) => {
       event.preventDefault();
       const count = this.items.length;

@@ -145,12 +145,16 @@ defmodule Masu.Test do
   saw: the grid refuses it when the cell's value changed meanwhile, as it
   does for the browser.
 
-  Returns `:ok` when every edit was saved, or `{:error, errors}` with
-  `{row_id, key, message}` for each cell that was not.
+  Returns `:ok` when every edit was saved, `:async` when the grid's
+  `on_update` saves them later (`Masu.Write.async/1`), or `{:error,
+  errors}` with `{row_id, key, message}` for each cell that was not.
+
+  Options: `:origin`, what the person did, as `Masu.Write`'s `origin`
+  says (`:paste`, `:fill`...); `:test` unless given.
   """
-  @spec edit(struct(), String.t(), [{term(), String.t() | atom(), term()}]) ::
-          :ok | {:error, [{term(), String.t(), String.t()}]}
-  def edit(view, id, edits) do
+  @spec edit(struct(), String.t(), [tuple()], keyword()) ::
+          :ok | :async | {:error, [{term(), String.t(), String.t()}]}
+  def edit(view, id, edits, opts \\ []) do
     edits =
       Enum.map(edits, fn
         {row, key, value} ->
@@ -160,7 +164,12 @@ defmodule Masu.Test do
           %{"id" => row, "key" => to_string(key), "value" => value, "before" => before}
       end)
 
-    case event(view, id, "masu:edit", %{"edits" => edits}) do
+    payload = %{"edits" => edits, "origin" => origin(opts)}
+
+    case event(view, id, "masu:edit", payload) do
+      %{"errors" => [], "async" => _token} ->
+        :async
+
       %{"errors" => []} ->
         :ok
 
@@ -177,14 +186,14 @@ defmodule Masu.Test do
 
   Returns `{:ok, ids}` when every row was saved, or `{:error, results}`,
   a result for each row: `{:ok, id}` or `{:error, [{key, message}]}` (a
-  key of nil for an error of the row).
+  key of nil for an error of the row). Options: `:origin`, as `edit/4`.
   """
-  @spec add_rows(struct(), String.t(), map() | [map()]) ::
+  @spec add_rows(struct(), String.t(), map() | [map()], keyword()) ::
           {:ok, [term()]} | {:error, [{:ok, term()} | {:error, [{String.t() | nil, String.t()}]}]}
-  def add_rows(view, id, rows) do
+  def add_rows(view, id, rows, opts \\ []) do
     rows = rows |> List.wrap() |> Enum.map(&Map.new(&1, fn {k, v} -> {to_string(k), v} end))
 
-    case event(view, id, "masu:create", %{"rows" => rows}) do
+    case event(view, id, "masu:create", %{"rows" => rows, "origin" => origin(opts)}) do
       %{"error" => error} ->
         flunk("the grid #{id} did not add rows: #{error}")
 
@@ -208,16 +217,20 @@ defmodule Masu.Test do
   Deletes the rows `ids` of the grid `id`, or, with `:selection`, the
   rows selected (`select/4`, `select_all/3`), as the person does with
   Ctrl+Delete. Returns `{:ok, undo}`, with the token that brings them back
-  (`restore_rows/3`; nil when the grid cannot), or `{:error, errors, undo}`
-  with `{row_id, message}` for each row that was not deleted.
+  (`restore_rows/3`; nil when the grid cannot), `:async` when the grid's
+  `on_delete` deletes them later, or `{:error, errors, undo}` with
+  `{row_id, message}` for each row that was not deleted. Options:
+  `:origin`, as `edit/4`.
   """
-  @spec delete_rows(struct(), String.t(), [term()] | :selection) ::
-          {:ok, String.t() | nil} | {:error, [{term(), String.t()}], String.t() | nil}
-  def delete_rows(view, id, ids) do
+  @spec delete_rows(struct(), String.t(), [term()] | :selection, keyword()) ::
+          {:ok, String.t() | nil} | :async | {:error, [{term(), String.t()}], String.t() | nil}
+  def delete_rows(view, id, ids, opts \\ []) do
     payload = if ids == :selection, do: %{"selection" => true}, else: %{"ids" => ids}
+    payload = Map.put(payload, "origin", origin(opts))
 
     case event(view, id, "masu:delete", payload) do
       %{"error" => error} -> flunk("the grid #{id} did not delete: #{error}")
+      %{"errors" => [], "async" => _token} -> :async
       %{"errors" => [], "undo" => undo} -> {:ok, undo}
       %{"errors" => errors, "undo" => undo} -> {:error, Enum.map(errors, &List.to_tuple/1), undo}
     end
@@ -404,13 +417,130 @@ defmodule Masu.Test do
   end
 
   @doc """
-  The labels of the items of the app's own (`Masu.Action`) that the grid
-  `id` offers for the column `key`: in its header menu (`:header`), or in
-  the menu of its cells (`:cell`).
+  The labels of the actions of your own (`Masu.Action`) that the grid `id`
+  offers: on the rows selected (`actions(view, id, :selection)`, while
+  rows are selected), on the row `row_id` (`actions(view, id, :row,
+  row_id)`: those it shows, available or not), or for the column `key`
+  in its header menu (`:header`) or in the menu of its cells (`:cell`).
   """
-  @spec actions(struct(), String.t(), :header | :cell, String.t() | atom()) :: [String.t()]
+  @spec actions(struct(), String.t(), :selection) :: [String.t()]
+  def actions(view, id, :selection) do
+    config = config(view, id)
+    count = (config["selection"] || %{})["count"]
+
+    if count in [nil, 0],
+      do: [],
+      else: Enum.map(config["actions"], & &1["label"])
+  end
+
+  @spec actions(struct(), String.t(), :header | :cell | :row, term()) :: [String.t()]
+  def actions(view, id, :row, row_id) do
+    view
+    |> row_items(id, row_id)
+    |> Enum.map(fn {action, _disabled, _href} -> action["label"] end)
+  end
+
   def actions(view, id, kind, key) when kind in [:header, :cell] do
     view |> offered(id, kind, to_string(key)) |> Enum.map(& &1["label"])
+  end
+
+  @doc """
+  Runs the action `label` on the rows selected in the grid `id` (`:action`,
+  see `Masu.Action`), as its button in the bar above the grid does, past
+  its question (`confirm`). Rows are selected with `select/4` or
+  `select_all/3`.
+
+  Returns the action's result: `:ok`, `{:ok, message}`, `{:error,
+  message}` or `:async` (see `Masu.Action`), or `{:error, :refused}`
+  when the server refuses it: the grid does not offer it (`:if`), or no
+  row is selected.
+  """
+  @spec action(struct(), String.t(), String.t()) ::
+          :ok | {:ok, String.t()} | {:error, String.t() | :refused} | :async
+  def action(view, id, label) do
+    index =
+      case Enum.find(config(view, id)["actions"], &(&1["label"] == label)) do
+        nil -> -1
+        action -> action["id"]
+      end
+
+    view
+    |> event(id, "masu:action", %{"kind" => "selection", "action" => index, "label" => label})
+    |> action_result()
+  end
+
+  @doc """
+  Runs the action `label` on the row `row_id` of the grid `id`
+  (`:row_action`, see `Masu.Action`), as its item in the row's menu
+  does, past its question (`confirm`). The grid reads the row from its
+  source.
+
+  Returns the action's result, as `action/3` does; for a link, the path
+  it goes to, `{:navigate, path}` or `{:patch, path}`; and `{:error,
+  :refused}` when the server refuses it: the grid does not offer it, the
+  row does not show it, or it is disabled for the row.
+  """
+  @spec row_action(struct(), String.t(), String.t(), term()) ::
+          :ok
+          | {:ok, String.t()}
+          | {:error, String.t() | :refused}
+          | :async
+          | {:navigate | :patch, String.t()}
+  def row_action(view, id, label, row_id) do
+    item =
+      view
+      |> row_items(id, row_id)
+      |> Enum.find(fn {action, _disabled, _href} -> action["label"] == label end)
+
+    case item do
+      {%{"link" => link}, false, href} when link in ["navigate", "patch"] ->
+        {if(link == "navigate", do: :navigate, else: :patch), href}
+
+      {%{"link" => link}, true, _href} when link in ["navigate", "patch"] ->
+        {:error, :refused}
+
+      item ->
+        index =
+          case item || Enum.find(config(view, id)["rowActions"], &(&1["label"] == label)) do
+            {action, _disabled, _href} -> action["id"]
+            %{"id" => index} -> index
+            nil -> -1
+          end
+
+        payload = %{"kind" => "row", "action" => index, "label" => label, "id" => row_id}
+        view |> event(id, "masu:action", payload) |> action_result()
+    end
+  end
+
+  defp action_result(%{"error" => _refused}), do: {:error, :refused}
+  defp action_result(%{"failed" => message}), do: {:error, message}
+  defp action_result(%{"async" => _token}), do: :async
+
+  defp action_result(%{"ok" => true, "message" => message}) when is_binary(message),
+    do: {:ok, message}
+
+  defp action_result(%{"ok" => true}), do: :ok
+
+  # The row actions of a row, as the row carries them: each with whether
+  # it is disabled, and its link.
+  defp row_items(view, id, row_id) do
+    config = config(view, id)
+    by_id = Map.new(config["rowActions"], &{&1["id"], &1})
+
+    index =
+      place(view, id, row_id) ||
+        flunk("the grid #{id} has no row #{inspect(row_id)} in its query")
+
+    row =
+      case event(view, id, "masu:rows", %{"from" => index, "count" => 1}) do
+        %{"rows" => [row | _]} -> row
+        _other -> flunk("the grid #{id} sent no row #{inspect(row_id)}")
+      end
+
+    at = length(config["columns"]) + 1 + if(config["locks"], do: 1, else: 0)
+
+    for [action_id, disabled, href] <- Enum.at(row, at) || [],
+        do: {Map.fetch!(by_id, action_id), disabled, href}
   end
 
   @doc """
@@ -605,6 +735,8 @@ defmodule Masu.Test do
     event(view, id, "masu:layout", params)
     view
   end
+
+  defp origin(opts), do: opts |> Keyword.get(:origin, :test) |> Atom.to_string()
 
   defp query(view, id, changes) do
     current = view |> config(id) |> Map.fetch!("query")

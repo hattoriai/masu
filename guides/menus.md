@@ -25,6 +25,10 @@ event, runs a JS command, or opens a panel that your LiveView renders.
 </.data_grid>
 ```
 
+Actions on the rows selected and on each row (`:action`, `:row_action`)
+are in [Actions](actions.md); a row's actions come after these items in
+the menu of its cells.
+
 Nothing of this is on unless the grid says so: a grid with no
 `cell_menu` and no `:cell_action` leaves the browser's own menu on a
 right click, and its header menus are the filters alone.

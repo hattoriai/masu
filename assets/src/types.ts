@@ -62,6 +62,23 @@ export interface ActionItem {
   panel: boolean;
 }
 
+/**
+ * An action of the app's on the rows selected (`:action`) or on a row
+ * (`:row_action`), Masu.Action. A row says which of its row actions it
+ * shows: `[id, disabled, href]` of each.
+ */
+export interface RowsAction {
+  /** Its place among the actions of its slot: what the server takes back. */
+  id: number;
+  label: string;
+  /** A row action that is a link: "navigate" or "patch", with the row's href. */
+  link: "navigate" | "patch" | null;
+  /** A question first ("Delete {count} orders?"). */
+  confirm: string | null;
+  /** It destroys. */
+  danger: boolean;
+}
+
 /** A column of the grid, shown or not, as the columns menu lists it. */
 export interface CatalogColumn {
   key: string;
@@ -159,6 +176,10 @@ export interface Config {
   restores?: boolean;
   /** The built-in items of the menu of a cell: "copy", "filter", "sort". */
   cellMenu?: string[];
+  /** The app's actions on the rows selected (`:action`). */
+  actions?: RowsAction[];
+  /** The app's actions on a row (`:row_action`); each row carries its own state of them, after its read-only cells. */
+  rowActions?: RowsAction[];
   /** Rows to come: a read in a task (`load={:async}`), or the LiveView's own query (`on_query`). */
   running?: boolean;
   /** `false`: one sort at a time (`multi_sort={false}`). */
@@ -177,6 +198,23 @@ export interface BlockReply {
   pending?: boolean;
   /** A read in a task that failed: the grid shows its error. */
   failed?: boolean;
+}
+
+/** How a write or an action that went on later went (Masu.reply/2), or how far it is (Masu.progress/3). */
+export interface Reply {
+  token: string;
+  ok: boolean;
+  message: string | null;
+  /** The cells (`[id, key, message]`) or rows (`[id, message]`) a write refused. */
+  errors: unknown[][];
+  revision: number;
+  total: number;
+}
+
+export interface Progress {
+  token: string;
+  done: number;
+  total: number;
 }
 
 export interface Transport {

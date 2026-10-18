@@ -3,7 +3,7 @@
 // and gives the grid the server's later renders (`updated`).
 
 import { Grid } from "./grid";
-import type { BlockReply, Person, Transport } from "./types";
+import type { BlockReply, Person, Progress, Reply, Transport } from "./types";
 
 interface HookContext {
   el: HTMLElement;
@@ -43,6 +43,13 @@ export const Masu = {
     // A block of rows read in a task (`load={:async}`).
     hook.handleEvent("masu:block", (payload) => {
       if (payload.id === hook.el.id) hook.grid?.receiveBlock(payload.block as BlockReply);
+    });
+    // A write or an action that went on later (Masu.reply/2, Masu.progress/3).
+    hook.handleEvent("masu:reply", (payload) => {
+      if (payload.id === hook.el.id) hook.grid?.receiveReply(payload as unknown as Reply);
+    });
+    hook.handleEvent("masu:progress", (payload) => {
+      if (payload.id === hook.el.id) hook.grid?.receiveProgress(payload as unknown as Progress);
     });
   },
 

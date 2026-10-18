@@ -58,8 +58,8 @@ defmodule Masu.IdsTest do
              detail: [%{}],
              tree: :parent_id
            }) == [
-             "changeset or update",
-             "delete or deletable",
+             "changeset or on_update",
+             "on_delete or deletable",
              "selectable",
              "live",
              ":detail",

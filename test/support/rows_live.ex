@@ -21,8 +21,10 @@ defmodule MasuTest.TasksLive do
       deletable={&(&1.status != :done)}
       selectable
       live={{MasuTest.PubSub, "tasks"}}
-      on_save={&send(self(), {:log, "saved", &1})}
-      on_delete={&send(self(), {:log, "deleted", &1})}
+      on_update={&logged(&1, "saved")}
+      on_create={&logged(&1, "saved")}
+      on_delete={&logged(&1, "deleted")}
+      on_restore={&Masu.Write.save/1}
       sort={[:id]}
     >
       <:col field={:title} />
@@ -31,6 +33,14 @@ defmodule MasuTest.TasksLive do
     </.data_grid>
     <p id="log">{Enum.join(@log, "; ")}</p>
     """
+  end
+
+  # The grid's own way, and a line of the log for what it saved.
+  defp logged(write, what) do
+    write = Masu.Write.save(write)
+    rows = Masu.Write.saved(write)
+    if rows != [], do: send(self(), {:log, what, rows})
+    write
   end
 
   @impl true
@@ -81,7 +91,12 @@ defmodule MasuTest.RowsThingsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <.data_grid id="things" rows={@rows} create={&create/1} delete={&delete/1}>
+    <.data_grid
+      id="things"
+      rows={@rows}
+      on_create={&Masu.Write.each(&1, fn change -> create(change.params) end)}
+      on_delete={&Masu.Write.each(&1, fn change -> delete(change.row) end)}
+    >
       <:col field={:name} />
     </.data_grid>
     """
