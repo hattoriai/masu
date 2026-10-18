@@ -57,3 +57,26 @@ test("a cell's menu filters an enum by its value with 'is'", async ({ page }) =>
   await settled(page, "limited");
   await expect(page.locator("#limited .masu-chip-text")).toHaveText([`City is ${city}`]);
 });
+
+test("a cell's menu compares text when the source runs the comparisons, as a SQL client does", async ({ page }) => {
+  const name = (await rowText(page, "limited", 0))[0];
+
+  await page.locator("#limited-r0-c0").click({ button: "right" });
+  const menu = page.locator('#limited [role="menu"]');
+  await expect(menu.getByRole("menuitem")).toContainText([
+    `Filter by ${name}`,
+    `Exclude ${name}`,
+    `Greater than ${name}`,
+    `Less than ${name}`,
+    `At least ${name}`,
+    `At most ${name}`,
+    `Contains ${name}`,
+  ]);
+  await menu.getByRole("menuitem", { name: `Greater than ${name}`, exact: true }).click();
+  await settled(page, "limited");
+  await expect(page.locator("#limited .masu-chip-text")).toHaveText([`Name greater than ${name}`]);
+  for (let row = 0; row < 3; row++) {
+    const text = (await rowText(page, "limited", row))[0];
+    if (text !== undefined) expect(text > name).toBe(true);
+  }
+});

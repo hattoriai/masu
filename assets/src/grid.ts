@@ -1346,16 +1346,20 @@ export class Grid {
             run: filter({ key: column.key, op: "neq", value }),
           });
         }
-        // The value as a bound, for the columns that have an order; a
-        // text's value as a part of others.
-        if (ORDERED.includes(column.type)) {
+        // The value as a bound, for the columns that have an order, and
+        // for text when the column's filters name the comparisons (a SQL
+        // client's, which compares text in its order); a text's value as
+        // a part of others.
+        const text = column.type === "text";
+        if (ORDERED.includes(column.type) || (text && column.filters)) {
           const timely = column.type === "date" || column.type === "datetime" || column.type === "time";
           for (const op of ["gt", "lt", "gte", "lte"] as const) {
             if (!allows(column, op)) continue;
             const words = this.message(`filter_${op}${timely ? "_time" : ""}`, { label: shown });
             more.push({ name: `filter-${op}`, label: words, run: filter({ key: column.key, op, value }) });
           }
-        } else if (column.type === "text" && allows(column, "contains")) {
+        }
+        if (text && allows(column, "contains")) {
           more.push({
             name: "filter-contains",
             label: this.message("filter_contains", { label: shown }),
