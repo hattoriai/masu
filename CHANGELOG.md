@@ -7,6 +7,22 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-18
+
+### Added
+
+- A column's own filters: `filters` on a `:col` (or a column of
+  `columns`) limits its filters to those operators, as a source's
+  `filters/2` does, for a controlled grid whose app runs fewer.
+
+### Fixed
+
+- `height` is the whole grid's: the rows take the room the toolbar, the
+  chips and the status line leave. A percentage (`height="100%"`) fills
+  the grid's container; the rows had no height at all.
+
+## [0.1.0] - 2026-10-17
+
 ### Added
 
 - `Masu.Components.data_grid/1`: a virtualized data grid for LiveView,
@@ -83,9 +99,6 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   class or `data-theme="dark"`; Tailwind in the Theming guide, and Lotus
   Web's results table as its worked example, compared pixel for pixel in
   e2e.
-- A column's own filters: `filters` on a `:col` (or a column of
-  `columns`) limits its filters to those operators, as a source's
-  `filters/2` does, for a controlled grid whose app runs fewer.
 - Slow sources: `load={:async}` reads a source in a task (a new
   query's first rows and count, a block, a page, a count): the LiveView
   answers meanwhile, the grid says "Running…" with Stop and keeps its

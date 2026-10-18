@@ -1957,6 +1957,7 @@ defmodule Masu.Grid do
       phx-hook="Masu"
       phx-target={@myself}
       data-masu={config(assigns)}
+      style={"height: #{@height}"}
       {@rest}
     >
       <div :if={@presence} class="masu-people" role="group" aria-label={@messages["people"]}>
@@ -2050,7 +2051,7 @@ defmodule Masu.Grid do
         aria-rowcount={if @exact, do: @total + 1, else: -1}
         aria-colcount={length(@columns)}
         aria-multiselectable="true"
-        style={"--masu-row-height: #{@row_height}px; height: #{@height}"}
+        style={"--masu-row-height: #{@row_height}px"}
       >
         <div
           id={"#{@id}-content"}

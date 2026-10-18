@@ -285,7 +285,10 @@ defmodule Masu.Components do
     default: nil,
     doc: "the height of a row, in pixels; of the `density` unless given"
 
-  attr :height, :string, default: "32rem", doc: "the height of the grid, as CSS"
+  attr :height, :string,
+    default: "32rem",
+    doc:
+      "the height of the whole grid, as CSS (`100%` fills its container); the rows take what its toolbar leaves"
 
   attr :locale, :string,
     default: nil,

@@ -132,7 +132,9 @@ for (const mode of ["light", "dark"] as const) {
     const grid = page.locator("#look .masu-grid");
     // The grid at the page's corner, on whole pixels as the reference is
     // (a grid at half a pixel is drawn half a pixel off).
-    await grid.evaluate((el) => Object.assign(el.style, { position: "fixed", top: "0", left: "0", width: "660px" }));
+    await page
+      .locator("#look")
+      .evaluate((el) => Object.assign(el.style, { position: "fixed", top: "0", left: "0", width: "660px" }));
     const gridBox = (await grid.boundingBox())!;
     expect([gridBox.width, gridBox.height]).toEqual([referenceBox.width, referenceBox.height]);
     const b = await grid.screenshot();

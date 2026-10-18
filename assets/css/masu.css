@@ -92,9 +92,12 @@
   --masu-focus-ring: 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent);
 }
 
+/* The grid's height (`height`) is the whole grid's: the rows take what the
+   toolbar, the chips and the status line leave. */
 .masu {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   max-width: 100%;
   color: var(--masu-text);
   font-family: var(--masu-font);
@@ -141,6 +144,8 @@
 
 .masu-grid {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   border: var(--masu-grid-border);
   border-radius: var(--masu-grid-radius);
