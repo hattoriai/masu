@@ -8,6 +8,8 @@ defmodule MasuTest.PlacedLive do
 
   import Masu.Components
 
+  alias Plug.Conn.Query
+
   on_mount(Masu.Live)
 
   @impl true
@@ -19,7 +21,7 @@ defmodule MasuTest.PlacedLive do
   @impl true
   def handle_event("placed", %{"placed" => %{"from" => from, "to" => to}}, socket) do
     filter = %{"0" => %{"key" => "placed_on", "op" => "between", "value" => [from, to]}}
-    query = Plug.Conn.Query.encode(%{"orders" => %{"filter" => filter}})
+    query = Query.encode(%{"orders" => %{"filter" => filter}})
     {:noreply, push_patch(socket, to: "/placed?" <> query)}
   end
 
