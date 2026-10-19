@@ -349,7 +349,13 @@ defmodule Masu.Grid do
         nil ->
           {rows, known} = Source.window(source, from, limit)
           socket = if known, do: put_count(socket, {known, true}), else: socket
-          assign(socket, initial: rows, initial_nodes: nil, initial_from: from)
+
+          assign(socket,
+            source: Source.seen(source, from, rows),
+            initial: rows,
+            initial_nodes: nil,
+            initial_from: from
+          )
 
         nodes ->
           assign(socket,
@@ -493,7 +499,8 @@ defmodule Masu.Grid do
   defp read_first(source, query, columns, count, from, limit) do
     prepared = Source.prepare(source, query, columns)
     counted = if count == :exact, do: Source.counted(prepared)
-    %{source: prepared, counted: counted, window: read_window(prepared, from, limit)}
+    window = read_window(prepared, from, limit)
+    %{source: seen(prepared, from, window), counted: counted, window: window}
   end
 
   # Rows from `from`, with their places in a tree.
@@ -503,6 +510,10 @@ defmodule Masu.Grid do
       nodes -> {:nodes, nodes}
     end
   end
+
+  # The source after a window read in a task (`Source.seen/3`).
+  defp seen(source, from, {:rows, {rows, _known}}), do: Source.seen(source, from, rows)
+  defp seen(source, _from, {:nodes, _nodes}), do: source
 
   defp stop_read(%{assigns: %{running: {:masu_read, _id} = name}} = socket),
     do: socket |> cancel_async(name) |> assign(running: nil)
@@ -754,6 +765,8 @@ defmodule Masu.Grid do
     [
       repo: assigns.repo,
       repo_opts: assigns.repo_opts,
+      read: Map.get(assigns, :source_read),
+      count_limit: Map.get(assigns, :count_limit),
       grid: assigns.id,
       tree: assigns.tree,
       row_id: row_id(assigns)
@@ -922,6 +935,9 @@ defmodule Masu.Grid do
     %{source: source, count_ref: ref, revision: revision} = socket.assigns
 
     # In a task: the count comes with the render after it.
+    # The person went to the end: every row is counted (`count_limit`).
+    source = Source.uncapped(source)
+
     if async?(socket.assigns) and connected?(socket) do
       {:reply, %{"pending" => true, "revision" => revision}, count_later(socket, ref, source)}
     else
@@ -1892,6 +1908,7 @@ defmodule Masu.Grid do
         true ->
           {rows, known} = Source.window(source, from, count)
           socket = if known, do: put_count(socket, {known, true}), else: socket
+          socket = assign(socket, source: Source.seen(source, from, rows))
           {encode_rows(rows, socket.assigns, from), socket}
       end
 
@@ -1974,6 +1991,7 @@ defmodule Masu.Grid do
 
         {:rows, {rows, known}} ->
           socket = if known, do: put_count(socket, {known, true}), else: socket
+          socket = assign(socket, source: Source.seen(socket.assigns.source, from, rows))
           {encode_rows(rows, socket.assigns, from), socket}
       end
 

@@ -45,7 +45,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | | |
 | --- | --- |
 | Rows | the rows on the screen and a few more are in the page; the others come from the server in blocks of a hundred as the person scrolls, once the scrolling pauses |
-| Sources | `rows={@users}` for a list; `source={query} repo={Repo}` for Ecto, where a sort is an `ORDER BY`, a filter and the search a `WHERE`, and each block a `LIMIT` and `OFFSET`; `Masu.Source` for your own; `load={:async}` reads a slow source in a task, with "Running…", Stop, a timeout and its errors; `on_query` for an app that runs its own queries, the grid a view of them |
+| Sources | `rows={@users}` for a list; `source={query} repo={Repo}` for Ecto, where a sort is an `ORDER BY`, a filter and the search a `WHERE`, and each block a `LIMIT`, read by key after the block before it; `Masu.Source` for your own; `load={:async}` reads a slow source in a task, with "Running…", Stop, a timeout and its errors; `on_query` for an app that runs its own queries, the grid a view of them |
 | Editing | `changeset={&Order.changeset/2}`: a cell edits on a key typed, Enter, F2 or a double click; the edits of a row saved together with `Repo.update`, the errors on their cells, the old values back; paste of tab-separated text, fill down, Delete, undo and redo; read-only rows and cells by their state (`row_editable`, `editable={&...}`), checked on the server; a cell changed by someone else meanwhile refused (a compare-and-swap of each cell, in a transaction that locks the row); every write a `Masu.Write` for your own functions (`on_update`, `on_create`, `on_delete`, `on_restore`): row by row, a whole batch in one transaction (`Ecto.Multi`), the grid's own way and more, or later in a job (`Masu.Write.async/1`, `Masu.reply/2`), with the person's `scope` and what they did (a paste, a fill, an undo); a row found again through the grid's own query; new rows (`struct` with the changeset, or `on_create`) as drafts until they save, and a paste past the last row; deleting rows (`deletable`, `on_delete`) after a question, with undo; an enum's list of values, `decimals`, and values checked in the browser |
 | Live rows | `live={{MyApp.PubSub, "orders"}}` and `Masu.Live.broadcast_upsert/3`: changes come into the person's query, a batch at a time, the scroll stays, the rows do not blink, the changed ones flash |
 | Collaboration | `presence={MyAppWeb.Presence} user={...}`: avatars (a `:person` slot of your own), each person's cell by row id and column key whatever the others' order and filters, "Ada is typing" and a lock on that cell, flashes in the saver's color; a click on an avatar follows that person in their view (`share_view={false}` keeps it), each person's selected range in their color, "Changed by Ada meanwhile."; `configure({peerLabel})` and CSS for the rest |
@@ -67,6 +67,35 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Locales | numbers, decimals, dates and times in the grid's locale, with the browser's `Intl` |
 | Theming | CSS custom properties, the Sumi theme, dark mode, reduced motion |
 | Accessibility | the WAI-ARIA grid with one tab stop and the active cell as `aria-activedescendant`, row and column counts and indexes, `aria-sort`, announcements |
+
+## Performance
+
+Measured with `mix bench` on an Apple M1 Pro, against two LiveView
+pages of the same rows without a grid: one stream of every row, and the
+infinite scroll of the LiveView docs (`phx-viewport-bottom`, a stream of
+three pages of 50). In Chromium, with a list source:
+
+| | Masu | A stream of every row | The infinite scroll |
+| --- | --- | --- | --- |
+| 100,000 rows: first rows on the screen | 0.4 s | 23 s | 0.4 s |
+| DOM nodes, at 1,000 rows and at 1,000,000 | 374 and 374 | 1.1 million at 100,000 | 591 and 591 |
+| Frames dropped in a fast scroll | none | every one | none |
+| After a fast scroll | the rows there, once the scroll pauses | the rows there | no rows, and no more come |
+| The scrollbar dragged to the middle | the rows there in 70 to 85 ms | the rows there | no scrollbar for the rows not read |
+
+* An Ecto source on PostgreSQL reads a block of 100 rows in 0.25 ms,
+  at the top of a table and in the middle of ten million rows: by key,
+  not `OFFSET`. Sorted by a column with an index, 4 ms. A `count(*)` of
+  ten million rows takes seconds: `count={:deferred}`.
+* A list source keeps its rows in the LiveView's process, about 1 KB a
+  row for each person (98 MB for 100,000 rows), and sorts or searches
+  100,000 rows in about 0.4 seconds. Past that, give the grid an Ecto
+  source.
+* A grid of a million rows scrolls to its last row in Chromium, Firefox
+  and Safari.
+
+The numbers of the last run are in [bench/RESULTS.md](bench/RESULTS.md),
+and how to run them in [bench/README.md](bench/README.md).
 
 ## Install
 
@@ -238,6 +267,7 @@ mix test.js                # the unit tests of the TypeScript modules
 mix test.e2e               # the Playwright browser tests
 mix precommit              # compile, format, credo --strict and test
 mix dialyzer
+mix bench                  # the benchmarks (bench/README.md), with PostgreSQL
 ```
 
 The ExUnit suite tests the Ecto source on SQLite. `mix test.js` runs the

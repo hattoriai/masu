@@ -49,6 +49,10 @@ defmodule Masu.MixProject do
   defp deps do
     [
       {:bandit, "~> 1.5", only: :dev},
+      # The benchmarks in bench/: Benchee, and PostgreSQL for the Ecto source.
+      {:benchee, "~> 1.3", only: :dev},
+      {:ecto_sql, "~> 3.13", only: [:dev, :test]},
+      {:postgrex, "~> 0.20", only: :dev},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ecto, "~> 3.13", optional: true},
@@ -191,6 +195,15 @@ defmodule Masu.MixProject do
       dev: "run --no-halt dev.exs",
       "test.e2e": [&e2e_deps/1, "cmd --cd e2e npm test"],
       "test.js": ["cmd --cd assets npm test"],
+      # The benchmarks (bench/README.md): the server's, the browser's, and
+      # the report of both in bench/RESULTS.md.
+      "bench.server": "run bench/server.exs",
+      "bench.browser": [
+        &e2e_deps/1,
+        "cmd --cd e2e npx playwright test -c playwright.bench.config.ts"
+      ],
+      "bench.report": "run bench/report.exs",
+      bench: ["bench.server", "bench.browser", "bench.report"],
       # The compile and the asset build run in a child VM, as in Kotoba:
       # once anything compiles in this VM, Mix no longer finds the tasks of
       # the Hex archive. The check refuses a priv/static with anything but

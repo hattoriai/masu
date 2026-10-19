@@ -6,8 +6,10 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     The database does the work. A sort is an `ORDER BY`, a filter and the
     search a `WHERE`, the count a `count(*)` of the query, and each block
-    the browser asks for one `LIMIT` and `OFFSET`. The LiveView never holds
-    more rows than the screen shows.
+    the browser asks for one `LIMIT`: the block after a block it read by
+    the sort values of that block's last row, not by `OFFSET` (see
+    [Export, selection and large tables](export.md)). The LiveView never
+    holds more rows than the screen shows.
 
     The query may already have its own `where`, `join` and `preload`: the
     grid's filters are added to them. The grid's order replaces the
@@ -38,6 +40,11 @@ if Code.ensure_loaded?(Ecto.Query) do
       * `:repo` (required) - the repo that runs the queries.
       * `:repo_opts` - options for each call to the repo, such as
         `prefix:` for a tenant's schema.
+      * `:count_limit` - the most rows the count counts: past it, the
+        count is `{:at_least, limit}`.
+      * `:read` - a read of a block of rows of the app's own: a function
+        of the query and `%{offset:, limit:, order:, after:}` (see "A
+        read of your own" in the [Sources](sources.md) guide).
     """
 
     @behaviour Masu.Source
@@ -59,6 +66,17 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     def queryable?(_other), do: false
 
+    # Where NULL sorts in an adapter's ORDER BY: after every value in
+    # PostgreSQL, before them in MySQL, SQLite and SQL Server. With
+    # another adapter, a block is read by key only in the order of the
+    # primary key, which has no NULL; in another order, by OFFSET.
+    @nulls %{
+      Ecto.Adapters.Postgres => :last,
+      Ecto.Adapters.MyXQL => :first,
+      Ecto.Adapters.SQLite3 => :first,
+      Ecto.Adapters.Tds => :first
+    }
+
     @impl true
     def init(queryable, opts) do
       repo =
@@ -70,6 +88,8 @@ if Code.ensure_loaded?(Ecto.Query) do
       %{
         repo: repo,
         repo_opts: Keyword.get(opts, :repo_opts, []),
+        read: read!(Keyword.get(opts, :read)),
+        count_limit: count_limit!(Keyword.get(opts, :count_limit)),
         base: base,
         query: base,
         primary_key: primary_key(base),
@@ -81,9 +101,30 @@ if Code.ensure_loaded?(Ecto.Query) do
         segments: nil,
         group_columns: [],
         totals: %{},
-        cursors: nil
+        nulls: Map.get(@nulls, repo.__adapter__()),
+        cursors: %{}
       }
     end
+
+    defp count_limit!(nil), do: nil
+    defp count_limit!(limit) when is_integer(limit) and limit > 0, do: limit
+
+    defp count_limit!(other),
+      do:
+        raise(
+          ArgumentError,
+          "a Masu grid's count_limit is a positive integer, got: #{inspect(other)}"
+        )
+
+    defp read!(nil), do: nil
+    defp read!(read) when is_function(read, 2), do: read
+
+    defp read!(other),
+      do:
+        raise(
+          ArgumentError,
+          "a Masu grid's read is a function of two arguments, got: #{inspect(other)}"
+        )
 
     defp tree!(nil, _base), do: nil
 
@@ -182,7 +223,7 @@ if Code.ensure_loaded?(Ecto.Query) do
           order: order,
           segments: nil,
           totals: totals_of(state, query, columns),
-          cursors: make_ref()
+          cursors: %{}
       }
     end
 
@@ -390,13 +431,28 @@ if Code.ensure_loaded?(Ecto.Query) do
     @impl true
     def count(%{count: nil} = state), do: state |> prepare(%Query{}, []) |> count()
 
-    def count(%{count: :later, query: ecto} = state) do
+    def count(%{count: :later, query: ecto, count_limit: nil} = state) do
       ecto
       |> exclude(:order_by)
       |> exclude(:preload)
       |> subquery()
       |> select(count())
       |> state.repo.one(state.repo_opts)
+    end
+
+    # Up to the limit: the database stops after the row past it, where a
+    # count(*) of a large table reads every row.
+    def count(%{count: :later, query: ecto, count_limit: max} = state) do
+      n =
+        ecto
+        |> exclude(:order_by)
+        |> exclude(:preload)
+        |> limit(^(max + 1))
+        |> subquery()
+        |> select(count())
+        |> state.repo.one(state.repo_opts)
+
+      if n > max, do: {:at_least, max}, else: n
     end
 
     def count(%{count: count}), do: count
@@ -409,57 +465,100 @@ if Code.ensure_loaded?(Ecto.Query) do
       state |> nodes(offset, limit) |> Enum.map(&elem(&1, 0))
     end
 
+    # A read of the app's own: the query, and where the block is.
+    def rows(%{read: read} = state, offset, limit) when is_function(read, 2) do
+      read.(state.query, %{
+        offset: offset,
+        limit: limit,
+        order: state.order,
+        after: after_values(state, offset)
+      })
+    end
+
     # A block after a block the source read is read by the sort values of
     # that block's last row (`WHERE (a, b, id) > (...)`, as it were), not by
     # an OFFSET, which the database counts row by row: the last block of a
     # million rows is as fast as the first. A jump (the scrollbar dragged)
     # is an OFFSET, and the blocks after it are read by key again.
     def rows(state, offset, limit) do
-      rows =
-        case cursor(state, offset) do
-          nil when offset > 0 -> state.query |> offset(^offset) |> limit(^limit)
-          nil -> limit(state.query, ^limit)
-          values -> state.query |> where(^after_row(state, values)) |> limit(^limit)
-        end
-        |> state.repo.all(state.repo_opts)
-
-      remember(state, offset + length(rows), List.last(rows))
-      rows
+      case Map.get(state.cursors, offset) do
+        nil when offset > 0 -> state.query |> offset(^offset) |> limit(^limit) |> all(state)
+        nil -> state.query |> limit(^limit) |> all(state)
+        values -> rows_after(state, values, limit)
+      end
     end
 
-    # The cursors of a prepared query (`cursors`, a reference made when it
-    # is prepared): the sort values of the row before each block read,
-    # by the block's offset. A source's rows/3 gives rows, not a state, so
-    # they are kept in the process that has the grid: the LiveView's.
+    defp all(query, state), do: state.repo.all(query, state.repo_opts)
+
+    # The rows after a row, with a range on the first sort (`a >= ?`) that
+    # an index reads from: the database reads none from the OR of
+    # after_row/2, and goes through every row before the block. The range
+    # leaves out the first sort's NULLs. Where they come after its values
+    # (ascending in PostgreSQL, descending in MySQL and SQLite), the block
+    # the range ends short goes on with them, in a second query.
+    defp rows_after(%{order: [{direction, f} | _]} = state, [value | _] = values, limit) do
+      query = where(state.query, ^after_row(state, values))
+
+      if is_nil(value) do
+        query |> limit(^limit) |> all(state)
+      else
+        rows = query |> where(^from_value(direction, f, value)) |> limit(^limit) |> all(state)
+        rest = limit - length(rows)
+
+        if rest > 0 and nulls_after?(state.nulls, direction),
+          do: rows ++ (query |> where([r], is_nil(field(r, ^f))) |> limit(^rest) |> all(state)),
+          else: rows
+      end
+    end
+
+    defp from_value(:asc, f, value), do: dynamic([r], field(r, ^f) >= ^value)
+    defp from_value(:desc, f, value), do: dynamic([r], field(r, ^f) <= ^value)
+
+    defp nulls_after?(:last, :asc), do: true
+    defp nulls_after?(:first, :desc), do: true
+    defp nulls_after?(_nulls, _direction), do: false
+
+    # The cursors of a prepared query: the sort values of the row before
+    # each block, by the block's offset. They are in the state, which the
+    # grid keeps, so that a block read in a task has them too.
     @max_cursors 512
 
-    defp cursor(%{cursors: nil}, _offset), do: nil
-
-    defp cursor(%{cursors: ref}, offset),
-      do: Process.get({__MODULE__, ref}, %{}) |> Map.get(offset)
-
-    defp remember(%{cursors: nil}, _offset, _row), do: :ok
-    defp remember(_state, _offset, nil), do: :ok
-    defp remember(%{order: order}, _offset, _row) when not is_list(order), do: :ok
-
-    defp remember(%{cursors: ref, order: order}, offset, row) do
+    @doc false
+    def seen(%{cursors: cursors, order: order} = state, offset, [_ | _] = rows)
+        when is_list(order) do
+      row = List.last(rows)
       values = Enum.map(order, fn {_direction, f} -> Map.fetch(row, f) end)
 
-      if Enum.all?(values, &match?({:ok, _}, &1)) do
-        cursors = Process.get({__MODULE__, ref}, %{})
+      if (state.read != nil or keyset?(state)) and Enum.all?(values, &match?({:ok, _}, &1)) do
         cursors = if map_size(cursors) >= @max_cursors, do: %{}, else: cursors
-        Process.put({__MODULE__, ref}, Map.put(cursors, offset, Enum.map(values, &elem(&1, 1))))
+        cursor = Enum.map(values, &elem(&1, 1))
+        %{state | cursors: Map.put(cursors, offset + length(rows), cursor)}
+      else
+        state
       end
-
-      :ok
     end
+
+    def seen(state, _offset, _rows), do: state
+
+    # The sort values of the row before a block, by field, for a read of
+    # the app's own: nil for the first block, and after a jump.
+    defp after_values(%{cursors: cursors, order: order}, offset) do
+      case Map.get(cursors, offset) do
+        nil -> nil
+        values -> Enum.zip_with(order, values, fn {_direction, f}, value -> {f, value} end)
+      end
+    end
+
+    defp keyset?(%{nulls: nil, order: order, primary_key: key}),
+      do: Enum.all?(order, fn {_direction, f} -> f in key end)
+
+    defp keyset?(_state), do: true
 
     # The rows after a row in the order: for the sorts (a, b, id), those
     # with a beyond the row's, or a the same and b beyond, or a and b the
-    # same and id beyond. NULL sorts after every value in PostgreSQL, and
-    # before them in SQLite and MySQL.
-    defp after_row(%{order: order, repo: repo}, values) do
-      nulls_last? = repo.__adapter__() == Ecto.Adapters.Postgres
+    # same and id beyond.
+    defp after_row(%{order: order, nulls: nulls}, values) do
+      nulls_last? = nulls == :last
 
       {condition, _same} =
         order
@@ -777,8 +876,14 @@ if Code.ensure_loaded?(Ecto.Query) do
         [] ->
           {query, if(query.order_bys == [], do: [])}
 
+        # The primary key goes the way of the last sort: an index of
+        # (a, id) is then read in the order, forwards or backwards.
         fields ->
-          tiebreak = for key <- primary_key, not List.keymember?(fields, key, 1), do: {:asc, key}
+          {direction, _f} = List.last(fields)
+
+          tiebreak =
+            for key <- primary_key, not List.keymember?(fields, key, 1), do: {direction, key}
+
           order = fields ++ tiebreak
           {query |> exclude(:order_by) |> order_by(^order), order}
       end

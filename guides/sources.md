@@ -71,7 +71,9 @@ The database does the work:
 * a filter and the search are a `WHERE`, added to the query's own;
 * the count is a `count(*)` of the query, when the grid asks for it
   (see `count` in [Export, selection and large tables](export.md));
-* each block is one `LIMIT` and `OFFSET`.
+* each block is one `LIMIT`: the block after a block it read is read by
+  the sort values of that block's last row, not by `OFFSET` (see
+  [Export, selection and large tables](export.md)).
 
 The query may have its own `where`, `join` and `preload`. A column sorts
 and filters in the database when it names a field of the query's first
@@ -91,8 +93,40 @@ of a tenant's schema:
 <.data_grid id="orders" source={Order} repo={MyApp.Repo} repo_opts={[prefix: @tenant]}>
 ```
 
-An `OFFSET` gets slower deep into a large table: the database still
-reads the rows before it. See [Known limits](limits.md).
+A jump into the middle of a large table (the scrollbar dragged) is an
+`OFFSET`, which gets slower deep into it: the database still reads the
+rows before it. See [Known limits](limits.md).
+
+## A read of your own
+
+Masu's way to read a block (by key, see above) suits most tables. A
+table may need another: its own index, a cache, a warehouse where each
+query costs. `read` keeps the rest of the Ecto source (the filters, the
+search, the count, the filter menu's values, the selection, the export)
+and reads each block your way:
+
+```heex
+<.data_grid id="orders" source={Order} repo={MyApp.Repo} read={&MyApp.Orders.read/2}>
+```
+
+```elixir
+def read(query, %{offset: offset, limit: limit, order: order, after: after_row}) do
+  query |> offset(^offset) |> limit(^limit) |> MyApp.Repo.all()
+end
+```
+
+`query` is the grid's query, with its filters, search and order. Its
+rows are the rows from `offset`, at most `limit` of them; `order` is the
+order (`[desc: :placed_at, asc: :id]`, the primary key always last, or
+`nil` when it is the query's own `order_by`). `after` is the sort values
+of the last row of the block before (`[placed_at: ~U[...], id: 41]`), to
+read the block after it by key, or `nil`: the first block, or a jump
+(the scrollbar dragged). It gives what `c:Masu.Source.rows/3` gives: the
+rows, `{rows, count}`, or `{:error, reason}`.
+
+The grid takes `read` when it starts. A tree and the open groups of a
+grouped grid are read Masu's way. For a source that is not an Ecto
+query, write a source of your own.
 
 ## A source of your own
 

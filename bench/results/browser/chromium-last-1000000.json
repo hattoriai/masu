@@ -1,0 +1,10 @@
+{
+  "browser": "chromium",
+  "version": "141.0.7390.37",
+  "kind": "masu",
+  "rows": 1000000,
+  "expectedLastRowIndex": 1000001,
+  "lastRowIndex": 1000001,
+  "scrollHeight": 10000036,
+  "jumpToEndMs": 69.60000014305115
+}

@@ -138,11 +138,20 @@ of that block's last row, as `WHERE (a, b, id) > (...)`, not by an
 `OFFSET`, which the database counts row by row: the last block of a
 table of millions of rows is as fast as the first. A jump into the
 middle (the scrollbar dragged) is an `OFFSET`; the blocks after it are
-read by key again. It works with descending orders and with `NULL`s
-(after every value in PostgreSQL, before them in SQLite and MySQL), and
-with the primary key as the last sort, which the grid always adds. A
-query with its own `order_by` (and no sort of the person's) is read by
-`OFFSET`.
+read by key again, also in a grid that reads in tasks (`load={:async}`).
+It works with descending orders and with `NULL`s (after every value in
+PostgreSQL, before them in MySQL, SQLite and SQL Server), and with the
+primary key as the last sort, which the grid always adds. With another
+adapter, whose order of `NULL`s Masu does not know, a block is read by
+key only in the order of the primary key, and by `OFFSET` in another
+order. A query with its own `order_by` (and no sort of the person's) is
+read by `OFFSET`.
+
+Paging by key is fast when an index has the columns of the sort: the
+database reads the index in order and stops after the block. A sort by a
+column with no index still reads every row the `WHERE` lets through, to
+sort them. On a large table, index the columns people sort by, or make
+the others not sort (`sortable={false}`).
 
 ## Large tables: counts
 

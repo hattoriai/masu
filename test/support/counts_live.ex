@@ -62,6 +62,10 @@ defmodule MasuTest.CountsLive do
       <:col field={:id} type={:integer} />
       <:col field={:name} />
     </.data_grid>
+    <.data_grid id="capped" source={MasuTest.Item} repo={MasuTest.Repo} count_limit={150} sort={[:id]}>
+      <:col field={:id} type={:integer} />
+      <:col field={:name} />
+    </.data_grid>
     <.data_grid
       id="pages"
       source={MasuTest.Item}

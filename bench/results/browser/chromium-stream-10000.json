@@ -1,0 +1,24 @@
+{
+  "browser": "chromium",
+  "version": "141.0.7390.37",
+  "kind": "stream",
+  "rows": 10000,
+  "firstRowsMs": 1284,
+  "loadMs": 30,
+  "serverBytes": 8936,
+  "heapBytes": 15153388,
+  "domNodes": 110054,
+  "frames": {
+    "p50": 16.600000143051147,
+    "p95": 17.5,
+    "max": 25.09999990463257,
+    "over33ms": 0,
+    "count": 300
+  },
+  "longTasks": {
+    "count": 0,
+    "max": 0
+  },
+  "reachedId": 9974,
+  "reachedIdAfter1s": 9974
+}
