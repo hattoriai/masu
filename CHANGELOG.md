@@ -15,6 +15,8 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   history, a cell editor) is as tall as its content, whatever height the
   app's styles give popovers: it no longer stretches to the bottom or the
   top of the window (#44).
+- With no more groups, no cell of the first column keeps a group's
+  indent (#49).
 
 ## [0.2.0] - 2026-10-19
 

@@ -763,12 +763,13 @@ export class Grid {
 
   /** The first cell of a row: its indent and arrow in a tree, the arrow of its detail, its box. */
   private decorateFirstCell(cell: HTMLElement, row: Row | null): void {
-    if (!this.config.tree && !this.config.detail && !this.config.selection) return;
+    // The indent goes too when the grid stops being a tree (no longer
+    // grouped): its rows' elements are reused.
     const node = row === null ? null : this.nodeOf(row);
     cell.classList.toggle("masu-tree-cell", node !== null);
     if (node) cell.style.setProperty("--masu-level", String(node.level));
     else cell.style.removeProperty("--masu-level");
-    if (row === null) return;
+    if (row === null || (!this.config.tree && !this.config.detail && !this.config.selection)) return;
 
     if (node && isGroup(row)) {
       // A group's label: its column, its value, how many rows.

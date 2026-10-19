@@ -829,6 +829,26 @@ test.describe("groups", () => {
     await settled(page, "groups");
     await expect(page.locator("#groups-r0-c0 .masu-group-label")).not.toHaveText(ascending!);
   });
+
+  test("with no more groups, no first cell keeps a group's indent", async ({ page }) => {
+    await openPage(page, "/groups");
+    await page.locator("#groups-r0-c0").click();
+    await page.keyboard.press("ArrowRight");
+    await expect(row(page, 1)).toHaveAttribute("aria-level", "2");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await expect(row(page, 2)).toHaveAttribute("aria-level", "3");
+
+    await page.getByRole("button", { name: "Stop grouping by Plan" }).click();
+    await page.getByRole("button", { name: "Stop grouping by City" }).click();
+    await expect(page.locator("#groups-grid")).toHaveAttribute("role", "grid");
+    await settled(page, "groups");
+    await expect(page.locator("#groups .masu-body .masu-tree-cell")).toHaveCount(0);
+    const indents = await page
+      .locator("#groups .masu-body .masu-row > .masu-cell:first-child")
+      .evaluateAll((cells) => new Set(cells.map((cell) => getComputedStyle(cell).paddingInlineStart)).size);
+    expect(indents).toBe(1);
+  });
 });
 
 test.describe("selection and export", () => {
