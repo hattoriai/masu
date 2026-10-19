@@ -38,26 +38,31 @@ test("a cell's history: its values, who and when, from its menu and Ctrl+Alt+H; 
 
   // The value before the first change, from the keyboard.
   await page.keyboard.press("Control+Alt+h");
-  await popover(page).getByRole("button", { name: `Restore ${before}` }).click();
+  // This run's first change (the server's memory keeps the runs before).
+  await entries.nth(1).getByRole("button", { name: `Restore ${before}` }).click();
   await expect(cell(page, 0, 2)).toHaveText(before);
 
   await page.keyboard.press("Control+Alt+h");
   await expect(entries.first()).toContainText("restored");
 });
 
-test("a row's history, and a paste undone at once", async ({ page }) => {
-  await cell(page, 3, 1).click();
-  await page.evaluate(() => {
-    const data = new DataTransfer();
-    data.setData("text/plain", "Tim\t99");
-    document.querySelector("#budget-grid")!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
-  });
-  await expect(cell(page, 3, 2)).toHaveText("99");
+test("a row's history, and a batch undone at once: a fill down of two cells", async ({ page }) => {
+  // Power's amount down over Water and Internet: one write of two cells,
+  // with no clipboard (which only Chromium lets a test use).
+  const amount = (await cell(page, 1, 2).textContent())!.trim();
+  await cell(page, 1, 2).click();
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("ControlOrMeta+d");
+  await expect(cell(page, 3, 2)).toHaveText(amount);
 
   await cell(page, 3, 0).click({ button: "right" });
   await page.locator('#budget [role="menu"]').getByRole("menuitem", { name: "Row history" }).click();
-  await expect(popover(page).locator(".masu-history-entry")).toHaveCount(2);
-  await popover(page).getByRole("button", { name: "Undo all 2" }).click();
-  await expect(cell(page, 3, 1)).toHaveText("Linus");
+  // The newest first (the memory of the server keeps the entries of runs before).
+  const latest = popover(page).locator(".masu-history-entry").first();
+  await expect(latest).toContainText(`Amount: ${amount}`);
+  await expect(latest).toContainText("filled");
+  await latest.getByRole("button", { name: "Undo all 2" }).click();
+  await expect(cell(page, 2, 2)).toHaveText("40");
   await expect(cell(page, 3, 2)).toHaveText("35");
 });
