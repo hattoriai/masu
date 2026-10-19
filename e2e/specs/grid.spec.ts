@@ -536,6 +536,7 @@ test.describe("layout and views", () => {
     await odd.click();
     await page.keyboard.press("Shift+ArrowDown");
     await expect(even).toHaveClass(/masu-selected/);
+    await page.mouse.move(0, 0);
     const image = (cell: typeof odd) => cell.evaluate((el) => getComputedStyle(el).backgroundImage);
     expect(await image(even)).toBe(await image(odd));
   });
