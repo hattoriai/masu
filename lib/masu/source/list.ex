@@ -36,7 +36,8 @@ defmodule Masu.Source.List do
       segments: nil,
       leaves: %{},
       groups: [],
-      totals: %{}
+      totals: %{},
+      search_texts: nil
     }
   end
 
@@ -48,21 +49,20 @@ defmodule Masu.Source.List do
 
     # A filter or a search keeps the rows that match and their
     # ancestors, open unless the person closed them.
-    {rows, open?} =
+    {{rows, open?}, state} =
       if query.filters == [] and query.search == nil do
-        {sorted, &MapSet.member?(query.expanded, &1)}
+        {{sorted, &MapSet.member?(query.expanded, &1)}, state}
       else
         parents = Map.new(state.all, &{id.(&1), parent_id.(&1)})
+        {found, state} = found(state, query, columns)
 
         kept =
-          state.all
-          |> filter(query.filters, columns)
-          |> search(query.search, columns)
+          found
           |> Enum.map(id)
           |> Tree.with_ancestors(&Map.get(parents, &1))
 
-        {Enum.filter(sorted, &MapSet.member?(kept, id.(&1))),
-         &(not MapSet.member?(query.collapsed, &1))}
+        {{Enum.filter(sorted, &MapSet.member?(kept, id.(&1))),
+          &(not MapSet.member?(query.collapsed, &1))}, state}
       end
 
     by_id = Map.new(rows, &{id.(&1), &1})
@@ -79,8 +79,8 @@ defmodule Masu.Source.List do
 
   # Grouped (Masu.Group): the groups of each level that shows, and the
   # rows of each open group, in the LiveView.
-  def prepare(%{all: rows} = state, %Query{groups: [_ | _] = keys} = query, columns) do
-    found = rows |> filter(query.filters, columns) |> search(query.search, columns)
+  def prepare(state, %Query{groups: [_ | _] = keys} = query, columns) do
+    {found, state} = found(state, query, columns)
     sorted = sort(found, query.sorts, columns)
 
     groups = fn path, key ->
@@ -105,8 +105,8 @@ defmodule Masu.Source.List do
     }
   end
 
-  def prepare(%{all: rows} = state, %Query{} = query, columns) do
-    found = rows |> filter(query.filters, columns) |> search(query.search, columns)
+  def prepare(state, %Query{} = query, columns) do
+    {found, state} = found(state, query, columns)
     view = found |> sort(query.sorts, columns) |> List.to_tuple()
     %{state | view: view, segments: nil, totals: Group.aggregates(found, columns)}
   end
@@ -119,11 +119,12 @@ defmodule Masu.Source.List do
   def totals(%{totals: totals}), do: totals
 
   @impl true
-  def select_all(%{all: rows}, query, columns, except, row_id) do
+  def select_all(state, query, columns, except, row_id) do
     except = MapSet.new(except)
+    {found, _state} = found(state, query, columns)
 
     ids =
-      for row <- rows |> filter(query.filters, columns) |> search(query.search, columns),
+      for row <- found,
           id = Value.to_wire(row_id.(row)),
           not MapSet.member?(except, id),
           do: id
@@ -171,12 +172,11 @@ defmodule Masu.Source.List do
   def supports?(_state, _column), do: true
 
   @impl true
-  def values(%{all: rows}, column, query, columns, opts) do
+  def values(state, column, query, columns, opts) do
     search = opts |> Keyword.get(:search) |> then(&(&1 && String.downcase(&1)))
+    {found, _state} = found(state, query, columns)
 
-    rows
-    |> filter(query.filters, columns)
-    |> search(query.search, columns)
+    found
     |> Enum.frequencies_by(&Column.get(column, &1))
     |> Enum.filter(fn {value, _count} -> search == nil or value_has?(value, search) end)
     |> Enum.sort_by(fn {value, count} -> {-count, Value.sort_key_fun([value]).(value)} end)
@@ -214,7 +214,7 @@ defmodule Masu.Source.List do
   @impl true
   def change(%{all: rows} = state, changes, row_id) do
     rows = Enum.reduce(changes, rows, &apply_change(&1, &2, row_id))
-    %{state | all: rows}
+    %{state | all: rows, search_texts: nil}
   end
 
   defp apply_change({:upsert, row}, rows, row_id) do
@@ -241,7 +241,7 @@ defmodule Masu.Source.List do
       |> Enum.sort_by(&elem(&1, 0))
       |> Enum.reduce(rows, fn {index, row}, rows -> List.insert_at(rows, index, row) end)
 
-    %{state | all: rows}
+    %{state | all: rows, search_texts: nil}
   end
 
   @doc false
@@ -257,35 +257,73 @@ defmodule Masu.Source.List do
         do: {id, index}
   end
 
-  defp filter(rows, [], _columns), do: rows
+  # The rows of the query's filters and search, in their order, and the
+  # state with the rows' search texts.
+  defp found(state, %Query{search: nil, filters: []}, _columns), do: {state.all, state}
 
-  defp filter(rows, filters, columns) do
+  defp found(state, %Query{search: nil} = query, columns),
+    do: {Enum.filter(state.all, filter(query.filters, columns)), state}
+
+  defp found(state, query, columns) do
+    if String.contains?(query.search, <<0>>), do: {[], state}, else: search(state, query, columns)
+  end
+
+  defp search(state, query, columns) do
+    state = with_search_texts(state, columns)
+    {_key, texts} = state.search_texts
+    text = String.downcase(query.search)
+    {matching(state.all, texts, text, filter(query.filters, columns), []), state}
+  end
+
+  defp matching([row | rows], [row_text | texts], text, keep?, acc) do
+    acc =
+      if :binary.match(row_text, text) != :nomatch and keep?.(row), do: [row | acc], else: acc
+
+    matching(rows, texts, text, keep?, acc)
+  end
+
+  defp matching([], [], _text, _keep?, acc), do: Enum.reverse(acc)
+
+  # The search text of each row: its searchable values without case,
+  # apart (a NUL between two), made at the first search and kept until
+  # the rows or the searchable columns change. A search is then a match
+  # in a binary a row, not a conversion of each value: of a decimal, a
+  # date. A search for text with a NUL finds no row, as no value has one
+  # that a person types.
+  defp with_search_texts(state, columns) do
+    searchable = Enum.filter(columns, & &1.searchable)
+    key = Enum.map(searchable, &{&1.key, &1.field, &1.value})
+
+    case state.search_texts do
+      {^key, _texts} ->
+        state
+
+      _other ->
+        texts =
+          Enum.map(state.all, fn row -> Enum.map_join(searchable, <<0>>, &text(&1, row)) end)
+
+        %{state | search_texts: {key, texts}}
+    end
+  end
+
+  defp text(column, row) do
+    case Column.get(column, row) do
+      nil -> ""
+      value -> value |> Value.to_wire() |> to_string() |> String.downcase()
+    end
+  end
+
+  # Whether a row passes the filters.
+  defp filter([], _columns), do: fn _row -> true end
+
+  defp filter(filters, columns) do
     checks =
       for %Filter{key: key} = filter <- filters,
           column = Column.find(columns, key),
           do: {column, filter}
 
-    Enum.filter(rows, fn row ->
+    fn row ->
       Enum.all?(checks, fn {column, filter} -> Filter.match?(filter, Column.get(column, row)) end)
-    end)
-  end
-
-  defp search(rows, nil, _columns), do: rows
-
-  defp search(rows, text, columns) do
-    text = String.downcase(text)
-    searchable = Enum.filter(columns, & &1.searchable)
-
-    Enum.filter(rows, fn row -> Enum.any?(searchable, &has_text?(&1, row, text)) end)
-  end
-
-  defp has_text?(column, row, text) do
-    case Column.get(column, row) do
-      nil ->
-        false
-
-      value ->
-        value |> Value.to_wire() |> to_string() |> String.downcase() |> String.contains?(text)
     end
   end
 

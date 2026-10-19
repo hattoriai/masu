@@ -84,6 +84,15 @@ that write rows your way take one.
 - The items of `:header_action` and `:cell_action` get `scope` and `ref`
   in their context, and their results are said: `{:ok, message}`,
   `{:error, message}`, `:async`.
+- An Ecto source's rows of equal values in a descending sort come in
+  the descending order of the primary key, not the ascending: the
+  primary key that ends the order goes the way of the last sort, so that
+  an index of the sorted column and the primary key reads the rows in
+  their order, forwards or backwards.
+- A search of a grid of rows (`Masu.Source.List`) makes a text of each
+  row once, at the first search, and matches in it: each search after it
+  is about twenty times faster (a hundred thousand rows: from 491 ms to
+  26 ms). The texts stay until the rows change.
 
 ### Added
 

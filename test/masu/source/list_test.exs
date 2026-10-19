@@ -52,6 +52,77 @@ defmodule Masu.Source.ListTest do
     assert ids(source, search: "LIS") == [2]
   end
 
+  test "a search does not find text across two columns" do
+    source = Source.new([%{id: 1, name: "ab", age: 1, city: "cd"}], [])
+    assert ids(source, search: "bc") == []
+    assert ids(source, search: "b\0c") == []
+    assert ids(source, search: "b") == [1]
+  end
+
+  test "the rows' search texts are made at the first search, and again when the rows change" do
+    {:ok, query} = Query.new([search: "lon"], columns())
+    source = @rows |> Source.new([]) |> Source.prepare(query, columns())
+    assert %{state: %{search_texts: {_key, texts}}} = source
+    assert length(texts) == 4
+
+    {:ok, other} = Query.new([search: "lis"], columns())
+    assert %{state: %{search_texts: {_key, ^texts}}} = Source.prepare(source, other, columns())
+
+    changed =
+      Source.change(source, [{:upsert, %{id: 5, name: "Eve", age: 1, city: "Lonely"}}], & &1.id)
+
+    assert %{state: %{search_texts: nil}} = changed
+
+    assert changed |> Source.prepare(query, columns()) |> Source.rows(0, 10) |> Enum.map(& &1.id) ==
+             [1, 4, 5]
+  end
+
+  property "a search finds the rows that one of their searchable values contains, without case" do
+    value =
+      one_of([
+        constant(nil),
+        string(:printable, max_length: 6),
+        string([?a..?c, ?A..?C, ?É, ?é, ?Σ, ?σ, ?ß], max_length: 6),
+        integer(),
+        map(integer(), &Decimal.new(if(&1 < 0, do: -1, else: 1), abs(&1), -2)),
+        map(integer(0..3000), &Date.add(~D[2020-01-01], &1))
+      ])
+
+    row = fixed_map(%{name: value, city: value, age: value})
+
+    check all(
+            rows <- list_of(row, max_length: 20),
+            text <-
+              string([?a..?c, ?A..?C, ?é, ?Σ, ?σ, ?0..?9, ?-, ?.],
+                min_length: 1,
+                max_length: 3
+              )
+          ) do
+      rows = Enum.with_index(rows, fn row, id -> Map.put(row, :id, id) end)
+      columns = [Column.new(field: :name), Column.new(field: :city), Column.new(field: :age)]
+      needle = String.downcase(text)
+
+      expected =
+        for row <- rows,
+            Enum.any?([row.name, row.city, row.age], fn
+              nil ->
+                false
+
+              value ->
+                value
+                |> Masu.Value.to_wire()
+                |> to_string()
+                |> String.downcase()
+                |> String.contains?(needle)
+            end),
+            do: row.id
+
+      query = %Query{search: text}
+      found = rows |> Source.new([]) |> Source.prepare(query, columns) |> Source.rows(0, 100)
+      assert Enum.map(found, & &1.id) == expected
+    end
+  end
+
   test "counts and reads blocks of the query" do
     {:ok, query} = Query.new([filters: [{:age, :not_nil}]], columns())
     source = @rows |> Source.new([]) |> Source.prepare(query, columns())
