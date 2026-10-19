@@ -80,6 +80,33 @@ defmodule MasuDev.Customers do
     end
   end
 
+  @doc "n made-up customers (the first 100,000 are those of all/0), made once for each n."
+  def many(n) when n <= 100_000, do: Enum.take(all(), n)
+
+  def many(n) do
+    case :persistent_term.get({__MODULE__, n}, nil) do
+      nil ->
+        # In chunks of 50,000, on every scheduler.
+        rows =
+          1..n
+          |> Stream.chunk_every(50_000)
+          |> Task.async_stream(&Enum.map(&1, fn id -> customer(id) end), timeout: :infinity)
+          |> Enum.flat_map(fn {:ok, chunk} -> chunk end)
+
+        # One size at a time: :persistent_term has a fixed area (1 GB),
+        # and a million rows are 900 MB of it.
+        for {{__MODULE__, size} = key, _rows} <- :persistent_term.get(),
+            is_integer(size),
+            do: :persistent_term.erase(key)
+
+        :persistent_term.put({__MODULE__, n}, rows)
+        rows
+
+      rows ->
+        rows
+    end
+  end
+
   defp customer(id) do
     first = pick(@first, id * 7)
     last = pick(@last, id * 13)
@@ -1550,6 +1577,215 @@ defmodule MasuDev.HistoryLive do
   end
 end
 
+defmodule MasuDev.BenchLive do
+  @moduledoc """
+  The page of the browser's benchmarks (bench/README.md): `?rows=` made-up
+  customers in a Masu grid; or the baselines: (`?kind=stream`) a plain
+  table of one LiveView stream of every row, and (`?kind=viewport`) the
+  infinite scroll of the LiveView docs, a stream of three pages of 50 at
+  most, the next read at `phx-viewport-bottom` and the one before at
+  `phx-viewport-top`. `?row_height=` (and a taller `?height=`)
+  make a grid of few rows as tall as one of millions, for the browser
+  tests. Out of the menu.
+
+  The rows are copied into the LiveView's process when it connects, as
+  rows read from a database are; the time of the copy is on the page.
+  "Measure" shows the memory of the process.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(params, _session, socket) do
+    n = params |> Map.get("rows", "1000") |> String.to_integer()
+    kind = kind(params["kind"])
+
+    # The dead render makes the rows (once for each n), so that a request
+    # before the benchmark keeps their making out of its time.
+    rows = MasuDev.Customers.many(n)
+
+    {load, rows} =
+      if connected?(socket),
+        do: :timer.tc(fn -> copy(rows) end, :millisecond),
+        else: {nil, []}
+
+    socket =
+      assign(socket,
+        n: n,
+        kind: kind,
+        load: load,
+        memory: nil,
+        row_height: integer(params["row_height"]),
+        height: params["height"] || "36rem"
+      )
+
+    case kind do
+      :masu ->
+        {:ok, assign(socket, rows: rows)}
+
+      :stream ->
+        {:ok, stream(socket, :rows, rows)}
+
+      :viewport ->
+        {:ok,
+         socket
+         |> assign(all: List.to_tuple(rows), page: 1, end?: false)
+         |> stream(:rows, [])
+         |> paginate(1)}
+    end
+  end
+
+  # The infinite scroll of the LiveView docs (Bindings, "Scroll events
+  # and infinite pagination").
+  @per_page 50
+
+  defp paginate(socket, page) when page >= 1 do
+    %{all: all, page: current} = socket.assigns
+    from = (page - 1) * @per_page
+    rows = for i <- from..(min(from + @per_page, tuple_size(all)) - 1)//1, do: elem(all, i)
+
+    {rows, at, limit} =
+      if page >= current,
+        do: {rows, -1, -3 * @per_page},
+        else: {Enum.reverse(rows), 0, 3 * @per_page}
+
+    case rows do
+      [] ->
+        assign(socket, end?: at == -1)
+
+      [_ | _] ->
+        socket
+        |> assign(end?: false, page: page)
+        |> stream(:rows, rows, at: at, limit: limit)
+    end
+  end
+
+  defp kind("stream"), do: :stream
+  defp kind("viewport"), do: :viewport
+  defp kind(_other), do: :masu
+
+  defp integer(nil), do: nil
+  defp integer(text), do: String.to_integer(text)
+
+  # A copy on this process's heap: the rows of many/1 are in
+  # :persistent_term, which no process's memory counts.
+  defp copy(rows), do: rows |> :erlang.term_to_binary() |> :erlang.binary_to_term()
+
+  @impl true
+  def handle_event("next-page", _params, socket),
+    do: {:noreply, paginate(socket, socket.assigns.page + 1)}
+
+  def handle_event("prev-page", %{"_overran" => true}, socket),
+    do: {:noreply, paginate(socket, 1)}
+
+  def handle_event("prev-page", _params, socket) do
+    if socket.assigns.page > 1,
+      do: {:noreply, paginate(socket, socket.assigns.page - 1)},
+      else: {:noreply, socket}
+  end
+
+  def handle_event("measure", _params, socket) do
+    :erlang.garbage_collect()
+    {:memory, bytes} = Process.info(self(), :memory)
+    {:noreply, assign(socket, memory: bytes)}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="bench-label">{@n} customers ({@kind})</h1>
+    <p>
+      <button id="bench-measure" phx-click="measure">Measure</button>
+      <output id="bench-memory" data-bytes={@memory} data-load-ms={@load}>
+        {@memory && "#{div(@memory, 1024)} KiB"}
+      </output>
+    </p>
+    <.data_grid
+      :if={@kind == :masu}
+      id="bench"
+      rows={@rows}
+      label_id="bench-label"
+      row_height={@row_height}
+      height={@height}
+      locale="en-GB"
+    >
+      <:col field={:id} type={:integer} width={90} label="ID" />
+      <:col field={:name} width={190} />
+      <:col field={:email} width={280} />
+      <:col field={:city} />
+      <:col field={:plan} type={:enum} width={130} />
+      <:col field={:seats} type={:integer} />
+      <:col field={:revenue} type={:decimal} />
+      <:col field={:active} type={:boolean} />
+      <:col field={:signed_up} type={:date} label="Signed up" />
+      <:col field={:last_seen} type={:datetime} label="Last seen" />
+    </.data_grid>
+    <div :if={@kind == :viewport} id="bench-scroll" style="height: 36rem; overflow: auto;">
+      <div
+        id="bench-rows"
+        phx-update="stream"
+        phx-viewport-top={@page > 1 && "prev-page"}
+        phx-viewport-bottom={!@end? && "next-page"}
+        style={[
+          if(@end?, do: "padding-bottom: 2.5rem;", else: "padding-bottom: 200vh;"),
+          if(@page == 1, do: "padding-top: 2.5rem;", else: "padding-top: 200vh;")
+        ]}
+      >
+        <div
+          :for={{dom_id, customer} <- @streams.rows}
+          id={dom_id}
+          style="display: flex; gap: 1rem; white-space: nowrap;"
+        >
+          <span style="width: 5rem;">{customer.id}</span>
+          <span style="width: 12rem;">{customer.name}</span>
+          <span style="width: 18rem;">{customer.email}</span>
+          <span style="width: 6rem;">{customer.city}</span>
+          <span style="width: 6rem;">{customer.plan}</span>
+          <span style="width: 3rem;">{customer.seats}</span>
+          <span style="width: 6rem;">{Decimal.to_string(customer.revenue)}</span>
+          <span style="width: 3rem;">{customer.active}</span>
+          <span style="width: 6rem;">{customer.signed_up}</span>
+          <span style="width: 12rem;">{customer.last_seen}</span>
+        </div>
+      </div>
+    </div>
+    <div :if={@kind == :stream} id="bench-scroll" style="height: 36rem; overflow: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>City</th>
+            <th>Plan</th>
+            <th>Seats</th>
+            <th>Revenue</th>
+            <th>Active</th>
+            <th>Signed up</th>
+            <th>Last seen</th>
+          </tr>
+        </thead>
+        <tbody id="bench-rows" phx-update="stream">
+          <tr :for={{dom_id, customer} <- @streams.rows} id={dom_id}>
+            <td>{customer.id}</td>
+            <td>{customer.name}</td>
+            <td>{customer.email}</td>
+            <td>{customer.city}</td>
+            <td>{customer.plan}</td>
+            <td>{customer.seats}</td>
+            <td>{Decimal.to_string(customer.revenue)}</td>
+            <td>{customer.active}</td>
+            <td>{customer.signed_up}</td>
+            <td>{customer.last_seen}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    """
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -1585,6 +1821,7 @@ defmodule MasuDev.Router do
     live("/actions", MasuDev.ActionsLive)
     live("/editors", MasuDev.EditorsLive)
     live("/history", MasuDev.HistoryLive)
+    live("/bench", MasuDev.BenchLive)
     masu_exports()
   end
 end

@@ -1,0 +1,10 @@
+{
+  "browser": "webkit",
+  "version": "26.0",
+  "kind": "masu",
+  "rows": 500000,
+  "expectedLastRowIndex": 500001,
+  "lastRowIndex": 500001,
+  "scrollHeight": 10000036,
+  "jumpToEndMs": 69
+}

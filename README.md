@@ -68,6 +68,35 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Theming | CSS custom properties, the Sumi theme, dark mode, reduced motion |
 | Accessibility | the WAI-ARIA grid with one tab stop and the active cell as `aria-activedescendant`, row and column counts and indexes, `aria-sort`, announcements |
 
+## Performance
+
+Measured with `mix bench` on an Apple M1 Pro, against two LiveView
+pages of the same rows without a grid: one stream of every row, and the
+infinite scroll of the LiveView docs (`phx-viewport-bottom`, a stream of
+three pages of 50). In Chromium, with a list source:
+
+| | Masu | A stream of every row | The infinite scroll |
+| --- | --- | --- | --- |
+| 100,000 rows: first rows on the screen | 0.4 s | 23 s | 0.4 s |
+| DOM nodes, at 1,000 rows and at 1,000,000 | 374 and 374 | 1.1 million at 100,000 | 591 and 591 |
+| Frames dropped in a fast scroll | none | every one | none |
+| After a fast scroll | the rows there, once the scroll pauses | the rows there | no rows, and no more come |
+| The scrollbar dragged to the middle | the rows there in 70 to 85 ms | the rows there | no scrollbar for the rows not read |
+
+* An Ecto source on PostgreSQL reads a block of 100 rows in 0.25 ms,
+  at the top of a table and in the middle of ten million rows: by key,
+  not `OFFSET`. Sorted by a column with an index, 4 ms. A `count(*)` of
+  ten million rows takes seconds: `count={:deferred}`.
+* A list source keeps its rows in the LiveView's process, about 1 KB a
+  row for each person (98 MB for 100,000 rows), and sorts or searches
+  100,000 rows in about 0.4 seconds. Past that, give the grid an Ecto
+  source.
+* A grid of a million rows scrolls to its last row in Chromium, Firefox
+  and Safari.
+
+The numbers of the last run are in [bench/RESULTS.md](bench/RESULTS.md),
+and how to run them in [bench/README.md](bench/README.md).
+
 ## Install
 
 Masu needs Elixir 1.18 or later (it uses the built-in `JSON` module),
@@ -238,6 +267,7 @@ mix test.js                # the unit tests of the TypeScript modules
 mix test.e2e               # the Playwright browser tests
 mix precommit              # compile, format, credo --strict and test
 mix dialyzer
+mix bench                  # the benchmarks (bench/README.md), with PostgreSQL
 ```
 
 The ExUnit suite tests the Ecto source on SQLite. `mix test.js` runs the

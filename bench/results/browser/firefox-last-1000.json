@@ -1,0 +1,10 @@
+{
+  "browser": "firefox",
+  "version": "142.0.1",
+  "kind": "masu",
+  "rows": 1000,
+  "expectedLastRowIndex": 1001,
+  "lastRowIndex": 1001,
+  "scrollHeight": 36036,
+  "jumpToEndMs": 62
+}

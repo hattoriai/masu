@@ -1,0 +1,27 @@
+{
+  "browser": "chromium",
+  "version": "141.0.7390.37",
+  "kind": "masu",
+  "rows": 100000,
+  "firstRowsMs": 398,
+  "loadMs": 327,
+  "serverBytes": 102676424,
+  "heapBytes": 2936856,
+  "heapBytesAfterScroll": 2895856,
+  "domNodes": 374,
+  "domNodesAfterScroll": 473,
+  "frames": {
+    "p50": 16.699999809265137,
+    "p95": 17.5,
+    "max": 17.700000047683716,
+    "over33ms": 0,
+    "count": 300
+  },
+  "longTasks": {
+    "count": 0,
+    "max": 0
+  },
+  "reachedId": null,
+  "reachedIdAfter1s": 16666,
+  "jumpToMiddleMs": 83.59999990463257
+}
