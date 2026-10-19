@@ -32,7 +32,7 @@ defmodule Masu.Edit do
   def max_rows, do: @max_rows
 
   @origins Map.new(
-             ~w(edit paste fill clear undo redo draft rows selection test)a,
+             ~w(edit paste fill clear undo redo draft rows selection restore test)a,
              &{Atom.to_string(&1), &1}
            )
 
@@ -52,7 +52,11 @@ defmodule Masu.Edit do
       changeset: assigns[:changeset],
       struct: assigns[:struct],
       columns: assigns.all_columns,
-      row_id: row_id
+      row_id: row_id,
+      grid: assigns.id,
+      history: assigns[:history],
+      user: assigns[:user],
+      batch: nil
     }
   end
 
@@ -65,7 +69,7 @@ defmodule Masu.Edit do
       %Write{} = done ->
         case Write.open(done) do
           [] ->
-            done
+            Write.record_rest(done)
 
           open ->
             raise ArgumentError,
@@ -90,7 +94,7 @@ defmodule Masu.Edit do
       scope: assigns[:scope],
       ref: ref,
       changes: changes,
-      grid_config: config(assigns, row_id)
+      grid_config: %{config(assigns, row_id) | batch: token}
     }
 
     {write, token}

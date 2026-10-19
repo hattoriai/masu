@@ -9,6 +9,29 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The history of cells (`history` on a grid, `Masu.History`): who
+  changed a cell, when, from what to what, and what they did (typed,
+  pasted, filled, restored); new and deleted rows too. Every write of the
+  grid that saves is recorded, the grid's own and an `on_update`'s;
+  `Masu.Write.record/3` records in a transaction of the app's own, and
+  `Masu.History.record/2` what the app changes another way. A batch is
+  one write (a paste).
+- Stores: `Masu.History.Ecto` (`use Masu.History.Ecto, repo: ...`), a
+  table of any Ecto repo, PostgreSQL, MySQL or SQLite, with
+  `mix masu.gen.history` for its migration: in the grid's own repo, a
+  change and its record are saved in one transaction (a record that
+  fails takes the change back); in a repo of its own (a SQLite file next
+  to a PostgreSQL app), the change is recorded after it saves.
+  `Masu.History.Memory` for development and tests; a store of your own
+  over your audit.
+- The history of a cell or a row in a popover, from the cell's menu or
+  Ctrl+Alt+H: Restore a value, Undo all of a batch (someone's paste), as
+  edits through the changeset, refused for a cell that changed since,
+  recorded as restores.
+- `Masu.Test.history/4` and `restore/3`.
+
+### Added
+
 - Editors of your own (`editor` on a `:col`), with no dependency of
   Masu's on any editor:
   - a function component of a form field (`@field`, named

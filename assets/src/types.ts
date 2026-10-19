@@ -178,6 +178,8 @@ export interface Config {
   restores?: boolean;
   /** The built-in items of the menu of a cell: "copy", "filter", "sort". */
   cellMenu?: string[];
+  /** The grid keeps a history of its cells (Masu.History). */
+  history?: boolean;
   /** The app's actions on the rows selected (`:action`). */
   actions?: RowsAction[];
   /** The app's actions on a row (`:row_action`); each row carries its own state of them, after its read-only cells. */

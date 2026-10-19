@@ -105,6 +105,8 @@ defmodule Masu.Write do
   saved later.
   """
 
+  require Logger
+
   alias Masu.{Column, Source, Value}
   alias Masu.Source.Ecto, as: EctoSource
 
@@ -155,6 +157,7 @@ defmodule Masu.Write do
           ref: String.t(),
           changes: [Change.t()],
           results: %{non_neg_integer() => result()},
+          recorded: [non_neg_integer()],
           grid_config: map()
         }
 
@@ -167,6 +170,8 @@ defmodule Masu.Write do
     origin: :edit,
     changes: [],
     results: %{},
+    # The changes already in the grid's history (record/3).
+    recorded: [],
     grid_config: %{}
   ]
 
@@ -302,10 +307,134 @@ defmodule Masu.Write do
   """
   @spec save(t()) :: t()
   def save(%__MODULE__{} = write) do
+    inline? = inline_history?(write)
+
     Enum.reduce(open(write), write, fn change, write ->
-      %{write | results: Map.put(write.results, change.index, save_one(write, change))}
+      # A history in the grid's repo records in the change's transaction.
+      {result, recorded?} =
+        if inline? do
+          save_recorded(write, change)
+        else
+          {save_one(write, change), false}
+        end
+
+      write = %{write | results: Map.put(write.results, change.index, result)}
+      if recorded?, do: %{write | recorded: [change.index | write.recorded]}, else: write
     end)
   end
+
+  @doc """
+  Records a change that your function saved, as `row`, in the grid's
+  history (`Masu.History`) now: in the transaction your function runs
+  it in, when the history is in the same repo. The grid does not record
+  it again after your function. Without a history, it does nothing.
+
+      def update(write) do
+        Masu.Write.each(write, fn change ->
+          Repo.transaction(fn ->
+            order = Orders.update!(change.row, change.params)
+            Masu.Write.record(write, change, order)
+            order
+          end)
+        end)
+      end
+
+  Gives the write, which knows the change is recorded.
+  """
+  @spec record(t(), Change.t(), term()) :: t()
+  def record(%__MODULE__{} = write, %Change{} = change, row) do
+    if record_result(write, change, {:ok, row}),
+      do: %{write | recorded: [change.index | write.recorded]},
+      else: write
+  end
+
+  # A change and its record in one transaction: a record that fails
+  # takes the change back, which is refused.
+  defp save_recorded(write, change) do
+    repo = write.grid_config.repo
+
+    result =
+      repo.transaction(fn ->
+        result = save_one(write, change)
+
+        try do
+          {result, record_result(write, change, result)}
+        rescue
+          error ->
+            Logger.error(
+              "Masu: the history of the grid #{write.grid} could not record: " <>
+                Exception.message(error)
+            )
+
+            repo.rollback(:history)
+        end
+      end)
+
+    case result do
+      {:ok, done} -> done
+      {:error, :history} -> {{:error, "Not saved: the history could not keep it."}, false}
+    end
+  end
+
+  @doc false
+  # The changes that saved and are not in the history yet, recorded at
+  # once: after the write's function, outside its transactions. The
+  # changes are saved: a record that fails is logged.
+  @spec record_rest(t()) :: t()
+  def record_rest(%__MODULE__{grid_config: %{history: store}} = write) when store != nil do
+    entries =
+      for change <- write.changes,
+          change.index not in write.recorded,
+          row <- saved_row(Map.get(write.results, change.index)),
+          entry <- history_entries(write, change, row),
+          do: entry
+
+    if entries != [] do
+      try do
+        :ok = store.record(entries)
+      rescue
+        error ->
+          Logger.error(
+            "Masu: the history of the grid #{write.grid} could not record #{length(entries)} changes: " <>
+              Exception.message(error)
+          )
+      end
+    end
+
+    write
+  end
+
+  def record_rest(write), do: write
+
+  defp record_result(%{grid_config: %{history: store}} = write, change, result)
+       when store != nil do
+    case saved_row(result) do
+      [row] ->
+        entries = history_entries(write, change, row)
+        if entries != [], do: :ok = store.record(entries)
+        true
+
+      [] ->
+        false
+    end
+  end
+
+  defp record_result(_write, _change, _result), do: false
+
+  defp saved_row({:ok, row}), do: [row]
+  defp saved_row({:ok, row, _refused}), do: [row]
+  defp saved_row(_result), do: []
+
+  defp history_entries(write, change, row),
+    do: Masu.History.entries(write.grid_config, write.op, write.origin, change, row, change.keys)
+
+  defp inline_history?(%{
+         grid_config: %{history: store, source: %Source{module: EctoSource}} = config
+       })
+       when store != nil,
+       do: Masu.History.repo(store) == config.repo
+
+  defp inline_history?(_write), do: false
 
   defp save_one(%{op: :update, grid_config: config} = write, change) do
     changeset = config.changeset || missing(write, "changeset")

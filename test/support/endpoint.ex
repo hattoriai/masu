@@ -46,6 +46,7 @@ defmodule MasuTest.Router do
     live("/writes", MasuTest.WritesLive)
     live("/editors", MasuTest.EditorsLive)
     live("/placed", MasuTest.PlacedLive)
+    live("/ledger", MasuTest.LedgerLive)
     live("/filter-ops", MasuTest.FilterOpsLive)
     live("/results", MasuTest.ResultsLive)
     live("/async", MasuTest.AsyncLive)

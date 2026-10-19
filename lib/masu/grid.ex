@@ -92,6 +92,7 @@ defmodule Masu.Grid do
        cell_menu: [],
        action_panel: nil,
        cell_editor: nil,
+       history: nil,
        column_specs: nil,
        types: %{},
        load: :inline,
@@ -1309,6 +1310,65 @@ defmodule Masu.Grid do
     end
   end
 
+  # The history of a cell (`key`), or of a row, from the grid's
+  # `history` (Masu.History), newest first; each entry with the size of
+  # its batch, for a restore of all of it.
+  def handle_event("masu:history", %{"id" => id} = params, %{assigns: %{history: store}} = socket)
+      when store != nil do
+    grid = socket.assigns.id
+
+    # Only of a row the grid's query shows this person.
+    entries =
+      case {params["key"], fetch_row(socket.assigns, id, row_id(socket.assigns))} do
+        {_key, []} -> []
+        {key, _row} when is_binary(key) -> store.for_cell(grid, id, key, limit: 50)
+        {_key, _row} -> store.for_row(grid, id, limit: 50)
+      end
+
+    sizes =
+      for batch <- entries |> Enum.map(& &1.batch) |> Enum.uniq(), batch != nil, into: %{} do
+        {batch, length(store.batch(grid, batch))}
+      end
+
+    wire =
+      Enum.map(entries, fn entry ->
+        Map.put(Masu.History.to_wire(entry), "batch_size", Map.get(sizes, entry.batch, 1))
+      end)
+
+    {:reply, %{"entries" => wire}, socket}
+  end
+
+  def handle_event("masu:history", _params, socket), do: {:reply, %{"entries" => []}, socket}
+
+  # A value of the history back (`entry`), or every cell of a batch
+  # (`batch`: someone's paste undone): an edit of the cells, through the
+  # changeset and the read-only rules, refused for a cell that changed
+  # since, and recorded as a restore.
+  def handle_event("masu:history_restore", params, %{assigns: %{history: store}} = socket)
+      when store != nil do
+    grid = socket.assigns.id
+
+    edits =
+      case params do
+        %{"entry" => id} -> grid |> store.entry(id) |> List.wrap() |> restore_value(store, grid)
+        %{"batch" => batch} when is_binary(batch) -> grid |> store.batch(batch) |> restore_edits()
+        _other -> []
+      end
+
+    result = Masu.Edit.update(edits, socket.assigns, row_id(socket.assigns), :restore)
+    socket = take_saved(socket, Enum.map(result.saved, &{:upsert, &1}))
+
+    {:reply,
+     %{
+       "revision" => socket.assigns.revision,
+       "restored" => restored(edits, result.errors),
+       "errors" => result.errors
+     }, socket}
+  end
+
+  def handle_event("masu:history_restore", _params, socket),
+    do: {:reply, %{"restored" => 0, "errors" => []}, socket}
+
   def handle_event("masu:action_panel", %{"open" => false}, socket),
     do: {:reply, %{}, assign(socket, action_panel: nil)}
 
@@ -1570,6 +1630,44 @@ defmodule Masu.Grid do
   end
 
   defp action_context(_assigns, _action, _column, _params), do: {:error, "row"}
+
+  # A value of a cell's history back: its value before the entry, if the
+  # cell still has the value of its latest entry (what the person saw).
+  defp restore_value([%Masu.History.Entry{op: :update, key: key} = entry], store, grid)
+       when key != nil do
+    latest =
+      case store.for_cell(grid, entry.row_id, key, limit: 1) do
+        [latest | _] -> latest
+        [] -> entry
+      end
+
+    [%{"id" => entry.row_id, "key" => key, "value" => entry.before, "before" => latest.after}]
+  end
+
+  defp restore_value(_entries, _store, _grid), do: []
+
+  # The edits that bring cells back to their values before entries (as
+  # the store gives them, in the order they were recorded): a cell's
+  # value before the first of
+  # them, if it still has the value after the last.
+  defp restored(edits, errors) do
+    refused = MapSet.new(errors, fn [id, key | _] -> {id, key} end)
+    Enum.count(edits, &(not MapSet.member?(refused, {&1["id"], &1["key"]})))
+  end
+
+  defp restore_edits(entries) do
+    entries
+    |> Enum.filter(&(&1.op == :update and &1.key != nil))
+    |> Enum.group_by(&{&1.row_id, &1.key})
+    |> Enum.map(fn {{row_id, key}, cell} ->
+      %{
+        "id" => row_id,
+        "key" => key,
+        "value" => hd(cell).before,
+        "before" => List.last(cell).after
+      }
+    end)
+  end
 
   # Whether the row's state lets the column's cell edit.
   defp row_edits?(assigns, row, column) do
@@ -2522,6 +2620,7 @@ defmodule Masu.Grid do
       "groupable" => assigns.tree == nil and not controlled?(assigns),
       "export" => Enum.map(export_formats(assigns), &Atom.to_string/1),
       "cellMenu" => Enum.map(assigns.cell_menu, &Atom.to_string/1),
+      "history" => assigns.history != nil,
       "actions" => Action.to_wire(assigns.actions),
       "rowActions" => Action.to_wire(assigns.row_actions),
       "running" => running?(assigns),

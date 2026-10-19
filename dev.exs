@@ -162,6 +162,7 @@ defmodule MasuDev.Layouts do
           {"Menus", "/menus"},
           {"Actions", "/actions"},
           {"Editors", "/editors"},
+          {"History", "/history"},
           {"Some filters", "/limited"},
           {"Results", "/results"},
           {"Slow", "/slow"},
@@ -1490,6 +1491,65 @@ defmodule MasuDev.EditorsLive do
   end
 end
 
+defmodule MasuDev.HistoryLive do
+  @moduledoc """
+  A budget whose cells keep their history (Masu.History, in memory): a
+  right click on a cell, or Ctrl+Alt+H, shows who changed it, when, and
+  from what; Restore brings a value back, Undo all someone's paste.
+  `?user=Grace` edits as another person.
+  """
+  use Phoenix.LiveView
+
+  import Ecto.Changeset
+  import Masu.Components
+
+  @types %{item: :string, owner: :string, amount: :integer}
+
+  @impl true
+  def mount(params, _session, socket) do
+    rows =
+      for {item, owner, amount, id} <- [
+            {"Rent", "Ada", 1200, 1},
+            {"Power", "Grace", 90, 2},
+            {"Water", "Ada", 40, 3},
+            {"Internet", "Linus", 35, 4},
+            {"Insurance", "Grace", 60, 5}
+          ],
+          do: %{id: id, item: item, owner: owner, amount: amount}
+
+    name = params["user"] || "Ada"
+    {:ok, assign(socket, rows: rows, user: %{id: String.downcase(name), name: name})}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="history-label">History</h1>
+    <.data_grid
+      id="budget"
+      rows={@rows}
+      changeset={&changeset/2}
+      history={Masu.History.Memory}
+      user={@user}
+      label_id="history-label"
+      height="20rem"
+      sort={[:id]}
+    >
+      <:col field={:item} />
+      <:col field={:owner} />
+      <:col field={:amount} type={:integer} />
+    </.data_grid>
+    """
+  end
+
+  def changeset(row, params) do
+    {row, @types}
+    |> cast(params, Map.keys(@types))
+    |> validate_required([:item])
+    |> validate_number(:amount, greater_than_or_equal_to: 0)
+  end
+end
+
 defmodule MasuDev.Router do
   use Phoenix.Router
 
@@ -1524,6 +1584,7 @@ defmodule MasuDev.Router do
     live("/controlled", MasuDev.ControlledLive)
     live("/actions", MasuDev.ActionsLive)
     live("/editors", MasuDev.EditorsLive)
+    live("/history", MasuDev.HistoryLive)
     masu_exports()
   end
 end
@@ -1565,6 +1626,7 @@ Task.async(fn ->
         {Phoenix.PubSub, name: MasuDev.PubSub},
         MasuDev.Presence,
         Masu.Views.Memory,
+        Masu.History.Memory,
         MasuDev.Endpoint
       ],
       strategy: :one_for_one

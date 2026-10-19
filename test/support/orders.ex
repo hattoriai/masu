@@ -94,6 +94,13 @@ defmodule MasuTest.Orders do
         "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT, points DECIMAL)"
       )
 
+      # A ledger whose changes the history keeps (Masu.History), of its own;
+      # the history's table in this repo and in a repo of its own, by the
+      # migration of `mix masu.gen.history`.
+      Repo.query!("CREATE TABLE ledger (id INTEGER PRIMARY KEY, item TEXT, amount INTEGER)")
+      :ok = MasuTest.Ledger.migrate_history!(Repo)
+      :ok = MasuTest.Ledger.start_history_repo!()
+
       # Chores that the actions of a grid change (Masu.Action), of their own.
       Repo.query!("CREATE TABLE chores (id INTEGER PRIMARY KEY, title TEXT, done BOOLEAN)")
 
