@@ -176,6 +176,44 @@ is not known (`aria-rowcount="-1"`), and the status says "1,000+ rows".
 A source of your own may not know its count either (`{:at_least, n}`,
 `:unknown`), or know it with its rows; see [Sources](sources.md).
 
+### A count up to a limit
+
+`count_limit` makes an Ecto source count no more rows than the limit:
+
+```heex
+<.data_grid id="events" source={Event} repo={Repo} count_limit={10_000}>
+```
+
+The count is `SELECT count(*) FROM (... LIMIT 10001)`: the database
+stops after the row past the limit, and the grid says "10,000+ rows", as
+for a count it does not know. When the person goes to the end, the grid
+counts every row, once. It works with each `count`: with `:deferred`,
+the count up to the limit runs in a task.
+
+A limit helps a query of many rows: a table of millions, a search that
+finds many. A query of fewer rows than the limit is still read whole,
+and PostgreSQL then reads it in one process, not in parallel, as it does
+a `count(*)`: a search that finds few rows of a large table can take
+longer to count with a limit than without. The numbers of both are in
+the benchmarks (`bench/RESULTS.md`).
+
+### Searches of a large table
+
+A search is `lower(field) LIKE '%text%'` on each searchable column, and
+a B-tree index cannot serve a `LIKE` that starts with `%`: the database
+reads every row, to show the first block of a search that finds few
+rows, and to count any search. In PostgreSQL, a trigram index on
+`lower(field)` serves it, one for each searchable column:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX customers_name_trgm ON customers USING gin (lower(name) gin_trgm_ops);
+CREATE INDEX customers_email_trgm ON customers USING gin (lower(email) gin_trgm_ops);
+```
+
+A column that people do not search is better not searchable
+(`searchable={false}`): the search then does not read it.
+
 ## Large tables: reads
 
 A grid reads its rows from its source a block at a time: 100 rows

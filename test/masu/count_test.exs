@@ -97,6 +97,19 @@ defmodule Masu.CountTest do
       assert counted.(nil) == {237, true}
 
       assert_raise ArgumentError, ~r/count_limit is a positive integer/, fn -> counted.(0) end
+
+      # A distinct query counts its distinct rows: 40 names, and none.
+      names = fn limit ->
+        import Ecto.Query, only: [from: 2]
+
+        from(i in MasuTest.Item, distinct: true, select: %{name: i.name})
+        |> Masu.Source.new(repo: MasuTest.Repo, count_limit: limit)
+        |> Masu.Source.prepare(%Masu.Query{}, [])
+        |> Masu.Source.counted()
+      end
+
+      assert names.(100) == {41, true}
+      assert names.(10) == {10, false}
     end
   end
 

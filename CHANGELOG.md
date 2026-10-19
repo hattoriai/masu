@@ -124,6 +124,13 @@ that write rows your way take one.
   and order) and `%{offset:, limit:, order:, after:}`, `after` the sort
   values of the last row of the block before. The rest of the source
   (filters, count, values, selection, export) stays Masu's.
+- `count_limit` on a grid of an Ecto source: the count stops after the
+  row past the limit, and the grid says it has at least that many
+  ("10,000+"), then counts every row when the person goes to the end. A
+  `count(*)` of a large table reads every row; with more rows than the
+  limit, the count is done after the limit. A query of fewer rows than
+  the limit is still read whole, and PostgreSQL then reads it in one
+  process, not in parallel: it can take longer than a `count(*)`.
 
 ### Fixed
 
