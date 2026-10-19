@@ -604,9 +604,9 @@ end
 defmodule MasuDev.QuotesLive do
   @moduledoc """
   Live rows: two thousand quotes, and a ticker that changes twenty prices
-  every 700 ms (one of them among the first ten, so that a change is
-  always on the first screen) and broadcasts them on a PubSub topic
-  (Masu.Live).
+  every 700 ms (one of them among the first ten, and the highest price,
+  so that a change is always on the first screen, sorted by price or
+  not) and broadcasts them on a PubSub topic (Masu.Live).
   """
   use Phoenix.LiveView
 
@@ -646,7 +646,12 @@ defmodule MasuDev.QuotesLive do
   @impl true
   def handle_info(:tick, socket) do
     %{prices: prices, ticks: ticks} = socket.assigns
-    ids = [rem(ticks, 10) + 1 | Enum.map(1..19, fn _ -> :rand.uniform(map_size(prices)) end)]
+    {highest, _row} = Enum.max_by(prices, fn {_id, row} -> row.price end, Decimal)
+
+    ids = [
+      rem(ticks, 10) + 1,
+      highest | Enum.map(1..18, fn _ -> :rand.uniform(map_size(prices)) end)
+    ]
 
     prices =
       Enum.reduce(ids, prices, fn id, prices ->

@@ -80,10 +80,25 @@ A list puts empty values (`nil`) last in both directions. A database puts
 them where it does: PostgreSQL last when ascending and first when
 descending, MySQL and SQLite first when ascending.
 
-## Sorting a list
+## A large list
 
-A list sorts in the LiveView's process: about a fifth of a second for a
-hundred thousand rows by one column. A larger list belongs in a database.
+A list (`rows={@rows}`) is for up to about 10,000 rows. It sorts and
+searches in the LiveView's process, and the LiveView holds the rows, so
+each person who has the grid open holds a copy: about 1 KB a row. A
+search makes a text of each row the first time, and searches after it
+are fast; a sort sorts every row again.
+
+| Rows | Sort by a column | First search | Each search after | Memory of a LiveView |
+| --- | --- | --- | --- | --- |
+| 10,000 | 23 ms | 36 ms | 2.6 ms | 9 MB |
+| 100,000 | 396 ms | 355 ms | 27 ms | 86 MB |
+| 1,000,000 | 5.2 s | 5.0 s | 274 ms | 863 MB |
+
+Past 10,000 rows, give the grid an Ecto source: the database sorts,
+searches and counts, and the LiveView holds only the rows on the screen.
+Masu has no list source for a larger list in memory yet, as rows off the
+LiveView's heap and shared between people. If you need one, [open an
+issue](https://github.com/hattoriai/masu/issues) or a pull request.
 
 ## Datetime filters
 

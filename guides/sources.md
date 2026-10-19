@@ -15,8 +15,12 @@ The rows are maps or structs. When the query changes, the list filters,
 searches and sorts them in the LiveView's process, once, and keeps the
 result as a tuple, so each block is read without walking the list.
 
-Sorting a hundred thousand rows takes about a fifth of a second. Past
-that, or for rows in a database, give the grid an Ecto source.
+A list is for up to about 10,000 rows: it sorts and searches them in
+tens of milliseconds. Each LiveView holds its own rows, about 1 KB a
+row, and at 100,000 rows a sort takes about 0.4 seconds and a LiveView
+about 100 MB. Past 10,000 rows, or for rows in a database, give the
+grid an Ecto source. If you need a larger list in memory, [open an
+issue](https://github.com/hattoriai/masu/issues) or a pull request. See [Known limits](limits.md).
 
 Text sorts without case, an empty value (`nil`) after every value in
 both directions, and rows that compare equal keep their order. Decimals

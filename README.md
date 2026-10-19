@@ -88,14 +88,16 @@ three pages of 50). In Chromium, with a list source:
   not `OFFSET`. Sorted by a column with an index, 4 ms. A `count(*)` of
   ten million rows takes seconds: `count={:deferred}`.
 * A list source keeps its rows in the LiveView's process, about 1 KB a
-  row for each person (98 MB for 100,000 rows), and sorts or searches
-  100,000 rows in about 0.4 seconds. Past that, give the grid an Ecto
-  source.
+  row for each person. It is for up to about 10,000 rows, which it sorts
+  and searches in tens of milliseconds (23 ms and 36 ms). At 100,000
+  rows a sort takes about 0.4 seconds and each person's LiveView holds
+  about 100 MB. Past 10,000 rows, give the grid an Ecto source. If you
+  need a larger list in memory, [open an issue](https://github.com/hattoriai/masu/issues) or a pull request.
 * A grid of a million rows scrolls to its last row in Chromium, Firefox
   and Safari.
 
-The numbers of the last run are in [bench/RESULTS.md](bench/RESULTS.md),
-and how to run them in [bench/README.md](bench/README.md).
+The numbers of the last run are in [bench/RESULTS.md](https://github.com/hattoriai/masu/blob/main/bench/RESULTS.md),
+and how to run them in [bench/README.md](https://github.com/hattoriai/masu/blob/main/bench/README.md).
 
 ## Install
 
@@ -108,7 +110,7 @@ Add `masu` to the deps in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:masu, "~> 0.1"}
+    {:masu, "~> 0.2"}
   ]
 end
 ```

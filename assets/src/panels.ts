@@ -136,7 +136,10 @@ export class ColumnsPanel extends Panel {
       shown.checked = !column.hidden;
       shown.dataset.key = column.key;
       shown.dataset.role = "shown";
+      // Each control takes the focus as it is used: a click does not give
+      // it in Safari, and the list drawn again keeps it on that control.
       shown.addEventListener("change", () => {
+        shown.focus();
         const hidden = catalog.filter((c) => (c.key === column.key ? !shown.checked : c.hidden)).map((c) => c.key);
         this.host.change({ hidden });
       });
@@ -153,6 +156,7 @@ export class ColumnsPanel extends Panel {
         pin.appendChild(new Option(this.message(name), value, false, (column.pinned ?? "") === value));
       }
       pin.addEventListener("change", () => {
+        pin.focus();
         const pinned: Record<string, string> = {};
         for (const c of catalog) {
           const value = c.key === column.key ? pin.value : (c.pinned ?? "");
@@ -184,6 +188,7 @@ export class ColumnsPanel extends Panel {
         button.disabled = other === null;
         button.addEventListener("click", () => {
           if (!other) return;
+          button.focus();
           const order = catalog.map((c) => c.key);
           this.host.change({ order: step < 0 ? moveKey(order, column.key, other.key) : moveKey(order, other.key, column.key) });
         });

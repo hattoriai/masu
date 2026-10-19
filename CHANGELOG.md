@@ -7,6 +7,42 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-19
+
+### Changed
+
+Breaking: every write goes through a `Masu.Write`, and the functions
+that write rows your way take one.
+
+- `on_update`, `on_create`, `on_delete` and `on_restore` take the place
+  of `update`, `create`, `delete` and `restore`. Each is a function of a
+  `Masu.Write`, a batch of changes (the cells of an edit, a paste or a
+  fill; new rows; rows deleted or back) with the rows found again
+  through the grid's query, the read-only and stale cells already
+  refused, what the person did (`origin`), the grid's `scope`, and a
+  `ref`. It gives the write back with a result for each change:
+  `Masu.Write.each/2` (row by row), `all/2` (the whole batch, an
+  `Ecto.Multi`), `ok/3`, `error/3`, `save/1` (the grid's own way, which
+  your function may wrap), or `async/1` (later, by a job).
+- `on_save` is gone, and `on_delete` writes: hear of what was saved in
+  your `on_update` (`Masu.Write.saved/1`). A grid that has one of the
+  old attributes raises, naming the new one.
+- A grid with `on_delete` undoes a delete only with `on_restore`
+  (`on_restore={&Masu.Write.save/1}` when the rows delete the grid's
+  way).
+- The items of `:header_action` and `:cell_action` get `scope` and `ref`
+  in their context, and their results are said: `{:ok, message}`,
+  `{:error, message}`, `:async`.
+- An Ecto source's rows of equal values in a descending sort come in
+  the descending order of the primary key, not the ascending: the
+  primary key that ends the order goes the way of the last sort, so that
+  an index of the sorted column and the primary key reads the rows in
+  their order, forwards or backwards.
+- A search of a grid of rows (`Masu.Source.List`) makes a text of each
+  row once, at the first search, and matches in it: each search after it
+  is about eighteen times faster (a hundred thousand rows: from 491 ms to
+  27 ms). The texts stay until the rows or the searchable columns change.
+
 ### Added
 
 - The history of cells (`history` on a grid, `Masu.History`): who
@@ -29,9 +65,6 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   edits through the changeset, refused for a cell that changed since,
   recorded as restores.
 - `Masu.Test.history/4` and `restore/3`.
-
-### Added
-
 - Editors of your own (`editor` on a `:col`), with no dependency of
   Masu's on any editor:
   - a function component of a form field (`@field`, named
@@ -59,34 +92,6 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [Kotoba](kotoba.md) (rich text in cells) and [Koyomi](koyomi.md)
   (pickers in cells, and a picker above the grid that filters it through
   its URL), with no dependency of Masu's on either.
-
-### Changed
-
-Breaking: every write goes through a `Masu.Write`, and the functions
-that write rows your way take one.
-
-- `on_update`, `on_create`, `on_delete` and `on_restore` take the place
-  of `update`, `create`, `delete` and `restore`. Each is a function of a
-  `Masu.Write`, a batch of changes (the cells of an edit, a paste or a
-  fill; new rows; rows deleted or back) with the rows found again
-  through the grid's query, the read-only and stale cells already
-  refused, what the person did (`origin`), the grid's `scope`, and a
-  `ref`. It gives the write back with a result for each change:
-  `Masu.Write.each/2` (row by row), `all/2` (the whole batch, an
-  `Ecto.Multi`), `ok/3`, `error/3`, `save/1` (the grid's own way, which
-  your function may wrap), or `async/1` (later, by a job).
-- `on_save` is gone, and `on_delete` writes: hear of what was saved in
-  your `on_update` (`Masu.Write.saved/1`). A grid that has one of the
-  old attributes raises, naming the new one.
-- A grid with `on_delete` undoes a delete only with `on_restore`
-  (`on_restore={&Masu.Write.save/1}` when the rows delete the grid's
-  way).
-- The items of `:header_action` and `:cell_action` get `scope` and `ref`
-  in their context, and their results are said: `{:ok, message}`,
-  `{:error, message}`, `:async`.
-
-### Added
-
 - `:action`: actions on the rows selected (`selectable`), buttons of
   the bar above the grid, with the selection as `Masu.Live.selected/1`
   gives it (`{:query, query}` for every row of the query), `confirm`
@@ -107,14 +112,18 @@ that write rows your way take one.
   `delete_rows/4`, which give `:async` for a write saved later.
 - Messages: `row_actions`, `action_done`, `action_running`,
   `action_progress`, `saving_later`, `deleting_later`.
-
-### Added
-
 - `read` on a grid of an Ecto source: a read of a block of rows of the
   app's own, a function of the query (with the grid's filters, search
   and order) and `%{offset:, limit:, order:, after:}`, `after` the sort
   values of the last row of the block before. The rest of the source
   (filters, count, values, selection, export) stays Masu's.
+- `count_limit` on a grid of an Ecto source: the count stops after the
+  row past the limit, and the grid says it has at least that many
+  ("10,000+"), then counts every row when the person goes to the end. A
+  `count(*)` of a large table reads every row; with more rows than the
+  limit, the count is done after the limit. A query of fewer rows than
+  the limit is still read whole, and PostgreSQL then reads it in one
+  process, not in parallel: it can take longer than a `count(*)`.
 
 ### Fixed
 
@@ -135,6 +144,10 @@ that write rows your way take one.
   about 930,000. The scroll box of such a grid is 10,000,000 pixels
   tall; the scrollbar dragged moves in proportion, and a wheel and the
   keys move by their own pixels.
+- An undo (or a redo) right after an edit, before the server answered
+  it, did nothing: it waits for the answer now, and takes the edit back.
+- In Safari, the Columns panel lost the focus at each click on a
+  control: the control keeps it, as in the other browsers.
 
 ## [0.1.2] - 2026-10-18
 
