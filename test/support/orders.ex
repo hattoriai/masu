@@ -187,3 +187,10 @@ defmodule MasuTest.Chore do
     :ok
   end
 end
+
+defmodule MasuTest.OtherRepo do
+  @moduledoc "The test repo, as a repo of an adapter whose order of NULLs Masu does not know."
+  def __adapter__, do: MasuTest.OtherAdapter
+  defdelegate all(query, opts), to: MasuTest.Repo
+  defdelegate one(query, opts), to: MasuTest.Repo
+end

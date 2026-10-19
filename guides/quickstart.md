@@ -99,8 +99,8 @@ instead of the rows:
 ```
 
 Now the database sorts, searches and counts, and the LiveView reads only
-the rows the person scrolls to: a hundred at a time, with `LIMIT` and
-`OFFSET`. See [Sources](sources.md) for what the query may have, and the
+the rows the person scrolls to: a hundred at a time, each block with a
+`LIMIT`, after the last row of the block before it. See [Sources](sources.md) for what the query may have, and the
 indexes that make it fast.
 
 ## 6. Test it

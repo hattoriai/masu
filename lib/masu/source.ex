@@ -187,16 +187,27 @@ defmodule Masu.Source do
   @spec new(term(), keyword()) :: t()
   def new({module, opts}, grid_opts) when is_atom(module) and is_list(opts) do
     if Code.ensure_loaded?(module) and function_exported?(module, :prepare, 3) do
+      ecto_only!(grid_opts)
       %__MODULE__{module: module, state: module.init(opts, grid_opts)}
     else
       ecto(module, opts, grid_opts)
     end
   end
 
-  def new(rows, opts) when is_list(rows),
-    do: %__MODULE__{module: Masu.Source.List, state: Masu.Source.List.init(rows, opts)}
+  def new(rows, opts) when is_list(rows) do
+    ecto_only!(opts)
+    %__MODULE__{module: Masu.Source.List, state: Masu.Source.List.init(rows, opts)}
+  end
 
   def new(queryable, opts), do: ecto(queryable, opts, opts)
+
+  # A read of the app's own reads from the query the Ecto source makes.
+  defp ecto_only!(opts) do
+    if Keyword.get(opts, :read) do
+      raise ArgumentError,
+            "a Masu grid's read is for an Ecto source: a source of your own reads its rows itself"
+    end
+  end
 
   defp ecto(queryable, _source_opts, opts) do
     if Code.ensure_loaded?(EctoSource) and EctoSource.queryable?(queryable) do
@@ -244,6 +255,16 @@ defmodule Masu.Source do
       {:error, reason} -> raise Error, reason: reason
     end
   end
+
+  @doc false
+  # The source after it gave `rows` from `offset`: the Ecto source keeps
+  # the last row's sort values, to read the block after it by key. A grid
+  # calls it in its LiveView, also for a block read in a task.
+  @spec seen(t(), non_neg_integer(), [term()]) :: t()
+  def seen(%__MODULE__{module: EctoSource, state: state} = source, offset, rows),
+    do: %{source | state: EctoSource.seen(state, offset, rows)}
+
+  def seen(source, _offset, _rows), do: source
 
   @doc false
   @spec change(t(), [Masu.Live.change()], (term() -> term())) :: t()

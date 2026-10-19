@@ -108,6 +108,28 @@ that write rows your way take one.
 - Messages: `row_actions`, `action_done`, `action_running`,
   `action_progress`, `saving_later`, `deleting_later`.
 
+### Added
+
+- `read` on a grid of an Ecto source: a read of a block of rows of the
+  app's own, a function of the query (with the grid's filters, search
+  and order) and `%{offset:, limit:, order:, after:}`, `after` the sort
+  values of the last row of the block before. The rest of the source
+  (filters, count, values, selection, export) stays Masu's.
+
+### Fixed
+
+- A grid that reads in tasks (`load={:async}`) reads the block after a
+  block by key, as an inline grid does, not by `OFFSET`.
+- An Ecto source keeps the keys of its blocks in its state, not in the
+  LiveView's process dictionary, where the keys of every query before
+  stayed for as long as the LiveView lived.
+- With an adapter whose order of `NULL`s Masu does not know (not
+  PostgreSQL, MySQL, SQLite or SQL Server), a sort other than the primary
+  key's is read by `OFFSET`: by key, it took the order of SQLite's and
+  could skip or repeat rows.
+- The README and the guides said each block of an Ecto source is a
+  `LIMIT` and `OFFSET`.
+
 ## [0.1.2] - 2026-10-18
 
 ### Added

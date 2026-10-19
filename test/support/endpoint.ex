@@ -50,6 +50,7 @@ defmodule MasuTest.Router do
     live("/filter-ops", MasuTest.FilterOpsLive)
     live("/results", MasuTest.ResultsLive)
     live("/async", MasuTest.AsyncLive)
+    live("/keyset", MasuTest.KeysetLive)
     live("/controlled", MasuTest.ControlledLive)
   end
 

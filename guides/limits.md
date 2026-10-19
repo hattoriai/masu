@@ -49,7 +49,8 @@ middle of a table of millions of rows (the scrollbar dragged) is an
 `OFFSET`, which the database counts row by row. A grouped Ecto grid
 reads an open group's rows by `OFFSET`. Paging by key is tested on
 SQLite; the order of `NULL`s it assumes for PostgreSQL is PostgreSQL's
-default.
+default. With an adapter other than PostgreSQL, MySQL, SQLite and SQL
+Server, a sort other than the primary key's is read by `OFFSET`.
 
 ## Export
 

@@ -150,7 +150,7 @@ defmodule Masu.Export do
           case Source.rows(source, offset, @block) do
             [] -> {:halt, :done}
             rows when length(rows) < @block -> {[rows], :done}
-            rows -> {[rows], {source, offset + @block}}
+            rows -> {[rows], {Source.seen(source, offset, rows), offset + @block}}
           end
       end,
       fn _state -> :ok end

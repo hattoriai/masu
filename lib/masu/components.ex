@@ -101,6 +101,11 @@ defmodule Masu.Components do
   attr :repo, :atom, default: nil, doc: "the repo of an Ecto source"
   attr :repo_opts, :list, default: [], doc: "options for each call to the repo"
 
+  attr :read, :any,
+    default: nil,
+    doc:
+      "an Ecto source's read of a block of rows, your own: a function of the query (with the grid's filters, search and order) and `%{offset:, limit:, order:, after:}`, which gives the rows; see the Sources guide"
+
   attr :changeset, :any,
     default: nil,
     doc:
@@ -427,6 +432,7 @@ defmodule Masu.Components do
       column_specs={@columns}
       repo={@repo}
       repo_opts={@repo_opts}
+      source_read={@read}
       live={@live}
       changeset={@changeset}
       struct={@struct}
@@ -567,7 +573,8 @@ defmodule Masu.Components do
     selectable: "selectable",
     export: "export",
     live: "live",
-    tree: "tree"
+    tree: "tree",
+    read: "read"
   ]
 
   defp check_controlled!(%{on_query: nil}), do: :ok
