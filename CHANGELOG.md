@@ -129,6 +129,12 @@ that write rows your way take one.
   could skip or repeat rows.
 - The README and the guides said each block of an Ecto source is a
   `LIMIT` and `OFFSET`.
+- A grid taller than a browser draws an element scrolls to its last
+  row: Firefox did not scroll a grid of more than about 500,000 rows (of
+  36 pixels) at all, and Chromium and Safari did not show the rows after
+  about 930,000. The scroll box of such a grid is 10,000,000 pixels
+  tall; the scrollbar dragged moves in proportion, and a wheel and the
+  keys move by their own pixels.
 
 ## [0.1.2] - 2026-10-18
 

@@ -18,6 +18,7 @@ import { copyText, formatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { moveKey, pins, scrollFor, visualLeft, type Pins } from "./layout";
 import { indexAt, rowTop, totalHeight, type Gap } from "./offsets";
+import { boxHeight, clamp, toContent, toScroll, wheelPixels } from "./scroll";
 import { ColumnsPanel, ExportPanel, ViewsPanel } from "./panels";
 import { nextSorts } from "./sorting";
 import { toTSV } from "./tsv";
@@ -164,6 +165,11 @@ export class Grid {
   private anchor: Cell | null = null;
   private dragging = false;
   private frame: number | null = null;
+  /** The height of the rows, and the place of the screen's top in them (see scroll.ts). */
+  private contentHeight = 0;
+  private content = 0;
+  /** The scrollTop the grid set last, in a grid taller than a browser draws. */
+  private wrote: number | null = null;
   private queries = 0;
   /** The cell being edited. */
   private editor: Editor | null = null;
@@ -331,7 +337,7 @@ export class Grid {
     }
     // Another page (the pager): its rows, from its top.
     if (this.paged() && config.page !== previous.page) {
-      this.gridEl.scrollTop = 0;
+      this.scrollToContent(0);
       this.active = { row: this.active.row < 0 ? -1 : this.base(), col: this.active.col };
       this.anchor = null;
       this.clearRows();
@@ -395,7 +401,7 @@ export class Grid {
     this.pendingQuery = null;
     this.querying = false;
     if (fresh) {
-      this.gridEl.scrollTop = 0;
+      this.scrollToContent(0);
       this.active = { row: Math.min(Math.max(this.active.row, -1), this.total - 1), col: this.active.col };
       this.anchor = null;
       if (pending.origin === "self") this.announceCount();
@@ -480,7 +486,7 @@ export class Grid {
       this.cache.clear();
       this.stale = null;
       this.cache.store(answer.from, answer.rows);
-      this.gridEl.scrollTop = 0;
+      this.scrollToContent(0);
       this.active = { row: Math.min(Math.max(this.active.row, -1), this.total - 1), col: this.active.col };
       this.anchor = null;
       this.renderHeader();
@@ -507,7 +513,13 @@ export class Grid {
     const base = this.base();
     const count = this.end() - base;
     const gaps = this.localGaps();
-    setStyle(this.body, "height", `${totalHeight(count, rh, gaps)}px`);
+    this.contentHeight = totalHeight(count, rh, gaps);
+    setStyle(this.body, "height", `${boxHeight(this.contentHeight)}px`);
+    if (!this.scaled()) this.content = this.gridEl.scrollTop;
+    const y = this.contentTop();
+    // Where the rows are drawn: their place in the content, less the
+    // content above the scroll box's top (none in most grids).
+    const shift = y - this.gridEl.scrollTop;
     // -1 while the count is not known (ARIA).
     setAttribute(this.gridEl, "aria-rowcount", this.exact ? String(this.rowCount() + 1) : "-1");
     setAttribute(this.gridEl, "aria-colcount", String(this.columns.length + (this.hasRowActions() ? 1 : 0)));
@@ -517,10 +529,10 @@ export class Grid {
     const headHeight = this.head.offsetHeight;
     const local =
       gaps.length === 0
-        ? visibleRows(this.gridEl.scrollTop, this.gridEl.clientHeight - headHeight, rh, count, OVERSCAN)
+        ? visibleRows(y, this.gridEl.clientHeight - headHeight, rh, count, OVERSCAN)
         : {
-            first: Math.max(0, indexAt(this.gridEl.scrollTop, rh, gaps) - OVERSCAN),
-            last: Math.min(count - 1, indexAt(this.gridEl.scrollTop + this.gridEl.clientHeight - headHeight, rh, gaps) + OVERSCAN),
+            first: Math.max(0, indexAt(y, rh, gaps) - OVERSCAN),
+            last: Math.min(count - 1, indexAt(y + this.gridEl.clientHeight - headHeight, rh, gaps) + OVERSCAN),
           };
     const first = local.first + base;
     const last = local.last + base;
@@ -547,7 +559,7 @@ export class Grid {
         this.rows.set(index, rowEl);
       }
       // A detail opened above it moves it down.
-      const top = this.rowTop(index);
+      const top = this.rowTop(index) - shift;
       if (rowEl.masuTop !== top) {
         rowEl.masuTop = top;
         rowEl.style.transform = `translateY(${top}px)`;
@@ -917,15 +929,76 @@ export class Grid {
     return rowTop(index - this.base(), this.config.rowHeight, this.localGaps());
   }
 
+  /** Where a row is drawn in the scroll box: its top, less the content above the box's top. */
+  private rowY(index: number): number {
+    return this.rowTop(index) - (this.contentTop() - this.gridEl.scrollTop);
+  }
+
   /** The row at the top of the screen. */
   private indexAtTop(): number {
-    return indexAt(this.gridEl.scrollTop, this.config.rowHeight, this.localGaps()) + this.base();
+    return indexAt(this.contentTop(), this.config.rowHeight, this.localGaps()) + this.base();
   }
 
   /** The first row the screen shows whole: where one who follows this person starts. */
   private firstWholeRow(): number {
     const index = this.indexAtTop();
-    return this.rowTop(index) < this.gridEl.scrollTop ? index + 1 : index;
+    return this.rowTop(index) < this.contentTop() ? index + 1 : index;
+  }
+
+  // A grid taller than a browser draws (see scroll.ts): its scroll box
+  // has a height of its own, and the grid keeps its place in the rows.
+  // The scrollbar dragged moves it in proportion; a wheel, the keys and
+  // the grid itself move it by pixels.
+
+  private scaled(): boolean {
+    return this.contentHeight > boxHeight(this.contentHeight);
+  }
+
+  /** The place of the screen's top in the rows: the scrollTop, in a grid of a height a browser draws. */
+  private contentTop(): number {
+    return this.scaled() ? this.content : this.gridEl.scrollTop;
+  }
+
+  /** Scrolls to a place in the rows. */
+  private scrollToContent(top: number): void {
+    if (!this.scaled()) {
+      this.gridEl.scrollTop = top;
+      return;
+    }
+    const { maxScroll, maxContent } = this.scrollRange();
+    this.content = clamp(top, 0, maxContent);
+    this.gridEl.scrollTop = toScroll(this.content, maxScroll, maxContent);
+    this.wrote = this.gridEl.scrollTop;
+    this.schedule();
+  }
+
+  private scrollRange(): { maxScroll: number; maxContent: number } {
+    const maxScroll = Math.max(0, this.gridEl.scrollHeight - this.gridEl.clientHeight);
+    return { maxScroll, maxContent: maxScroll + this.contentHeight - boxHeight(this.contentHeight) };
+  }
+
+  /** The scrollbar moved: by the grid, which knows its place, or by the person, in proportion. */
+  private onScroll(): void {
+    if (this.scaled() && (this.wrote === null || Math.abs(this.gridEl.scrollTop - this.wrote) > 1)) {
+      const { maxScroll, maxContent } = this.scrollRange();
+      this.content = toContent(this.gridEl.scrollTop, maxScroll, maxContent);
+      this.wrote = null;
+    }
+    this.schedule();
+  }
+
+  /** A wheel moves a tall grid by its own pixels; at an end, it scrolls the page. */
+  private onWheel(event: WheelEvent): void {
+    if (!this.scaled() || event.ctrlKey || event.shiftKey || event.deltaY === 0) return;
+    const view = this.gridEl.clientHeight - this.head.offsetHeight;
+    const { maxContent } = this.scrollRange();
+    const next = clamp(this.content + wheelPixels(event.deltaY, event.deltaMode, this.config.rowHeight, view), 0, maxContent);
+    if (next === this.content) return;
+    event.preventDefault();
+    if (event.deltaX) {
+      this.gridEl.scrollLeft += wheelPixels(event.deltaX, event.deltaMode, this.config.rowHeight, this.gridEl.clientWidth);
+    }
+    this.scrollToContent(next);
   }
 
   // Details: the server renders the open ones (the `:detail` slot) in the
@@ -970,7 +1043,7 @@ export class Grid {
     const rh = this.config.rowHeight;
     const left = Math.abs(this.gridEl.scrollLeft);
     for (const gap of this.gaps) {
-      setStyle(gap.el, "transform", `translate(${left}px, ${headHeight + this.rowTop(gap.index) + rh}px)`);
+      setStyle(gap.el, "transform", `translate(${left}px, ${headHeight + this.rowY(gap.index) + rh}px)`);
     }
   }
 
@@ -2082,7 +2155,8 @@ export class Grid {
   }
 
   private listen(): void {
-    this.on(this.gridEl, "scroll", () => this.schedule(), { passive: true });
+    this.on(this.gridEl, "scroll", () => this.onScroll(), { passive: true });
+    this.on(this.gridEl, "wheel", (event) => this.onWheel(event as WheelEvent), { passive: false });
     // A detail's own keys and clicks are its own (it may hold a grid).
     this.on(this.gridEl, "keydown", (event) => {
       if (this.inDetail(event.target)) this.onDetailKey(event);
@@ -2763,7 +2837,7 @@ export class Grid {
         this.announce(String(reply.error));
         return;
       }
-      this.gridEl.scrollTop = 0;
+      this.scrollToContent(0);
       this.anchor = null;
       this.active = { row: Math.min(this.active.row, 0), col: Math.min(this.active.col, this.columns.length - 1) };
       this.render();
@@ -2934,7 +3008,7 @@ export class Grid {
     if (column.type === "integer" || column.type === "number" || column.type === "decimal") input.inputMode = "decimal";
     input.setAttribute("aria-label", column.label);
     input.value = text ?? inputText(column.type, raw);
-    input.style.transform = `translateY(${this.rowTop(cell.row)}px)`;
+    input.style.transform = `translateY(${this.rowY(cell.row)}px)`;
     input.style.insetInlineStart = `${this.colLeft(cell.col)}px`;
     input.style.width = `${this.widths[cell.col]}px`;
     input.style.height = `${this.config.rowHeight}px`;
@@ -2966,7 +3040,7 @@ export class Grid {
   ): void {
     const box = document.createElement("div");
     box.className = `masu-editor masu-own-editor masu-align-${column.align}`;
-    box.style.transform = `translateY(${this.rowTop(cell.row)}px)`;
+    box.style.transform = `translateY(${this.rowY(cell.row)}px)`;
     box.style.insetInlineStart = `${this.colLeft(cell.col)}px`;
     box.style.width = `${this.widths[cell.col]}px`;
     box.style.minHeight = `${this.config.rowHeight}px`;
@@ -3192,7 +3266,7 @@ export class Grid {
     input.autocomplete = "off";
 
     // Where it opens: under the cell, or above it when the screen ends.
-    const top = this.rowTop(editor.row);
+    const top = this.rowY(editor.row);
     const room = this.gridEl.scrollTop + this.gridEl.clientHeight - (top + this.config.rowHeight + this.head.offsetHeight);
     list.style.insetInlineStart = `${this.colLeft(editor.col)}px`;
     list.style.minWidth = `${this.widths[editor.col]}px`;
@@ -4069,7 +4143,7 @@ export class Grid {
         const el = document.createElement("div");
         el.className = "masu-peer-range";
         el.style.setProperty("--masu-peer-color", person.color);
-        el.style.transform = `translateY(${this.rowTop(index)}px)`;
+        el.style.transform = `translateY(${this.rowY(index)}px)`;
         el.style.insetInlineStart = `${left}px`;
         el.style.width = `${width}px`;
         el.style.height = `${this.config.rowHeight}px`;
@@ -4088,7 +4162,7 @@ export class Grid {
       const el = document.createElement("div");
       el.className = `masu-peer${person.editing ? " masu-peer-editing" : ""}${index === 0 ? " masu-peer-top" : ""}`;
       el.style.setProperty("--masu-peer-color", person.color);
-      el.style.transform = `translateY(${this.rowTop(index)}px)`;
+      el.style.transform = `translateY(${this.rowY(index)}px)`;
       el.style.insetInlineStart = `${this.colLeft(col)}px`;
       if (this.columns[col].pinned) el.classList.add("masu-peer-pinned");
       el.style.width = `${this.widths[col]}px`;
@@ -4137,7 +4211,7 @@ export class Grid {
     }
     this.ownView ??= {
       query: this.query,
-      scrollTop: this.gridEl.scrollTop,
+      scrollTop: this.contentTop(),
       scrollLeft: this.gridEl.scrollLeft,
       active: { ...this.active },
       anchor: this.anchor && { ...this.anchor },
@@ -4183,7 +4257,7 @@ export class Grid {
     this.removeBanner();
     if (!own) return;
     const place = () => {
-      this.gridEl.scrollTop = own.scrollTop;
+      this.scrollToContent(own.scrollTop);
       this.gridEl.scrollLeft = own.scrollLeft;
       this.active = { row: Math.min(own.active.row, this.total - 1), col: own.active.col };
       this.anchor = own.anchor;
@@ -4242,7 +4316,7 @@ export class Grid {
       }
       // Their screen's first row first, then their cell, if this screen
       // is smaller than theirs.
-      this.gridEl.scrollTop = this.rowTop(index);
+      this.scrollToContent(this.rowTop(index));
       this.render();
       const cell = person.cell ? this.indexOf(person.cell[0]) : undefined;
       if (cell !== undefined) this.scrollToCell(cell, Math.max(col, 0));
@@ -4273,8 +4347,9 @@ export class Grid {
     const rh = this.config.rowHeight;
     const view = this.gridEl.clientHeight - this.head.offsetHeight;
     const top = this.rowTop(index);
-    if (top < this.gridEl.scrollTop || top + rh > this.gridEl.scrollTop + view) {
-      this.gridEl.scrollTop = Math.max(0, top - (view - rh) / 2);
+    const y = this.contentTop();
+    if (top < y || top + rh > y + view) {
+      this.scrollToContent(Math.max(0, top - (view - rh) / 2));
     }
     this.scrollToColumn(col);
     this.schedule();
@@ -4433,10 +4508,10 @@ export class Grid {
     if (cell.row >= 0) {
       const top = this.rowTop(cell.row);
       const bottom = top + rh;
-      const viewTop = this.gridEl.scrollTop;
+      const viewTop = this.contentTop();
       const viewBottom = viewTop + this.gridEl.clientHeight - headHeight;
-      if (top < viewTop) this.gridEl.scrollTop = top;
-      else if (bottom > viewBottom) this.gridEl.scrollTop = bottom - (this.gridEl.clientHeight - headHeight);
+      if (top < viewTop) this.scrollToContent(top);
+      else if (bottom > viewBottom) this.scrollToContent(bottom - (this.gridEl.clientHeight - headHeight));
     }
     this.scrollToColumn(cell.col);
   }

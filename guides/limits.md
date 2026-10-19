@@ -16,6 +16,16 @@ copy is exact in every browser.
 Every row has the height of `row_height`. A cell does not wrap, and
 clips what does not fit.
 
+## Very tall grids
+
+A browser draws no element taller than a limit: 17,895,697 pixels in
+Firefox, 33,554,428 in Chromium and Safari. The scroll box of a grid
+taller than 10,000,000 pixels (about 280,000 rows of 36 pixels) is
+10,000,000 pixels tall, and its scrollbar moves through the rows in
+proportion: a drag of the scrollbar, and a scroll by touch, move
+faster than the rows under them. A wheel, a trackpad and the keys move
+by their own pixels and rows.
+
 ## Groups in a database
 
 An Ecto source keeps the groups that show (their values, counts and
