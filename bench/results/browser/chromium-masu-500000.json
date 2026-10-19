@@ -3,17 +3,17 @@
   "version": "141.0.7390.37",
   "kind": "masu",
   "rows": 500000,
-  "firstRowsMs": 1910,
-  "loadMs": 1739,
+  "firstRowsMs": 2936,
+  "loadMs": 2194,
   "serverBytes": 529783344,
-  "heapBytes": 2934736,
-  "heapBytesAfterScroll": 2911372,
+  "heapBytes": 2934864,
+  "heapBytesAfterScroll": 2911460,
   "domNodes": 374,
   "domNodesAfterScroll": 473,
   "frames": {
-    "p50": 16.699999809265137,
-    "p95": 17.5,
-    "max": 17.799999952316284,
+    "p50": 16.700000047683716,
+    "p95": 17.299999952316284,
+    "max": 17.700000047683716,
     "over33ms": 0,
     "count": 300
   },
@@ -23,5 +23,5 @@
   },
   "reachedId": null,
   "reachedIdAfter1s": 30000,
-  "jumpToMiddleMs": 83.80000019073486
+  "jumpToMiddleMs": 66.30000019073486
 }

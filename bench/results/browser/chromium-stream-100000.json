@@ -3,21 +3,21 @@
   "version": "141.0.7390.37",
   "kind": "stream",
   "rows": 100000,
-  "firstRowsMs": 23296,
-  "loadMs": 319,
+  "firstRowsMs": 26160,
+  "loadMs": 329,
   "serverBytes": 5920,
-  "heapBytes": 87906240,
+  "heapBytes": 95678548,
   "domNodes": 1100054,
   "frames": {
-    "p50": 47.5,
-    "p95": 81.5,
-    "max": 410.2000000476837,
+    "p50": 45.799999952316284,
+    "p95": 76,
+    "max": 200.5,
     "over33ms": 300,
     "count": 300
   },
   "longTasks": {
-    "count": 88,
-    "max": 409
+    "count": 74,
+    "max": 199
   },
   "reachedId": 27272,
   "reachedIdAfter1s": 27272

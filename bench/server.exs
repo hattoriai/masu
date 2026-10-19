@@ -4,7 +4,9 @@
 # Masu.Source.Ecto on PostgreSQL with 100,000 to 10,000,000 rows. Each
 # job is what the grid does as a person uses it: the query prepared, a
 # block of 100 rows read at the top and in the middle (by key, and by
-# OFFSET after a jump), a sort, a search, the count.
+# OFFSET after a jump), a sort, a search (the first, which makes the
+# rows' search texts of a list, and the next), the count, and the count
+# up to a count_limit.
 #
 # The results go to bench/results/server.json, for bench/report.exs.
 #
@@ -212,6 +214,9 @@ plain = query.([])
 by_date = query.(sort: [{"signed_up", :desc}])
 by_name = query.(sort: ["name"])
 search = query.(search: "lovelace")
+other_search = query.(search: "turing")
+# A search that finds no row: every row is read to count it.
+rare = query.(search: "zzz")
 
 # --- Masu.Source.List: the rows in the LiveView's process.
 
@@ -219,6 +224,8 @@ list_results =
   for n <- list_sizes do
     rows = MasuBench.Data.list(n)
     state = rows |> Source.List.init([]) |> Source.List.prepare(plain, columns)
+    # A state that searched once: it has the rows' search texts.
+    searched = Source.List.prepare(state, search, columns)
     middle = div(n, 2)
 
     results =
@@ -230,7 +237,8 @@ list_results =
             rows |> Source.List.init([]) |> Source.List.prepare(plain, columns)
           end,
           "sort by name" => fn -> Source.List.prepare(state, by_name, columns) end,
-          "search" => fn -> Source.List.prepare(state, search, columns) end,
+          "search, the first" => fn -> Source.List.prepare(state, search, columns) end,
+          "search, the next" => fn -> Source.List.prepare(searched, other_search, columns) end,
           "block in the middle" => fn -> Source.List.rows(state, middle, block) end
         },
         time
@@ -268,6 +276,7 @@ ecto_results =
     table = MasuBench.Data.table!(MasuBench.Repo, n)
     source = from(c in {table, MasuBench.Customer})
     init = Source.Ecto.init(source, repo: MasuBench.Repo)
+    capped = Source.Ecto.init(source, repo: MasuBench.Repo, count_limit: 10_000)
     middle = div(n, 2)
 
     # A state that read the row before the middle, so that the middle
@@ -303,7 +312,19 @@ ecto_results =
       end,
       "search, first block" => fn -> Source.Ecto.rows(searched, 0, block) end,
       "count" => fn -> Source.Ecto.count(by_id) end,
-      "search, count" => fn -> Source.Ecto.count(searched) end
+      "search, count" => fn -> Source.Ecto.count(searched) end,
+      "count, count_limit of 10,000" => fn ->
+        capped |> Source.Ecto.prepare(plain, columns) |> Source.Ecto.count()
+      end,
+      "search, count, count_limit of 10,000" => fn ->
+        capped |> Source.Ecto.prepare(search, columns) |> Source.Ecto.count()
+      end,
+      "search of no row, count" => fn ->
+        init |> Source.Ecto.prepare(rare, columns) |> Source.Ecto.count()
+      end,
+      "search of no row, count, count_limit of 10,000" => fn ->
+        capped |> Source.Ecto.prepare(rare, columns) |> Source.Ecto.count()
+      end
     }
 
     # An OFFSET in the middle of ten million rows reads millions of rows
