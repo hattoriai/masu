@@ -148,6 +148,39 @@ defmodule Masu.GroupTest do
                ]
       end
 
+      test "expanded={:all} starts every group open; a group closed stays closed" do
+        view = open(@source, "&group=status,customer&open=all")
+        # 4 statuses, 6 customers in them and their 6 orders.
+        assert total(view, "orders") == 16
+        assert view |> nodes("orders") |> Enum.filter(& &1.children) |> Enum.all?(& &1.expanded)
+
+        collapse(view, "orders", ["masu-group", "status", "paid"])
+        assert total(view, "orders") == 10
+
+        filter(view, "orders", [{"status", :neq, "void"}])
+        assert total(view, "orders") == 7
+
+        expand(view, "orders", ["masu-group", "status", "paid"])
+        assert total(view, "orders") == 13
+
+        # Grouped by another column from the header menu: open too.
+        group(view, "orders", ["customer"])
+        assert view |> groups("orders") |> Enum.all?(& &1.expanded)
+        # The groups, and the 5 orders the filter keeps.
+        assert total(view, "orders") == length(groups(view, "orders")) + 5
+      end
+
+      test "expanded with keys starts the groups of those columns open" do
+        view = open(@source, "&group=status,customer&open=status")
+        assert total(view, "orders") == 10
+
+        assert view |> groups("orders") |> Enum.map(&{&1.level, &1.expanded}) |> Enum.uniq() ==
+                 [{0, true}, {1, false}]
+
+        group(view, "orders", ["customer"])
+        refute view |> groups("orders") |> Enum.any?(& &1.expanded)
+      end
+
       test "the totals of the query, grouped or not, and grouping from the header menu" do
         view = open(@source)
         assert number(totals(view, "orders")["total"]) == "1439.49"

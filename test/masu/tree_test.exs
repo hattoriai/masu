@@ -118,6 +118,21 @@ defmodule Masu.TreeTest do
     assert shown(view) == [{1, 0}, {6, 0}, {7, 1}, {8, 0}]
   end
 
+  test "expanded={:all} is for groups" do
+    import Phoenix.Component, only: [sigil_H: 2]
+    import Masu.Components
+
+    assigns = %{rows: [%{id: 1, parent_id: nil, name: "a"}]}
+
+    assert_raise ArgumentError, ~r/expanded=\{:all\} is for groups/, fn ->
+      rendered_to_string(~H"""
+      <.data_grid id="g" rows={@rows} tree={:parent_id} expanded={:all}>
+        <:col field={:name} />
+      </.data_grid>
+      """)
+    end
+  end
+
   test "a live row takes its place in the tree" do
     {:ok, view, _html} = live(build_conn(), "/tree?open=6")
 

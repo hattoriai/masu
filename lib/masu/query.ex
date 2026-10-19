@@ -16,6 +16,12 @@ defmodule Masu.Query do
   search shows every row it keeps open. Neither goes to the browser with
   the query, nor into a view's params.
 
+  `open_groups` is what the grid's `expanded` gives a grouped grid: the
+  keys of the columns whose groups start open, or `:all`. A group of
+  such a column is open unless the person closed it (it is then in
+  `collapsed`); any other group is closed unless they opened it (in
+  `expanded`).
+
   A grid starts with the query of its `sort` and `filters` attributes,
   and changes it as the person sorts and searches. `Masu.Test` changes it
   the same way.
@@ -29,7 +35,8 @@ defmodule Masu.Query do
           search: String.t() | nil,
           groups: [String.t()],
           expanded: MapSet.t(),
-          collapsed: MapSet.t()
+          collapsed: MapSet.t(),
+          open_groups: :all | [String.t()]
         }
 
   defstruct sorts: [],
@@ -37,7 +44,8 @@ defmodule Masu.Query do
             search: nil,
             groups: [],
             expanded: MapSet.new(),
-            collapsed: MapSet.new()
+            collapsed: MapSet.new(),
+            open_groups: []
 
   @doc """
   Makes a query from what the browser sends, and checks it against the

@@ -315,8 +315,7 @@ defmodule Masu.Grid do
     default = %View{query: query, layout: Layout.new(all)}
     socket = assign(socket, all_columns: all, default_view: default)
     {view, dropped, uri} = first_view(socket.assigns, all, default)
-    expanded = MapSet.new(socket.assigns.expanded || [], &Value.to_wire/1)
-    view = %{view | query: %{view.query | expanded: expanded}}
+    view = %{view | query: start_open(view.query, socket.assigns)}
 
     socket =
       socket
@@ -683,11 +682,43 @@ defmodule Masu.Grid do
     )
   end
 
+  # `expanded`: in a tree, the ids of the rows that start open; else
+  # `:all`, or the keys of the columns whose groups start open.
+  defp start_open(query, %{tree: nil, expanded: expanded}),
+    do: %{query | open_groups: open_groups(expanded)}
+
+  defp start_open(query, %{expanded: expanded}),
+    do: %{query | expanded: MapSet.new(expanded || [], &Value.to_wire/1)}
+
+  defp open_groups(:all), do: :all
+  defp open_groups(keys), do: Enum.map(keys || [], &to_string/1)
+
+  # The groups the person closed stay closed with a new filter or view;
+  # the rows they closed in a filter's tree open again.
+  defp closed_groups(collapsed), do: MapSet.filter(collapsed, &Group.id?/1)
+
+  # `ids` put in a set of the query (`:expanded` or `:collapsed`), or
+  # taken from it.
+  defp mark(query, set, ids, true),
+    do: Map.update!(query, set, &MapSet.union(&1, MapSet.new(ids)))
+
+  defp mark(query, set, ids, false),
+    do: Map.update!(query, set, &MapSet.difference(&1, MapSet.new(ids)))
+
   # A whole view at once (a saved view, the grid's own, or the URL's):
   # its rows from the first.
   defp apply_view(socket, %View{} = view, dropped, opts \\ []) do
     %{source: source, all_columns: all, revision: revision, query: current} = socket.assigns
-    view = %{view | query: %{view.query | expanded: current.expanded}}
+
+    view = %{
+      view
+      | query: %{
+          view.query
+          | expanded: current.expanded,
+            collapsed: closed_groups(current.collapsed),
+            open_groups: current.open_groups
+        }
+    }
 
     cond do
       # The LiveView of a controlled grid runs the view's query.
@@ -1165,15 +1196,18 @@ defmodule Masu.Grid do
 
     case Query.from_wire(params, columns) do
       {:ok, query} ->
-        # The rows the person opened stay open; those they closed in a
-        # filter's tree open again with a new filter.
+        # The rows the person opened stay open, and the groups they closed
+        # closed; the rows they closed in a filter's tree open again with
+        # a new filter.
         current = socket.assigns.query
         same_filter? = query.filters == current.filters and query.search == current.search
 
         query = %{
           query
           | expanded: current.expanded,
-            collapsed: if(same_filter?, do: current.collapsed, else: MapSet.new()),
+            collapsed:
+              if(same_filter?, do: current.collapsed, else: closed_groups(current.collapsed)),
+            open_groups: current.open_groups,
             sorts:
               if(socket.assigns.multi_sort, do: query.sorts, else: Enum.take(query.sorts, 1)),
             groups: if(controlled?(socket.assigns), do: [], else: query.groups)
@@ -1237,23 +1271,15 @@ defmodule Masu.Grid do
       if params["siblings"] == true, do: Source.siblings(source, id), else: [id]
 
     open = params["open"] != false
-    # A tree's rows in a filter are open unless closed; groups are closed
-    # unless opened.
-    filtered? = (query.filters != [] or query.search != nil) and not Group.id?(id)
 
+    # A tree's rows in a filter are open unless closed (`collapsed`), and
+    # without one closed unless opened (`expanded`). A group is either, as
+    # its column starts (`expanded`): it goes in one set, out of the other.
     query =
       cond do
-        filtered? and open ->
-          %{query | collapsed: Enum.reduce(ids, query.collapsed, &MapSet.delete(&2, &1))}
-
-        filtered? ->
-          %{query | collapsed: Enum.reduce(ids, query.collapsed, &MapSet.put(&2, &1))}
-
-        open ->
-          %{query | expanded: Enum.reduce(ids, query.expanded, &MapSet.put(&2, &1))}
-
-        true ->
-          %{query | expanded: Enum.reduce(ids, query.expanded, &MapSet.delete(&2, &1))}
+        Group.id?(id) -> query |> mark(:expanded, ids, open) |> mark(:collapsed, ids, not open)
+        query.filters != [] or query.search != nil -> mark(query, :collapsed, ids, not open)
+        true -> mark(query, :expanded, ids, open)
       end
 
     reprepare(socket, query, params["from"])

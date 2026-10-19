@@ -1,7 +1,8 @@
 defmodule MasuTest.GroupsLive do
   @moduledoc """
   Orders grouped by the columns of `?group=status,customer`, from the
-  SQLite table (`?source=ecto`), or as a list (`?source=list`).
+  SQLite table (`?source=ecto`), or as a list (`?source=list`), the groups
+  of `?open=status` (or `?open=all`) open.
   """
   use Phoenix.LiveView
 
@@ -10,7 +11,13 @@ defmodule MasuTest.GroupsLive do
   @impl true
   def mount(params, _session, socket) do
     groups = (params["group"] || "") |> String.split(",", trim: true)
-    {:ok, assign(socket, groups: groups, list: params["source"] == "list")}
+
+    open =
+      if params["open"] == "all",
+        do: :all,
+        else: String.split(params["open"] || "", ",", trim: true)
+
+    {:ok, assign(socket, groups: groups, open: open, list: params["source"] == "list")}
   end
 
   @impl true
@@ -19,7 +26,7 @@ defmodule MasuTest.GroupsLive do
 
     ~H"""
     <%= if @list do %>
-      <.data_grid id="orders" rows={@rows} group_by={@groups}>
+      <.data_grid id="orders" rows={@rows} group_by={@groups} expanded={@open}>
         <:col field={:number} />
         <:col field={:customer} />
         <:col field={:status} type={:enum} />
@@ -27,7 +34,7 @@ defmodule MasuTest.GroupsLive do
         <:col field={:placed_on} type={:date} aggregate={:max} />
       </.data_grid>
     <% else %>
-      <.data_grid id="orders" source={MasuTest.Order} repo={MasuTest.Repo} group_by={@groups} sort={[:id]}>
+      <.data_grid id="orders" source={MasuTest.Order} repo={MasuTest.Repo} group_by={@groups} expanded={@open} sort={[:id]}>
         <:col field={:number} />
         <:col field={:customer} />
         <:col field={:status} type={:enum} />
