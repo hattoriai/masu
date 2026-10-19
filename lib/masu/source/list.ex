@@ -5,9 +5,13 @@ defmodule Masu.Source.List do
   The rows are maps or structs. The list filters, searches and sorts them
   in the LiveView's process when the query changes, once, and keeps the
   result as a tuple, so each block the browser asks for is read without
-  walking the list. Sorting a hundred thousand rows takes a fraction of a
-  second; past that, give the grid an Ecto source and let the database do
-  it.
+  walking the list. A search makes a text of each row at the first
+  search, and keeps it until the rows change.
+
+  A list is for up to about 10,000 rows, which it sorts and searches in
+  tens of milliseconds. Each LiveView holds its rows, and at 100,000 a
+  sort takes about 0.4 seconds; past 10,000, give the grid an Ecto source
+  and let the database do it (see the Known limits guide).
 
   Text sorts without case, `nil` after every value, and rows that compare
   equal keep their order in the list.

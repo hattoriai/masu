@@ -87,7 +87,8 @@ defmodule Masu.Components do
 
   attr :rows, :list,
     default: nil,
-    doc: "the rows: maps or structs, or lists of values (see `columns`)"
+    doc:
+      "the rows: maps or structs, or lists of values (see `columns`), up to about 10,000; past that, an Ecto `source` (see the Sources guide)"
 
   attr :columns, :list,
     default: nil,
