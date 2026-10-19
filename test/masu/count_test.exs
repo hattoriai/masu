@@ -69,6 +69,37 @@ defmodule Masu.CountTest do
     assert n < 100
   end
 
+  describe "count_limit" do
+    test "counts up to the limit, past it at least; counts all when the person goes to the end" do
+      view = open()
+      assert count(view, "capped") == {:at_least, 150}
+      assert ask_count(view, "capped") == {:exact, 237}
+      assert aria_rowcount(view, "capped") == "238"
+
+      # A query of fewer rows than the limit is counted as it is.
+      search(view, "capped", "item 3")
+      assert {:exact, n} = count(view, "capped")
+      assert n > 0 and n < 150
+    end
+
+    test "an Ecto source counts no more rows than its limit" do
+      columns = [Masu.Column.new(field: :id, type: :integer)]
+
+      counted = fn limit ->
+        MasuTest.Item
+        |> Masu.Source.new(repo: MasuTest.Repo, count_limit: limit)
+        |> Masu.Source.prepare(%Masu.Query{}, columns)
+        |> Masu.Source.counted()
+      end
+
+      assert counted.(100) == {100, false}
+      assert counted.(237) == {237, true}
+      assert counted.(nil) == {237, true}
+
+      assert_raise ArgumentError, ~r/count_limit is a positive integer/, fn -> counted.(0) end
+    end
+  end
+
   describe "paging={:pages}" do
     test "a page at a time, the page in the URL, and a new query from the first" do
       view = open()

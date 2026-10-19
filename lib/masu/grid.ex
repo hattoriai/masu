@@ -766,6 +766,7 @@ defmodule Masu.Grid do
       repo: assigns.repo,
       repo_opts: assigns.repo_opts,
       read: Map.get(assigns, :source_read),
+      count_limit: Map.get(assigns, :count_limit),
       grid: assigns.id,
       tree: assigns.tree,
       row_id: row_id(assigns)
@@ -934,6 +935,9 @@ defmodule Masu.Grid do
     %{source: source, count_ref: ref, revision: revision} = socket.assigns
 
     # In a task: the count comes with the render after it.
+    # The person went to the end: every row is counted (`count_limit`).
+    source = Source.uncapped(source)
+
     if async?(socket.assigns) and connected?(socket) do
       {:reply, %{"pending" => true, "revision" => revision}, count_later(socket, ref, source)}
     else

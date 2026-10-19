@@ -40,6 +40,8 @@ if Code.ensure_loaded?(Ecto.Query) do
       * `:repo` (required) - the repo that runs the queries.
       * `:repo_opts` - options for each call to the repo, such as
         `prefix:` for a tenant's schema.
+      * `:count_limit` - the most rows the count counts: past it, the
+        count is `{:at_least, limit}`.
       * `:read` - a read of a block of rows of the app's own: a function
         of the query and `%{offset:, limit:, order:, after:}` (see "A
         read of your own" in the [Sources](sources.md) guide).
@@ -87,6 +89,7 @@ if Code.ensure_loaded?(Ecto.Query) do
         repo: repo,
         repo_opts: Keyword.get(opts, :repo_opts, []),
         read: read!(Keyword.get(opts, :read)),
+        count_limit: count_limit!(Keyword.get(opts, :count_limit)),
         base: base,
         query: base,
         primary_key: primary_key(base),
@@ -102,6 +105,16 @@ if Code.ensure_loaded?(Ecto.Query) do
         cursors: %{}
       }
     end
+
+    defp count_limit!(nil), do: nil
+    defp count_limit!(limit) when is_integer(limit) and limit > 0, do: limit
+
+    defp count_limit!(other),
+      do:
+        raise(
+          ArgumentError,
+          "a Masu grid's count_limit is a positive integer, got: #{inspect(other)}"
+        )
 
     defp read!(nil), do: nil
     defp read!(read) when is_function(read, 2), do: read
@@ -418,13 +431,28 @@ if Code.ensure_loaded?(Ecto.Query) do
     @impl true
     def count(%{count: nil} = state), do: state |> prepare(%Query{}, []) |> count()
 
-    def count(%{count: :later, query: ecto} = state) do
+    def count(%{count: :later, query: ecto, count_limit: nil} = state) do
       ecto
       |> exclude(:order_by)
       |> exclude(:preload)
       |> subquery()
       |> select(count())
       |> state.repo.one(state.repo_opts)
+    end
+
+    # Up to the limit: the database stops after the row past it, where a
+    # count(*) of a large table reads every row.
+    def count(%{count: :later, query: ecto, count_limit: max} = state) do
+      n =
+        ecto
+        |> exclude(:order_by)
+        |> exclude(:preload)
+        |> limit(^(max + 1))
+        |> subquery()
+        |> select(count())
+        |> state.repo.one(state.repo_opts)
+
+      if n > max, do: {:at_least, max}, else: n
     end
 
     def count(%{count: count}), do: count

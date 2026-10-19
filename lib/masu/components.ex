@@ -229,6 +229,11 @@ defmodule Masu.Components do
     doc:
       "how the grid counts its rows: `:exact` with the query, `:deferred` after the first rows (in a task), `:none` only when the person goes to the end; see the Export, selection and large tables guide"
 
+  attr :count_limit, :integer,
+    default: nil,
+    doc:
+      "the most rows an Ecto source counts: past it, the grid says it has at least that many (\"10,000+\"), and counts them all when the person goes to the end; see the Export, selection and large tables guide"
+
   attr :paging, :atom,
     default: :scroll,
     values: [:scroll, :pages],
@@ -433,6 +438,7 @@ defmodule Masu.Components do
       repo={@repo}
       repo_opts={@repo_opts}
       source_read={@read}
+      count_limit={@count_limit}
       live={@live}
       changeset={@changeset}
       struct={@struct}

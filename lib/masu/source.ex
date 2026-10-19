@@ -241,6 +241,14 @@ defmodule Masu.Source do
   end
 
   @doc false
+  # The source that counts every row of its query, past its `count_limit`.
+  @spec uncapped(t()) :: t()
+  def uncapped(%__MODULE__{module: EctoSource, state: state} = source),
+    do: %{source | state: %{state | count_limit: nil}}
+
+  def uncapped(source), do: source
+
+  @doc false
   @spec rows(t(), non_neg_integer(), pos_integer()) :: [term()]
   def rows(source, offset, limit), do: source |> window(offset, limit) |> elem(0)
 
