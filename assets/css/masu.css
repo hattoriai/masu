@@ -968,7 +968,9 @@
   background-image: linear-gradient(var(--masu-row-hover), var(--masu-row-hover));
 }
 
-.masu-pinned.masu-selected {
+/* Over the row's tint, hover and choice too, as on the other cells: so
+   as specific as those and one more. */
+.masu-body > .masu-row > .masu-cell.masu-pinned.masu-selected {
   background-image: linear-gradient(var(--masu-selection), var(--masu-selection));
 }
 

@@ -529,6 +529,17 @@ test.describe("layout and views", () => {
     await expect(id).toHaveClass(/masu-pinned-start/);
   });
 
+  test("a selected cell of a pinned column shows the selection on every second row too", async ({ page }) => {
+    await openPage(page, `/views?as=${person("ada")}`);
+    const odd = page.locator("#views-r0-c0");
+    const even = page.locator("#views-r1-c0");
+    await odd.click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await expect(even).toHaveClass(/masu-selected/);
+    const image = (cell: typeof odd) => cell.evaluate((el) => getComputedStyle(el).backgroundImage);
+    expect(await image(even)).toBe(await image(odd));
+  });
+
   test("a drag on a header moves its column, and Alt+Shift+→ on a header too", async ({ page }) => {
     await openPage(page, `/views?as=${person("ada")}`);
     const plan = (await page.locator('#views .masu-hcell[data-key="plan"] .masu-label').boundingBox())!;
