@@ -45,6 +45,24 @@ opens on the groups of the next column, or on its rows, as a tree does:
 the arrow, → and ← on the first column, `*` for every group beside it
 (see [Trees and details](trees.md)). Groups start closed.
 
+**Open from the start.** `expanded` starts groups open: `:all` every
+group at every level, down to the rows, or the keys of the columns whose
+groups open, the outer ones say.
+
+```heex
+<%!-- every group open, and every customer in it --%>
+<.data_grid id="orders" rows={@orders} group_by={[:status, :customer]} expanded={:all}>
+
+<%!-- the statuses open on their customers; the customers closed --%>
+<.data_grid id="orders" rows={@orders} group_by={[:status, :customer]} expanded={[:status]}>
+```
+
+A group the person closes stays closed, with a new filter or view too.
+A column they group by from the header menu opens by the same rule:
+with `:all`, its groups start open. In the database, `:all` reads
+every level of groups at the start, where closed groups read only the
+first; the rows still come a block at a time (see below).
+
 **Order.** Groups sort by their value. Sorting by the grouped column
 turns their order; sorting by a column that totals sorts the groups by
 their totals ("plans by revenue"). The rows of a group sort as the

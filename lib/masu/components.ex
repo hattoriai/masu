@@ -220,9 +220,10 @@ defmodule Masu.Components do
     doc:
       "rows in a tree: the field of a row that holds its parent's id (or a function of the row); see `Masu.Tree`"
 
-  attr :expanded, :list,
+  attr :expanded, :any,
     default: [],
-    doc: "with `tree`: the ids of the rows that start open"
+    doc:
+      "the rows that start open: with `tree`, the ids of the rows; with groups, `:all` for every group at every level, or the keys of the columns whose groups start open (`[:status]`); see `Masu.Group`"
 
   attr :count, :atom,
     default: :exact,
@@ -470,7 +471,7 @@ defmodule Masu.Components do
       row_action={@row_action}
       selectable={@selectable}
       on_select={@on_select}
-      expanded={@expanded}
+      expanded={expanded!(@id, @tree, @expanded)}
       detail={@detail}
       url={@url}
       views={@views}
@@ -625,6 +626,23 @@ defmodule Masu.Components do
       raise(
         ArgumentError,
         "<.data_grid id=#{inspect(id)}> cell_menu is true, false or a list of #{inspect(@cell_menu)}, got: #{inspect(other)}"
+      )
+
+  defp expanded!(id, tree, :all) when tree != nil,
+    do:
+      raise(
+        ArgumentError,
+        "<.data_grid id=#{inspect(id)}> expanded={:all} is for groups: a tree's expanded is the ids of the rows that start open"
+      )
+
+  defp expanded!(_id, _tree, expanded) when expanded == :all or is_list(expanded), do: expanded
+  defp expanded!(_id, _tree, nil), do: []
+
+  defp expanded!(id, _tree, other),
+    do:
+      raise(
+        ArgumentError,
+        "<.data_grid id=#{inspect(id)}> expanded is a list, or :all for groups, got: #{inspect(other)}"
       )
 
   defp density_height(:compact), do: 28

@@ -7,6 +7,14 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Groups that start open: `expanded={:all}` on a grouped grid opens
+  every group at every level, and `expanded={[:status]}` the groups of
+  the columns it names. A group the person closes stays closed, with a
+  new filter or view too; the groups of a column grouped from the
+  header menu start open by the same rule.
+
 ## [0.2.0] - 2026-10-19
 
 ### Changed

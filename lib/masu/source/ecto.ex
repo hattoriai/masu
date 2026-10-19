@@ -193,7 +193,7 @@ if Code.ensure_loaded?(Ecto.Query) do
         groups_of(state, filtered, path, Column.find(columns, key), columns, query.sorts)
       end
 
-      segments = Group.segments(keys, &MapSet.member?(query.expanded, &1), groups)
+      segments = Group.segments(keys, &Group.open?(query, &1), groups)
 
       %{
         state

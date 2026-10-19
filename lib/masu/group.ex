@@ -27,6 +27,10 @@ defmodule Masu.Group do
   order, and sorting by a column with an aggregate sorts them by it. The
   rows of a group sort as the grid's rows do.
 
+  Groups start closed. `expanded={:all}` on the grid starts every group
+  open, at every level, and `expanded={[:status]}` the groups of the
+  columns it names; a group the person closes stays closed.
+
   A group row's id is `["masu-group", key, value, ...]`, its path: it is
   what `Masu.Test.expand/3` takes to open it.
   """
@@ -60,6 +64,16 @@ defmodule Masu.Group do
   @spec id?(term()) :: boolean()
   def id?(["masu-group" | _]), do: true
   def id?(_id), do: false
+
+  @doc false
+  # Whether the group of `id` is open: its column starts open
+  # (`open_groups`) and the person did not close it, or they opened it.
+  @spec open?(Masu.Query.t(), list()) :: boolean()
+  def open?(%{open_groups: open} = query, id) do
+    if open == :all or Enum.at(id, -2) in open,
+      do: not MapSet.member?(query.collapsed, id),
+      else: MapSet.member?(query.expanded, id)
+  end
 
   @doc false
   # The segments of the groups by `levels` (keys), the open ones (by

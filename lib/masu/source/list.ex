@@ -93,7 +93,7 @@ defmodule Masu.Source.List do
       |> Group.of_rows(Column.find(columns, key), path, columns, query.sorts)
     end
 
-    segments = Group.segments(keys, &MapSet.member?(query.expanded, &1), groups)
+    segments = Group.segments(keys, &Group.open?(query, &1), groups)
 
     leaves =
       for {:rows, path, _count, _level} <- segments, into: %{} do
