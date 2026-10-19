@@ -43,9 +43,9 @@ export class FilterMenu {
   constructor(host: MenuHost, anchor: HTMLElement) {
     this.host = host;
     const { column, current, messages } = host;
-    const ops = opsFor(column.type, column.filters);
+    const ops = opsFor(column.type, column.filters, column.many);
     this.op = current && ops.includes(current.op as Op) ? (current.op as Op) : ops[0];
-    if (current?.op === "in" && Array.isArray(current.value)) {
+    if (current && arity(current.op as Op) === "list" && Array.isArray(current.value)) {
       for (const value of current.value) this.checked.add(JSON.stringify(value));
     }
 
@@ -94,7 +94,7 @@ export class FilterMenu {
       select.className = "masu-menu-op";
       select.setAttribute("aria-label", messages.condition ?? "Condition");
       for (const op of ops) {
-        const option = new Option(opLabel(op, column.type, messages), op, false, op === this.op);
+        const option = new Option(opLabel(op, column.type, messages, column.many), op, false, op === this.op);
         select.appendChild(option);
       }
       select.addEventListener("change", () => {

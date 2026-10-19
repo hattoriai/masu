@@ -61,6 +61,18 @@ Each returns the view, so they pipe:
   replaces the grid's filters. See `Masu.Filter` for the operators.
 * `search(view, id, text)`: as the search box.
 
+A column of a related row's field is named by its key, the path with
+dots unless it has its own, and its rows' values are lists for a column
+of many values:
+
+```elixir
+view
+|> sort("orders", {"customer.name", :desc})
+|> filter("orders", [{"tags", :all_of, ["gift", "urgent"]}])
+
+assert [%{"customer.name" => "Ana", "tags" => ["gift", "urgent"]} | _] = rows(view, "orders")
+```
+
 A query that the grid refuses (a filter on a column that does not filter,
 a value that is not of the column's type) fails the test with the
 grid's reason.

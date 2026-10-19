@@ -172,7 +172,7 @@ defmodule Masu.Export do
   end
 
   defp csv_line(row, columns) do
-    [Enum.map_join(columns, ",", &csv_value(&1, Column.get(&1, row))), "\r\n"]
+    [Enum.map_join(columns, ",", &csv_value(&1, Column.flat(&1, row))), "\r\n"]
   end
 
   defp csv_value(_column, nil), do: ""

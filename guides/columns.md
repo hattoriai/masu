@@ -23,6 +23,37 @@ A list sorts and filters such a column like any other. A database
 cannot: with an Ecto source the column is shown, but does not sort,
 filter or search (see [Sources](sources.md)).
 
+### A field of a related row
+
+`field` may be a path to a field of a related row: a list of the row's
+associations (or keys of maps in it), and the field at the end.
+
+```heex
+<:col field={[:customer, :name]} label="Customer" />
+<:col field={[:customer, :company, :country]} key="country" type={:enum} />
+<:col field={[:tags, :name]} label="Tags" type={:enum} />
+```
+
+Its key is the path with dots (`"customer.name"`) unless given, the
+name of the column in `Masu.Test`, filters and links. A row without the
+related row (or with it not loaded) has no value there.
+
+A path of one related row each step is one value, which sorts, filters,
+searches and groups as any other: an Ecto source joins it (see
+[Fields of related rows](sources.md#fields-of-related-rows)), and a list
+follows it in each row. A path through several related rows (`has_many`,
+`many_to_many`) is of many values: its cell shows them apart ("gift,
+urgent"), and a cell of your own HEEx draws them as you like (chips for
+tags). It filters by "has any of", "has all of", "has none of", "has
+none" and "has some", and does not sort or group (see
+[Filters](filters.md)).
+
+The source says whether a path is of many values: an Ecto source from
+the schema's associations, a list from its rows. A source of your own
+says it with `many?/2`, or the column with `many={true}`.
+
+The columns of related rows are read-only.
+
 ## The label
 
 The header shows `label`, or the field in words (`inserted_at` is

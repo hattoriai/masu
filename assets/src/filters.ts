@@ -17,10 +17,15 @@ export type Op =
   | "between"
   | "in"
   | "is_nil"
-  | "not_nil";
+  | "not_nil"
+  | "all_of"
+  | "none_of";
 
 const NUMBER_OPS: Op[] = ["eq", "neq", "gt", "gte", "lt", "lte", "between", "is_nil", "not_nil"];
 const TIME_OPS: Op[] = ["eq", "gt", "gte", "lt", "lte", "between", "is_nil", "not_nil"];
+// A column of many values (a path through several related rows): has
+// any of, all of, none of, none, some.
+const MANY_OPS: Op[] = ["in", "all_of", "none_of", "is_nil", "not_nil"];
 
 /**
  * The operators a column's menu offers, the first the default: those of
@@ -28,7 +33,8 @@ const TIME_OPS: Op[] = ["eq", "gt", "gte", "lt", "lte", "between", "is_nil", "no
  * `filters/2`) when it says. An enum whose source has no "is one of"
  * filters by one value.
  */
-export function opsFor(type: ColumnType, allowed?: string[] | null): Op[] {
+export function opsFor(type: ColumnType, allowed?: string[] | null, many = false): Op[] {
+  if (many) return allowed ? MANY_OPS.filter((op) => allowed.includes(op)) : MANY_OPS;
   const ops = typeOps(type);
   if (!allowed) return ops;
   const offered = ops.filter((op) => allowed.includes(op));
@@ -73,7 +79,7 @@ function typeOps(type: ColumnType): Op[] {
 export function arity(op: Op): 0 | 1 | 2 | "list" {
   if (op === "is_nil" || op === "not_nil") return 0;
   if (op === "between") return 2;
-  if (op === "in") return "list";
+  if (op === "in" || op === "all_of" || op === "none_of") return "list";
   return 1;
 }
 
@@ -115,8 +121,9 @@ export function makeFilter(column: ColumnConfig, op: Op, values: string[]): Filt
   }
 }
 
-/** The words of an operator, for a column of `type`. */
-export function opLabel(op: Op, type: ColumnType, messages: Record<string, string>): string {
+/** The words of an operator, for a column of `type` (of many values: "has any of"). */
+export function opLabel(op: Op, type: ColumnType, messages: Record<string, string>, many = false): string {
+  if (many) return messages[`op_${op}_many`] ?? messages[`op_${op}`] ?? op;
   const timely = type === "date" || type === "datetime" || type === "time";
   if (timely && (op === "gt" || op === "gte" || op === "lt" || op === "lte")) {
     return messages[`op_${op}_time`] ?? op;
@@ -136,7 +143,7 @@ export function describe(
   messages: Record<string, string>,
 ): string {
   const op = filter.op as Op;
-  const words = `${column.label} ${opLabel(op, column.type, messages)}`;
+  const words = `${column.label} ${opLabel(op, column.type, messages, column.many)}`;
   const show = (value: unknown) =>
     value === null ? (messages.empty_value ?? "(empty)") : column.type === "boolean" ? boolText(value, messages) : format(value);
 

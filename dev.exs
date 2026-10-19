@@ -194,6 +194,7 @@ defmodule MasuDev.Layouts do
           {"Results", "/results"},
           {"Slow", "/slow"},
           {"Controlled", "/controlled"},
+          {"Related", "/related"},
           {"Sumi theme", "/?theme=sumi"},
           {"Sumi dark", "/?theme=sumi&dark=1"}
         ]
@@ -596,6 +597,69 @@ defmodule MasuDev.SmallLive do
     <.data_grid id="small" rows={@rows} label="A few customers" height="20rem">
       <:col field={:name} />
       <:col field={:email} />
+    </.data_grid>
+    """
+  end
+end
+
+defmodule MasuDev.RelatedLive do
+  @moduledoc """
+  Orders with fields of related rows (`field={[:customer, :name]}`): the
+  customer's name and their company's country, one value each, and the
+  tags, many values. A list of maps here; an Ecto source joins the same
+  paths (see the Sources guide).
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @companies [
+    %{name: "Acme", country: "Portugal"},
+    %{name: "Globex", country: "Japan"},
+    %{name: "Initech", country: nil}
+  ]
+
+  @tags ~w(urgent gift bulk fragile)
+
+  @impl true
+  def mount(_params, _session, socket) do
+    customers =
+      MasuDev.Customers.all()
+      |> Enum.take(12)
+      |> Enum.with_index()
+      |> Enum.map(fn {customer, i} ->
+        %{name: customer.name, company: if(rem(i, 4) != 3, do: Enum.at(@companies, rem(i, 3)))}
+      end)
+
+    orders =
+      for id <- 1..60 do
+        tags =
+          for {tag, n} <- Enum.with_index(@tags),
+              rem(div(id, n + 1) + n, 3) == 0,
+              do: %{name: tag}
+
+        %{
+          id: id,
+          number: "R-#{1000 + id}",
+          total: rem(id * 37, 500) + 10,
+          customer: if(rem(id, 13) != 0, do: Enum.at(customers, rem(id * 7, 12))),
+          tags: tags
+        }
+      end
+
+    {:ok, assign(socket, rows: orders)}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1>Related rows</h1>
+    <.data_grid id="related" rows={@rows} label="Orders and their customers" height="28rem" cell_menu>
+      <:col field={:number} />
+      <:col field={:total} type={:integer} />
+      <:col field={[:customer, :name]} label="Customer" />
+      <:col field={[:customer, :company, :country]} key="country" type={:enum} />
+      <:col field={[:tags, :name]} key="tags" label="Tags" type={:enum} />
     </.data_grid>
     """
   end
@@ -1823,6 +1887,7 @@ defmodule MasuDev.Router do
     live("/results", MasuDev.ResultsLive)
     live("/slow", MasuDev.SlowLive)
     live("/controlled", MasuDev.ControlledLive)
+    live("/related", MasuDev.RelatedLive)
     live("/actions", MasuDev.ActionsLive)
     live("/editors", MasuDev.EditorsLive)
     live("/history", MasuDev.HistoryLive)

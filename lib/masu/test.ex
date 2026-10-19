@@ -27,7 +27,8 @@ defmodule Masu.Test do
 
   A row is a map of each column's key to its value as the browser gets
   it: numbers and booleans as they are, decimals as strings, dates and
-  times in ISO 8601, and for a column with content the text of its cell.
+  times in ISO 8601, a list for a column of many values (`field={[:tags,
+  :name]}`), and for a column with content the text of its cell.
   """
 
   @compile {:no_warn_undefined, [LazyHTML]}
@@ -268,6 +269,10 @@ defmodule Masu.Test do
   Sorts the grid `id` as clicks on its headers do: `sorts` is a key, a
   `{key, :asc | :desc}`, or a list of them (the first the most
   important). `[]` takes the order away. Returns the view.
+
+  A column of a related row's field (`field={[:customer, :name]}`) is
+  named by its key, the path with dots unless given:
+  `sort(view, "orders", {"customer.name", :desc})`.
   """
   @spec sort(struct(), String.t(), term()) :: struct()
   def sort(view, id, sorts) do
@@ -286,6 +291,8 @@ defmodule Masu.Test do
   Filters the grid `id`: `filters` is a list of `{key, op, value}` (see
   `Masu.Filter` for the operators), which replaces the grid's filters.
   Returns the view.
+
+      filter(view, "orders", [{"customer.name", :eq, "Ana"}, {"tags", :all_of, ["gift"]}])
   """
   @spec filter(struct(), String.t(), [tuple()]) :: struct()
   def filter(view, id, filters) do

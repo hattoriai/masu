@@ -81,8 +81,9 @@ The database does the work:
 
 The query may have its own `where`, `join` and `preload`. A column sorts
 and filters in the database when it names a field of the query's first
-source (`field={:total}`); a column with a `value` function is shown but
-does not sort, filter or search.
+source (`field={:total}`), or a field of a related row (see below); a
+column with a `value` function is shown but does not sort, filter or
+search.
 
 The text filters and the search compare without case, with
 `lower(field) LIKE ...`, which PostgreSQL, MySQL and SQLite all run. On a
@@ -100,6 +101,58 @@ of a tenant's schema:
 A jump into the middle of a large table (the scrollbar dragged) is an
 `OFFSET`, which gets slower deep into it: the database still reads the
 rows before it. See [Known limits](limits.md).
+
+### Fields of related rows
+
+A column's `field` may be a path of the schema's associations to a
+field of a related row:
+
+```heex
+<.data_grid id="orders" source={Order} repo={MyApp.Repo}>
+  <:col field={:number} />
+  <:col field={[:customer, :name]} label="Customer" />
+  <:col field={[:customer, :company, :country]} key="country" type={:enum} />
+  <:col field={[:tags, :name]} label="Tags" type={:enum} />
+</.data_grid>
+```
+
+A path of `belongs_to` and `has_one` associations is one value. It
+sorts, filters, searches, groups and totals as a field of the first
+source does, and its enum menu has its values with their counts:
+
+* the source adds a `LEFT JOIN` for each step, as a named binding
+  (`:customer`, then `:customer_company`), only when a sort, a filter,
+  the search or a group needs it. A query that has a binding of that
+  name already (`join: c in assoc(o, :customer), as: :customer`) is
+  used as it is, with its own conditions;
+* a row with no related row has `NULL` there, which sorts where the
+  database sorts its `NULL`s (last ascending in PostgreSQL, first in
+  MySQL and SQLite);
+* the source preloads the associations of the paths, for each block of
+  rows, unless the query preloads them through a join of its own: each
+  row shows its values, and the blocks are still read by key, with the
+  related value in the cursor;
+* the selection of every row of the query (see
+  [Export, selection and large tables](export.md)) is a query of the
+  schema's rows by their keys, without the joins, so that an
+  `update_all` or a `delete_all` of it runs in each database.
+
+A sort by a related field reads its rows in the order of the joined
+column: on a large table, the related table needs an index on it, as
+any `ORDER BY` with a `LIMIT` does, and the foreign key one too.
+
+A path through a `has_many` or `many_to_many` is of many values: each
+cell shows the values of the row's related rows, a list. The column
+filters by "has any of", "has all of", "has none of", "has none" and
+"has some", each a subquery of the related rows (`id IN (SELECT ...)`),
+never a join, so the rows are not repeated and the count stays right.
+The search finds a row by any of its values. It does not sort or group:
+several values have no one place in an order. Its enum menu counts the
+rows that have each value. The schema needs one primary key.
+
+A path the schema does not have (a field of a map, a virtual field) is
+shown, but does not sort or filter, as a `value` function. The columns of
+related rows are read-only.
 
 ## A read of your own
 
@@ -127,6 +180,11 @@ of the last row of the block before (`[placed_at: ~U[...], id: 41]`), to
 read the block after it by key, or `nil`: the first block, or a jump
 (the scrollbar dragged). It gives what `c:Masu.Source.rows/3` gives: the
 rows, `{rows, count}`, or `{:error, reason}`.
+
+A sort by a field of a related row is a path in `order` and `after`
+(`[{:asc, [:customer, :name]}, {:asc, :id}]`), whose join is in the query
+as the binding of its associations' names (`as(:customer)`); the first
+source is the binding `:masu`, unless the query names it.
 
 The grid takes `read` when it starts. A tree and the open groups of a
 grouped grid are read Masu's way. For a source that is not an Ecto
@@ -164,6 +222,10 @@ the rows it read, and grows as it reads more. `rows/3` may give
 `{rows, count}`, when the count came with the rows (a `total_count` of
 the same request), and the grid takes it. The optional `supports?/2` says whether the
 source can sort and filter by a column; the grid turns off the others.
+Without it, a column of a related row's field (`field={[:customer,
+:name]}`) does not sort or filter: a source that runs them says so in
+`supports?/2`, and says with `many?/2` which paths are of many values
+(or the column says `many={true}`).
 
 A source of a tree implements `nodes/3` and `siblings/2` too: see
 [Trees and details](trees.md).

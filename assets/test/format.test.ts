@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { copyText, formatter } from "../src/format";
+import { copyText, formatter, manyFormatter } from "../src/format";
 
 test("numbers are grouped in the locale", () => {
   assert.equal(formatter("integer", "en-US")(1234567), "1,234,567");
@@ -41,4 +41,12 @@ test("a raw column shows its values as the server sends them, whatever the local
   assert.equal(formatter("decimal", "de-DE", 2, true)("12.50"), "12.50");
   assert.equal(formatter("boolean", "en-US", null, true)(true), "true");
   assert.equal(formatter("text", "en-US", null, true)(null), "");
+});
+
+test("a column of many values shows and copies each value, apart", () => {
+  const format = manyFormatter(formatter("integer", "en-US"));
+  assert.equal(format([1200, 3] as never), "1,200, 3");
+  assert.equal(format([] as never), "");
+  assert.equal(format(5), "5");
+  assert.equal(copyText(["gift", "bulk"] as never), "gift, bulk");
 });

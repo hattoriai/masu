@@ -18,6 +18,10 @@ defmodule Masu.Source.Given do
   @impl true
   def prepare(state, _query, _columns), do: state
 
+  # The LiveView runs the query: every column it has, a path too.
+  @impl true
+  def supports?(_state, _column), do: true
+
   @impl true
   def count(%{total: total}) when is_integer(total), do: total
   def count(%{rows: rows, offset: offset}), do: offset + length(rows)

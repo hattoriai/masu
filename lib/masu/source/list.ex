@@ -175,17 +175,28 @@ defmodule Masu.Source.List do
   @impl true
   def supports?(_state, _column), do: true
 
+  # A path is of many values when it reads a list in a row: it goes
+  # through several related rows.
+  @impl true
+  def many?(%{all: rows}, column), do: Enum.any?(rows, &is_list(Column.get(column, &1)))
+
   @impl true
   def values(state, column, query, columns, opts) do
     search = opts |> Keyword.get(:search) |> then(&(&1 && String.downcase(&1)))
     {found, _state} = found(state, query, columns)
 
     found
-    |> Enum.frequencies_by(&Column.get(column, &1))
+    |> frequencies(column)
     |> Enum.filter(fn {value, _count} -> search == nil or value_has?(value, search) end)
     |> Enum.sort_by(fn {value, count} -> {-count, Value.sort_key_fun([value]).(value)} end)
     |> Enum.take(Keyword.get(opts, :limit, 50))
   end
+
+  # Of many values: the rows that have each value.
+  defp frequencies(rows, %Column{many: true} = column),
+    do: rows |> Enum.flat_map(&Enum.uniq(List.wrap(Column.get(column, &1)))) |> Enum.frequencies()
+
+  defp frequencies(rows, column), do: Enum.frequencies_by(rows, &Column.get(column, &1))
 
   defp value_has?(nil, _search), do: false
 
@@ -310,12 +321,13 @@ defmodule Masu.Source.List do
     end
   end
 
-  defp text(column, row) do
-    case Column.get(column, row) do
-      nil -> ""
-      value -> value |> Value.to_wire() |> to_string() |> String.downcase()
-    end
-  end
+  defp text(%Column{many: true} = column, row),
+    do: column |> Column.get(row) |> List.wrap() |> Enum.map_join(" ", &text_of/1)
+
+  defp text(column, row), do: text_of(Column.get(column, row))
+
+  defp text_of(nil), do: ""
+  defp text_of(value), do: value |> Value.to_wire() |> to_string() |> String.downcase()
 
   # Whether a row passes the filters.
   defp filter([], _columns), do: fn _row -> true end
@@ -326,10 +338,13 @@ defmodule Masu.Source.List do
           column = Column.find(columns, key),
           do: {column, filter}
 
-    fn row ->
-      Enum.all?(checks, fn {column, filter} -> Filter.match?(filter, Column.get(column, row)) end)
-    end
+    fn row -> Enum.all?(checks, fn {column, filter} -> passes?(filter, column, row) end) end
   end
+
+  defp passes?(filter, %Column{many: true} = column, row),
+    do: Filter.match_many?(filter, Column.get(column, row))
+
+  defp passes?(filter, column, row), do: Filter.match?(filter, Column.get(column, row))
 
   defp sort(rows, [], _columns), do: rows
 
