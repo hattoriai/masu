@@ -7,6 +7,11 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A selected cell of a pinned column shows the selection on every second
+  row and on chosen rows, not the row's tint (#45).
+
 ## [0.2.0] - 2026-10-19
 
 ### Changed
