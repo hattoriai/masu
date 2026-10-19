@@ -7,58 +7,7 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-
-- The history of cells (`history` on a grid, `Masu.History`): who
-  changed a cell, when, from what to what, and what they did (typed,
-  pasted, filled, restored); new and deleted rows too. Every write of the
-  grid that saves is recorded, the grid's own and an `on_update`'s;
-  `Masu.Write.record/3` records in a transaction of the app's own, and
-  `Masu.History.record/2` what the app changes another way. A batch is
-  one write (a paste).
-- Stores: `Masu.History.Ecto` (`use Masu.History.Ecto, repo: ...`), a
-  table of any Ecto repo, PostgreSQL, MySQL or SQLite, with
-  `mix masu.gen.history` for its migration: in the grid's own repo, a
-  change and its record are saved in one transaction (a record that
-  fails takes the change back); in a repo of its own (a SQLite file next
-  to a PostgreSQL app), the change is recorded after it saves.
-  `Masu.History.Memory` for development and tests; a store of your own
-  over your audit.
-- The history of a cell or a row in a popover, from the cell's menu or
-  Ctrl+Alt+H: Restore a value, Undo all of a batch (someone's paste), as
-  edits through the changeset, refused for a cell that changed since,
-  recorded as restores.
-- `Masu.Test.history/4` and `restore/3`.
-
-### Added
-
-- Editors of your own (`editor` on a `:col`), with no dependency of
-  Masu's on any editor:
-  - a function component of a form field (`@field`, named
-    `cell[value]`), which the server renders in a popover under the
-    cell, with the row as the source reads it now: what its form posts
-    is the new value, text or params (`from` and `to`), cast by the
-    changeset. A Kotoba editor or a Koyomi picker is one component, and
-    a `Phoenix.LiveComponent` in it searches the server. Ctrl+Enter or a
-    submit saves, a click away saves, Escape lets it go (after the
-    editor's own Escape); an edit carries a version of the value it
-    opened with, and a cell changed meanwhile is refused;
-  - an editor of the browser's, by name, given to `configure({editors})`
-    in the app's JavaScript, with options of the column
-    (`editor={{"score", %{max: 100}}}`): it draws in a box over the
-    cell, and the grid keeps Enter, Tab, Escape (unless the editor
-    prevents them) and a click away.
-
-  Either way the grid keeps undo and redo, the errors on the cell, "Ada
-  is editing", and paste, fill down and Delete through the column's type.
-- `Masu.Wire`: a protocol for values of your own types, as a cell shows,
-  copies and exports them (a rich text's text, a range of days).
-- `Masu.Test.open_editor/4` and `close_editor/2`; `edit/4` takes the
-  params of an editor's form.
-- Guides: [Editors of your own](editors.md), and how to plug in
-  [Kotoba](kotoba.md) (rich text in cells) and [Koyomi](koyomi.md)
-  (pickers in cells, and a picker above the grid that filters it through
-  its URL), with no dependency of Masu's on either.
+## [0.2.0] - 2026-10-19
 
 ### Changed
 
@@ -91,11 +40,58 @@ that write rows your way take one.
   their order, forwards or backwards.
 - A search of a grid of rows (`Masu.Source.List`) makes a text of each
   row once, at the first search, and matches in it: each search after it
-  is about twenty times faster (a hundred thousand rows: from 491 ms to
-  26 ms). The texts stay until the rows change.
+  is about eighteen times faster (a hundred thousand rows: from 491 ms to
+  27 ms). The texts stay until the rows or the searchable columns change.
 
 ### Added
 
+- The history of cells (`history` on a grid, `Masu.History`): who
+  changed a cell, when, from what to what, and what they did (typed,
+  pasted, filled, restored); new and deleted rows too. Every write of the
+  grid that saves is recorded, the grid's own and an `on_update`'s;
+  `Masu.Write.record/3` records in a transaction of the app's own, and
+  `Masu.History.record/2` what the app changes another way. A batch is
+  one write (a paste).
+- Stores: `Masu.History.Ecto` (`use Masu.History.Ecto, repo: ...`), a
+  table of any Ecto repo, PostgreSQL, MySQL or SQLite, with
+  `mix masu.gen.history` for its migration: in the grid's own repo, a
+  change and its record are saved in one transaction (a record that
+  fails takes the change back); in a repo of its own (a SQLite file next
+  to a PostgreSQL app), the change is recorded after it saves.
+  `Masu.History.Memory` for development and tests; a store of your own
+  over your audit.
+- The history of a cell or a row in a popover, from the cell's menu or
+  Ctrl+Alt+H: Restore a value, Undo all of a batch (someone's paste), as
+  edits through the changeset, refused for a cell that changed since,
+  recorded as restores.
+- `Masu.Test.history/4` and `restore/3`.
+- Editors of your own (`editor` on a `:col`), with no dependency of
+  Masu's on any editor:
+  - a function component of a form field (`@field`, named
+    `cell[value]`), which the server renders in a popover under the
+    cell, with the row as the source reads it now: what its form posts
+    is the new value, text or params (`from` and `to`), cast by the
+    changeset. A Kotoba editor or a Koyomi picker is one component, and
+    a `Phoenix.LiveComponent` in it searches the server. Ctrl+Enter or a
+    submit saves, a click away saves, Escape lets it go (after the
+    editor's own Escape); an edit carries a version of the value it
+    opened with, and a cell changed meanwhile is refused;
+  - an editor of the browser's, by name, given to `configure({editors})`
+    in the app's JavaScript, with options of the column
+    (`editor={{"score", %{max: 100}}}`): it draws in a box over the
+    cell, and the grid keeps Enter, Tab, Escape (unless the editor
+    prevents them) and a click away.
+
+  Either way the grid keeps undo and redo, the errors on the cell, "Ada
+  is editing", and paste, fill down and Delete through the column's type.
+- `Masu.Wire`: a protocol for values of your own types, as a cell shows,
+  copies and exports them (a rich text's text, a range of days).
+- `Masu.Test.open_editor/4` and `close_editor/2`; `edit/4` takes the
+  params of an editor's form.
+- Guides: [Editors of your own](editors.md), and how to plug in
+  [Kotoba](kotoba.md) (rich text in cells) and [Koyomi](koyomi.md)
+  (pickers in cells, and a picker above the grid that filters it through
+  its URL), with no dependency of Masu's on either.
 - `:action`: actions on the rows selected (`selectable`), buttons of
   the bar above the grid, with the selection as `Masu.Live.selected/1`
   gives it (`{:query, query}` for every row of the query), `confirm`
@@ -116,9 +112,6 @@ that write rows your way take one.
   `delete_rows/4`, which give `:async` for a write saved later.
 - Messages: `row_actions`, `action_done`, `action_running`,
   `action_progress`, `saving_later`, `deleting_later`.
-
-### Added
-
 - `read` on a grid of an Ecto source: a read of a block of rows of the
   app's own, a function of the query (with the grid's filters, search
   and order) and `%{offset:, limit:, order:, after:}`, `after` the sort

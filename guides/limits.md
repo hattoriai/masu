@@ -90,9 +90,9 @@ are fast; a sort sorts every row again.
 
 | Rows | Sort by a column | First search | Each search after | Memory of a LiveView |
 | --- | --- | --- | --- | --- |
-| 10,000 | 21 ms | 36 ms | less | 9 MB |
-| 100,000 | 378 ms | 174 ms | 26 ms | 86 MB |
-| 1,000,000 | 5.2 s | 5.8 s | 278 ms | 863 MB |
+| 10,000 | 23 ms | 36 ms | 2.6 ms | 9 MB |
+| 100,000 | 396 ms | 355 ms | 27 ms | 86 MB |
+| 1,000,000 | 5.2 s | 5.0 s | 274 ms | 863 MB |
 
 Past 10,000 rows, give the grid an Ecto source: the database sorts,
 searches and counts, and the LiveView holds only the rows on the screen.

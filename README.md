@@ -89,7 +89,7 @@ three pages of 50). In Chromium, with a list source:
   ten million rows takes seconds: `count={:deferred}`.
 * A list source keeps its rows in the LiveView's process, about 1 KB a
   row for each person. It is for up to about 10,000 rows, which it sorts
-  and searches in tens of milliseconds (21 ms and 36 ms). At 100,000
+  and searches in tens of milliseconds (23 ms and 36 ms). At 100,000
   rows a sort takes about 0.4 seconds and each person's LiveView holds
   about 100 MB. Past 10,000 rows, give the grid an Ecto source. If you
   need a larger list in memory, [open an issue](https://github.com/hattoriai/masu/issues) or a pull request.
@@ -110,7 +110,7 @@ Add `masu` to the deps in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:masu, "~> 0.1"}
+    {:masu, "~> 0.2"}
   ]
 end
 ```
