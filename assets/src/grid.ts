@@ -183,6 +183,9 @@ export class Grid {
   private saving = new Set<string>();
   private undoStack: Step[] = [];
   private redoStack: Step[] = [];
+  /** Edits sent and not answered; an undo or a redo before their answer waits for it. */
+  private inFlight = 0;
+  private waiting: ("undo" | "redo")[] = [];
   /**
    * New rows not saved yet (`create`), after the rows of the query, then
    * the row that adds one: each saves when the person leaves it.
@@ -3476,7 +3479,9 @@ export class Grid {
     const payload = edits.map((edit) =>
       edit.form ? { id: edit.id, key: edit.key, value: edit.value, version: edit.form.version ?? undefined } : { id: edit.id, key: edit.key, value: edit.value, before: edit.before },
     );
+    this.inFlight++;
     this.transport.push("masu:edit", { edits: payload, origin }, (reply) => {
+      this.inFlight--;
       const errors = (reply.errors as [unknown, string, string, CellValue?][]) ?? [];
       // Cells saved later (Masu.Write.async/1) stay saving until the reply.
       const later = new Set(((reply.saving as [unknown, string][]) ?? []).map(([id, key]) => cellKey(id, key)));
@@ -3532,15 +3537,31 @@ export class Grid {
       this.announce(this.message("saved", { count: saved.length }));
     }
     this.refreshRows();
+
+    // An undo (or a redo) that came before this answer: it takes back this
+    // edit now; or none, when the server refused the edit.
+    if (this.inFlight === 0 && this.waiting.length > 0) {
+      const waiting = this.waiting;
+      this.waiting = [];
+      if (saved.length > 0) for (const step of waiting) step === "undo" ? this.undo() : this.redo();
+    }
   }
 
   private undo(): void {
+    if (this.undoStack.length === 0 && this.inFlight > 0) {
+      this.waiting.push("undo");
+      return;
+    }
     const step = this.undoStack.pop();
     if (step?.kind === "edits") this.send(step.edits.map((edit) => this.reverse(edit)), "undo");
     else if (step?.kind === "delete") this.restoreRows(step.undo);
   }
 
   private redo(): void {
+    if (this.redoStack.length === 0 && this.inFlight > 0) {
+      this.waiting.push("redo");
+      return;
+    }
     const step = this.redoStack.pop();
     if (step?.kind === "edits") this.send(step.edits.map((edit) => this.reverse(edit)), "redo");
     else if (step?.kind === "restore") this.pushDelete({ ids: step.ids }, true);

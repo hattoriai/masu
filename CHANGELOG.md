@@ -144,6 +144,10 @@ that write rows your way take one.
   about 930,000. The scroll box of such a grid is 10,000,000 pixels
   tall; the scrollbar dragged moves in proportion, and a wheel and the
   keys move by their own pixels.
+- An undo (or a redo) right after an edit, before the server answered
+  it, did nothing: it waits for the answer now, and takes the edit back.
+- In Safari, the Columns panel lost the focus at each click on a
+  control: the control keeps it, as in the other browsers.
 
 ## [0.1.2] - 2026-10-18
 

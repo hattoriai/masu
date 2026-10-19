@@ -1000,7 +1000,7 @@ test.describe("new and deleted rows, and editors", () => {
     await grid(page, "tasks").evaluate((el) => (el.scrollTop = el.scrollHeight));
     await cell(page, 29, 0).click();
     await page.evaluate(() => navigator.clipboard.writeText("Alpha\ttodo\nBeta\tdoing\n\tdone"));
-    await page.keyboard.press("Control+v");
+    await page.keyboard.press("ControlOrMeta+v");
     const question = page.getByRole("alertdialog");
     await expect(question).toContainText("Add 2 new rows for the rest of the paste?");
     await question.getByRole("button", { name: "Add rows" }).click();
@@ -1010,6 +1010,48 @@ test.describe("new and deleted rows, and editors", () => {
     await expect(page.locator("#tasks .masu-draft")).toHaveCount(1);
     await expect(grid(page, "tasks")).toHaveAttribute("aria-activedescendant", "tasks-r31-c0");
   });
+});
+
+test("an undo right after an edit waits for the edit's save", async ({ page }) => {
+  // A slow network: the server's messages come half a second late.
+  let delay = 0;
+  await page.routeWebSocket(/\/live\/websocket/, (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      if (delay > 0) setTimeout(() => ws.send(message), delay);
+      else ws.send(message);
+    });
+  });
+  await openPage(page, "/");
+  const name = page.locator("#customers-r2-c1");
+  await name.click();
+  delay = 500;
+  await page.keyboard.type("Grace");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(name).toHaveText("Alan Matsumoto");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(name).toHaveText("Grace");
+});
+
+test("two changes of a cell, the second before the first's save, both save", async ({ page }) => {
+  let delay = 0;
+  await page.routeWebSocket(/\/live\/websocket/, (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      if (delay > 0) setTimeout(() => ws.send(message), delay);
+      else ws.send(message);
+    });
+  });
+  await openPage(page, "/");
+  const active = page.locator("#customers-r0-c7");
+  await active.click();
+  delay = 500;
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Space");
+  // Both saves answered, half a second each: the cell is back as it was.
+  await page.waitForTimeout(2000);
+  await expect(active).toHaveText("✓");
 });
 
 test.describe("rows without a count, and pages", () => {
