@@ -236,3 +236,17 @@ test("a cell of numbers filters by its value as a bound, and one of text by a pa
   await settled(page, "menus");
   await expect(page.locator("#menus .masu-chip-text")).toContainText([`Name contains ${first}`]);
 });
+
+test("a cell's menu is as tall as its items, whatever height the app's styles give popovers", async ({ page }) => {
+  const height = async () => {
+    await cell(page, 0, 2).click({ button: "right" });
+    await expect(menu(page)).toBeVisible();
+    const box = (await menu(page).boundingBox())!;
+    await page.keyboard.press("Escape");
+    await expect(menu(page)).toHaveCount(0);
+    return box.height;
+  };
+  const own = await height();
+  await page.addStyleTag({ content: "[popover] { height: 100%; }" });
+  expect(await height()).toBe(own);
+});

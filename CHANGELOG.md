@@ -19,6 +19,10 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - A selected cell of a pinned column shows the selection on every second
   row and on chosen rows, not the row's tint (#45).
+- A menu or panel that floats (a cell's menu, a header menu, a panel, the
+  history, a cell editor) is as tall as its content, whatever height the
+  app's styles give popovers: it no longer stretches to the bottom or the
+  top of the window (#44).
 
 ## [0.2.0] - 2026-10-19
 

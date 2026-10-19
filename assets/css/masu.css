@@ -523,10 +523,14 @@
 }
 
 /* A menu or panel above the page (the popover top layer), placed by the
-   browser in the viewport: not the browser's own popover look. */
+   browser in the viewport: not the browser's own popover look. As tall
+   as its content, up to the room it is given (its max-height), whatever
+   height the app's styles give popovers. */
 .masu .masu-menu:popover-open {
   position: fixed;
   inset: auto;
+  height: auto;
+  min-height: 0;
   margin: 0;
   overflow: auto;
 }
