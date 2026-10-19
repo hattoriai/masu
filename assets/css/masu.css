@@ -1509,6 +1509,70 @@
   margin: 0;
 }
 
+/* The history of a cell or a row (Masu.History): its values, newest
+   first, who set each and when, and Restore. */
+.masu-history {
+  display: block;
+  width: 20rem;
+  max-width: calc(100vw - 1rem);
+  overflow: auto;
+  padding: 0.25rem;
+}
+
+.masu-history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.masu-history-entry,
+.masu-history-empty {
+  padding: 0.5rem 0.625rem;
+}
+
+.masu-history-entry + .masu-history-entry {
+  border-top: 1px solid var(--masu-border);
+}
+
+.masu-history-empty {
+  color: var(--masu-muted);
+}
+
+.masu-history-what {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.masu-history-was,
+.masu-history-who {
+  color: var(--masu-muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.masu-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+
+.masu .masu-history-actions button {
+  border: 1px solid var(--masu-border);
+  border-radius: var(--masu-radius);
+  padding: 0.125rem 0.5rem;
+  background: var(--masu-background);
+  color: var(--masu-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.masu .masu-history-actions button:focus-visible {
+  outline: none;
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
+}
+
 /* What an action does: running, how far, how it went. */
 .masu-tasks {
   display: flex;

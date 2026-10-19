@@ -69,6 +69,8 @@ defmodule Masu.Components do
   `deletable` adds and deletes rows, its own way; `on_update`,
   `on_create`, `on_delete` and `on_restore` write them your way, each a
   function of a `Masu.Write`; see the [Editing](editing.md) guide.
+  `history` keeps who changed each cell, when, and from what, and brings
+  a value back; see `Masu.History` and the [History](history.md) guide.
   `:action` acts on the rows selected, and `:row_action` on a row; see
   `Masu.Action` and the [Actions](actions.md) guide. `scope` is in every
   write and every action.
@@ -135,6 +137,11 @@ defmodule Masu.Components do
   attr :row_editable, :any,
     default: nil,
     doc: "a function of a row: `false` makes every cell of the row read-only"
+
+  attr :history, :atom,
+    default: nil,
+    doc:
+      "a `Masu.History` store: the grid records who changed each cell, when, from what to what, and a person sees a cell's history and brings a value back; `user` says who"
 
   attr :scope, :any,
     default: nil,
@@ -430,6 +437,7 @@ defmodule Masu.Components do
       deletable={@deletable}
       row_editable={@row_editable}
       scope={@scope}
+      history={@history}
       presence={@presence}
       user={@user}
       share_view={@share_view}

@@ -132,6 +132,15 @@ sees the grid's `"masu:reply"`.
 * `detail(view, id, row_id, open \\ true)`: opens a row's detail, which
   `render/1` then has; a grid in it is read with its own id.
 
+## History
+
+* `history(view, id, row_id, key \\ nil)`: the history of a cell, or of
+  a row, newest first, as maps of `:id`, `:key`, `:op`, `:before`,
+  `:after`, `:user`, `:origin`, `:batch`, `:batch_size` and `:at`.
+* `restore(view, id, entry_id)`, or `restore(view, id, {:batch, batch})`:
+  brings a value (or a batch) back as Restore and Undo all do;
+  `{:ok, count}` or `{:error, errors}`. See [History](history.md).
+
 ## Actions
 
 * `actions(view, id, :selection)`: the labels of the actions on the rows

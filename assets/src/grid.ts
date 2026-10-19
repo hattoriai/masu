@@ -193,6 +193,8 @@ export class Grid {
   private later = new Map<string, Later>();
   /** Lines above the grid: an action that runs, how far it is, how it went. */
   private tasksEl: HTMLElement | null = null;
+  /** The history of a cell or a row (Masu.History), in a popover. */
+  private historyEl: { el: HTMLElement; cleanup: () => void } | null = null;
 
   /** The rows that changed (Masu.Live), each until its flash ends. */
   private flash = new Map<string, { until: number; color: string | undefined }>();
@@ -1485,7 +1487,189 @@ export class Grid {
       })),
     );
     group(this.rowItems(data));
+    if (this.config.history) {
+      group([
+        { name: "history", label: this.message("history", {}), run: () => this.openHistory(cell, true) },
+        { name: "row-history", label: this.message("row_history", {}), run: () => this.openHistory(cell, false) },
+      ]);
+    }
     return items;
+  }
+
+  /**
+   * The history of a cell (or of its row): its values, newest first, who
+   * set each and when, and Restore; Undo all for a batch of several cells
+   * (someone's paste). In a popover under the cell, as a dialog.
+   */
+  private openHistory(cell: Cell, ofCell: boolean): void {
+    const data = this.dataAt(cell.row);
+    const column = this.columns[cell.col];
+    if (!data || !column || isGroup(data) || isDraft(data)) return;
+    this.closeHistory(false);
+    this.closeCellMenu(false);
+
+    const el = document.createElement("div");
+    el.className = "masu-menu masu-panel masu-history";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-label", ofCell ? this.message("history_of", { label: column.label }) : this.message("row_history", {}));
+    el.tabIndex = -1;
+    const list = document.createElement("ol");
+    list.className = "masu-history-list";
+    list.setAttribute("aria-busy", "true");
+    el.appendChild(list);
+    this.uiEl.appendChild(el);
+
+    const place = () => {
+      const box = (this.cellElement(cell) ?? this.gridEl).getBoundingClientRect();
+      if (floats(el)) {
+        lift(el);
+        placeAt(el, { left: box.left, below: box.bottom + 4, above: box.top - 4 });
+      } else {
+        const root = this.el.getBoundingClientRect();
+        el.style.top = `${box.bottom - root.top + 4}px`;
+        el.style.insetInlineStart = `${Math.max(0, box.left - root.left)}px`;
+      }
+    };
+    const unfollow = follow(place);
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.closeHistory(true);
+      }
+    });
+    const onDown = (event: Event) => {
+      if (!el.contains(event.target as Node)) this.closeHistory(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    this.historyEl = {
+      el,
+      cleanup: () => {
+        unfollow();
+        document.removeEventListener("mousedown", onDown);
+      },
+    };
+    place();
+    el.focus();
+
+    const payload: Record<string, unknown> = { id: data[0] };
+    if (ofCell) payload.key = column.key;
+    this.transport.push("masu:history", payload, (reply) => {
+      if (this.historyEl?.el !== el) return;
+      this.fillHistory(list, (reply.entries as HistoryEntry[]) ?? [], ofCell);
+      list.setAttribute("aria-busy", "false");
+      place();
+      (el.querySelector<HTMLElement>("button") ?? el).focus();
+    });
+  }
+
+  private fillHistory(list: HTMLElement, entries: HistoryEntry[], ofCell: boolean): void {
+    if (entries.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "masu-history-empty";
+      empty.textContent = this.message("history_empty", {});
+      list.replaceChildren(empty);
+      return;
+    }
+    const batches = new Set<string>();
+    list.replaceChildren(
+      ...entries.map((entry) => {
+        const item = document.createElement("li");
+        item.className = "masu-history-entry";
+        const col = this.columns.findIndex((column) => column.key === entry.key);
+        const format = (value: unknown) =>
+          col >= 0 ? this.formatters[col](value as CellValue) || this.message("empty_value", {}) : String(value ?? "");
+
+        const what = document.createElement("div");
+        what.className = "masu-history-what";
+        if (entry.op === "create") what.textContent = this.message("history_created", {});
+        else if (entry.op === "delete") what.textContent = this.message("history_deleted", {});
+        else {
+          const label = !ofCell && col >= 0 ? `${this.columns[col].label}: ` : "";
+          what.textContent = `${label}${format(entry.after)}`;
+          const was = document.createElement("span");
+          was.className = "masu-history-was";
+          was.textContent = this.message("history_was", { label: format(entry.before) });
+          what.append(" ", was);
+        }
+
+        const who = document.createElement("div");
+        who.className = "masu-history-who";
+        const origin = HISTORY_ORIGINS.includes(entry.origin) ? ` · ${this.message(`history_origin_${entry.origin}`, {})}` : "";
+        const time = document.createElement("time");
+        time.dateTime = entry.at;
+        time.title = new Date(entry.at).toLocaleString(this.config.locale ?? undefined);
+        time.textContent = this.ago(entry.at);
+        who.append(`${entry.user ?? this.message("history_someone", {})} · `, time, origin);
+        item.append(what, who);
+
+        const actions = document.createElement("div");
+        actions.className = "masu-history-actions";
+        if (entry.op === "update" && col >= 0) {
+          const restore = document.createElement("button");
+          restore.type = "button";
+          restore.className = "masu-history-restore";
+          restore.textContent = this.message("history_restore", { label: format(entry.before) });
+          restore.addEventListener("click", () => this.restoreHistory({ entry: entry.id }));
+          actions.appendChild(restore);
+        }
+        if (entry.batch && entry.batch_size > 1 && !batches.has(entry.batch)) {
+          batches.add(entry.batch);
+          const all = document.createElement("button");
+          all.type = "button";
+          all.className = "masu-history-restore-batch";
+          all.textContent = this.message("history_restore_batch", { count: entry.batch_size });
+          all.addEventListener("click", () => this.restoreHistory({ batch: entry.batch }));
+          actions.appendChild(all);
+        }
+        if (actions.childElementCount > 0) item.appendChild(actions);
+        return item;
+      }),
+    );
+  }
+
+  /** How long ago, in the grid's locale ("2 minutes ago"). */
+  private ago(at: string): string {
+    const seconds = (new Date(at).getTime() - Date.now()) / 1000;
+    const format = new Intl.RelativeTimeFormat(this.config.locale ?? undefined, { numeric: "auto" });
+    const units: [Intl.RelativeTimeFormatUnit, number][] = [
+      ["year", 31_536_000],
+      ["month", 2_592_000],
+      ["day", 86_400],
+      ["hour", 3_600],
+      ["minute", 60],
+    ];
+    for (const [unit, size] of units) {
+      if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
+    }
+    return format.format(0, "second");
+  }
+
+  /** Brings a value of the history back (or a batch): an edit, which the server checks as any. */
+  private restoreHistory(payload: { entry: string | null } | { batch: string | null }): void {
+    this.closeHistory(true);
+    this.transport.push("masu:history_restore", payload, (reply) => {
+      const errors = (reply.errors as [unknown, string, string][]) ?? [];
+      for (const [id, key, message] of errors) this.errors.set(cellKey(id, key), message);
+      if (errors.length > 0) {
+        const [, key, message] = errors[0];
+        const column = this.columns.find((c) => c.key === key);
+        this.announce(`${column?.label ?? key}: ${message}`);
+      } else {
+        this.announce(this.message("history_restored", { count: (reply.restored as number) ?? 0 }));
+      }
+      this.refreshRows();
+    });
+  }
+
+  private closeHistory(focus: boolean): void {
+    if (!this.historyEl) return;
+    const { el, cleanup } = this.historyEl;
+    this.historyEl = null;
+    cleanup();
+    drop(el);
+    el.remove();
+    if (focus) this.gridEl.focus({ preventScroll: true });
   }
 
   /** The items of a row's actions (Masu.Action): those it shows, links, disabled ones too. */
@@ -2031,6 +2215,12 @@ export class Grid {
       return;
     }
 
+    // The history of the active cell (Ctrl+Alt+H), with a history.
+    if (this.config.history && mod && event.altKey && event.code === "KeyH" && this.active.row >= 0) {
+      event.preventDefault();
+      this.openHistory(this.active, true);
+      return;
+    }
     // The menu of the active cell, or of the header.
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
       this.menuKeyAt = performance.now();
@@ -4453,6 +4643,23 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   column_menu: "{label} menu",
   cell_menu: "{label}: actions",
   row_actions: "Row actions",
+  history: "History",
+  row_history: "Row history",
+  history_of: "{label}: history",
+  history_empty: "No changes yet",
+  history_was: "was {label}",
+  history_created: "Row added",
+  history_deleted: "Row deleted",
+  history_someone: "Someone",
+  history_restore: "Restore {label}",
+  history_restore_batch: "Undo all {count}",
+  history_restored: "{count} restored",
+  history_origin_paste: "pasted",
+  history_origin_fill: "filled",
+  history_origin_clear: "cleared",
+  history_origin_undo: "undone",
+  history_origin_redo: "redone",
+  history_origin_restore: "restored",
   action_done: "{label}: done",
   action_running: "{label}: running…",
   action_progress: "{label}: {done} of {total}",
@@ -4571,6 +4778,23 @@ type Later =
   | { kind: "edits"; edits: Edit[]; mode: "edit" | "undo" | "redo" }
   | { kind: "delete"; count: number }
   | { kind: "action"; label: string };
+
+/** An entry of the history of a cell or a row (Masu.History). */
+interface HistoryEntry {
+  id: string | null;
+  key: string | null;
+  op: "update" | "create" | "delete";
+  before: unknown;
+  after: unknown;
+  user: string | null;
+  origin: string;
+  batch: string | null;
+  batch_size: number;
+  at: string;
+}
+
+/** The origins of an entry that its line says (a paste, a restore...). */
+const HISTORY_ORIGINS = ["paste", "fill", "clear", "undo", "redo", "restore"];
 
 interface MessageValues {
   count?: number;

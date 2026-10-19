@@ -112,6 +112,7 @@ defmodule Masu.MixProject do
         "guides/koyomi.md",
         "guides/live.md",
         "guides/collaboration.md",
+        "guides/history.md",
         "guides/views.md",
         "guides/trees.md",
         "guides/groups.md",
@@ -137,6 +138,7 @@ defmodule Masu.MixProject do
           "guides/koyomi.md",
           "guides/live.md",
           "guides/collaboration.md",
+          "guides/history.md",
           "guides/views.md",
           "guides/trees.md",
           "guides/groups.md",
@@ -166,6 +168,7 @@ defmodule Masu.MixProject do
           Masu.Messages
         ],
         Writes: [Masu.Write, Masu.Write.Change, Masu.Wire],
+        History: [Masu.History, Masu.History.Entry, Masu.History.Ecto, Masu.History.Memory],
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],
         Sources: [Masu.Source, Masu.Source.List, Masu.Source.Ecto],

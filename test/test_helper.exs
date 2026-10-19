@@ -2,7 +2,9 @@
 {:ok, _pid} = MasuTest.Endpoint.start_link()
 
 {:ok, _pid} =
-  Supervisor.start_link([MasuTest.Presence, Masu.Views.Memory], strategy: :one_for_one)
+  Supervisor.start_link([MasuTest.Presence, Masu.Views.Memory, Masu.History.Memory],
+    strategy: :one_for_one
+  )
 
 # The SQLite repo of the Ecto source tests, with six orders, for the whole run.
 :ok = MasuTest.Orders.setup!()

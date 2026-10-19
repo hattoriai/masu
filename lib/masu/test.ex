@@ -605,6 +605,59 @@ defmodule Masu.Test do
     view
   end
 
+  @doc """
+  The history of the cell of the row `row_id` and the column `key` of the
+  grid `id` (`history`, see `Masu.History`), or of the row when `key` is
+  nil, newest first, as its popover shows it (none for a row the grid's
+  query does not show): maps of `:id`, `:key`,
+  `:op`, `:before`, `:after` (as the browser gets them), `:user`,
+  `:origin`, `:batch`, `:batch_size` and `:at`.
+  """
+  @spec history(struct(), String.t(), term(), String.t() | atom() | nil) :: [map()]
+  def history(view, id, row_id, key \\ nil) do
+    payload = if key, do: %{"id" => row_id, "key" => to_string(key)}, else: %{"id" => row_id}
+
+    for entry <- event(view, id, "masu:history", payload)["entries"] do
+      %{
+        id: entry["id"],
+        key: entry["key"],
+        op: String.to_existing_atom(entry["op"]),
+        before: entry["before"],
+        after: entry["after"],
+        user: entry["user"],
+        origin: entry["origin"],
+        batch: entry["batch"],
+        batch_size: entry["batch_size"],
+        at: entry["at"]
+      }
+    end
+  end
+
+  @doc """
+  Brings back the value before an entry of the history of the grid `id`
+  (its `:id`, `history/4`), or, with `{:batch, batch}`, every cell of a
+  batch (someone's paste), as its Restore does: an edit, refused for a
+  cell that changed since. Returns `{:ok, count}` of the cells restored,
+  or `{:error, errors}` as `edit/4` does.
+  """
+  @spec restore(struct(), String.t(), String.t() | {:batch, String.t()}) ::
+          {:ok, non_neg_integer()} | {:error, [{term(), String.t(), String.t()}]}
+  def restore(view, id, entry) do
+    payload =
+      case entry do
+        {:batch, batch} -> %{"batch" => batch}
+        entry_id -> %{"entry" => entry_id}
+      end
+
+    case event(view, id, "masu:history_restore", payload) do
+      %{"errors" => [], "restored" => count} ->
+        {:ok, count}
+
+      %{"errors" => errors} ->
+        {:error, Enum.map(errors, fn [id, key, message | _] -> {id, key, message} end)}
+    end
+  end
+
   @doc "Closes the panel of an item of the grid `id`, as Escape does. Returns the view."
   @spec close_panel(struct(), String.t()) :: struct()
   def close_panel(view, id) do
