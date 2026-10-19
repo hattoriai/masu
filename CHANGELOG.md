@@ -7,6 +7,36 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Editors of your own (`editor` on a `:col`), with no dependency of
+  Masu's on any editor:
+  - a function component of a form field (`@field`, named
+    `cell[value]`), which the server renders in a popover under the
+    cell, with the row as the source reads it now: what its form posts
+    is the new value, text or params (`from` and `to`), cast by the
+    changeset. A Kotoba editor or a Koyomi picker is one component, and
+    a `Phoenix.LiveComponent` in it searches the server. Ctrl+Enter or a
+    submit saves, a click away saves, Escape lets it go (after the
+    editor's own Escape); an edit carries a version of the value it
+    opened with, and a cell changed meanwhile is refused;
+  - an editor of the browser's, by name, given to `configure({editors})`
+    in the app's JavaScript, with options of the column
+    (`editor={{"score", %{max: 100}}}`): it draws in a box over the
+    cell, and the grid keeps Enter, Tab, Escape (unless the editor
+    prevents them) and a click away.
+
+  Either way the grid keeps undo and redo, the errors on the cell, "Ada
+  is editing", and paste, fill down and Delete through the column's type.
+- `Masu.Wire`: a protocol for values of your own types, as a cell shows,
+  copies and exports them (a rich text's text, a range of days).
+- `Masu.Test.open_editor/4` and `close_editor/2`; `edit/4` takes the
+  params of an editor's form.
+- Guides: [Editors of your own](editors.md), and how to plug in
+  [Kotoba](kotoba.md) (rich text in cells) and [Koyomi](koyomi.md)
+  (pickers in cells, and a picker above the grid that filters it through
+  its URL), with no dependency of Masu's on either.
+
 ### Changed
 
 Breaking: every write goes through a `Masu.Write`, and the functions

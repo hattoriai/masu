@@ -1471,6 +1471,44 @@
   color: var(--masu-invalid);
 }
 
+/* Editors of the app's own: a box over the cell for one of the
+   browser's (configure({editors})), and a popover under it for a form. */
+.masu-own-editor {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 var(--masu-cell-padding, 0.75rem);
+  background: var(--masu-background);
+  box-shadow: inset 0 0 0 2px var(--masu-accent);
+}
+
+/* Its controls fit the box, unless they say otherwise. */
+.masu-own-editor > input,
+.masu-own-editor > select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.masu-cell-editor {
+  padding: 0.75rem;
+}
+
+.masu-cell-editor-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--masu-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.masu-cell-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
 /* What an action does: running, how far, how it went. */
 .masu-tasks {
   display: flex;
@@ -1693,18 +1731,21 @@
   background: var(--masu-border);
 }
 
-.masu-action-panel {
+.masu-action-panel,
+.masu-cell-editor {
   display: block;
   width: auto;
   min-width: 14rem;
   max-width: min(28rem, calc(100% - 0.5rem));
 }
 
-.masu-action-panel[hidden] {
+.masu-action-panel[hidden],
+.masu-cell-editor[hidden] {
   display: none;
 }
 
-.masu-action-panel:focus-visible {
+.masu-action-panel:focus-visible,
+.masu-cell-editor:focus-visible {
   outline: none;
   box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent)), 0 8px 24px rgba(0, 0, 0, 0.14);
 }

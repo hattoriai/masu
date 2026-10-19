@@ -93,6 +93,11 @@ grid's reason.
 * `page(view, id, page)`: goes to a page (from 1) of a grid with
   `paging={:pages}`, and gives the ids of its rows.
 
+An editor of yours that is a form: `open_editor(view, id, row_id, key)`
+renders it, which `render/1` then has, and `close_editor(view, id)`
+closes it; `edit/4` saves what it would post (text, or a map of params:
+`%{"from" => ..., "to" => ...}`). See [Editors of your own](editors.md).
+
 ## New and deleted rows
 
 * `add_rows(view, id, rows, opts \\ [])`: adds rows as "+ New row" does,

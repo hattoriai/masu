@@ -47,6 +47,8 @@ export interface ColumnConfig {
   headerActions?: ActionItem[];
   /** The app's items of the menu of its cells (`:cell_action`). */
   cellActions?: ActionItem[];
+  /** An editor of the app's own (`editor` on a `:col`): a form the server renders, or one of the browser's, by name. */
+  editor?: { kind: "form" } | { kind: "js"; name: string; options: Record<string, unknown> } | null;
 }
 
 /** An item of a menu of the app's own (Masu.Action). */
@@ -242,4 +244,55 @@ export interface Person {
 export interface Options {
   /** Draws the label of a person on their cell: text, or an element. */
   peerLabel?: (person: Person) => string | HTMLElement;
+  /** Editors of the app's own, by name: a column with `editor="name"` edits with it. */
+  editors?: Record<string, CellEditorFactory>;
 }
+
+/**
+ * What an editor of the app's own gets (`configure({editors})`): the cell,
+ * and where to draw. It draws in `element`, a box over the cell as wide as
+ * its column and as tall as its row (it may grow), and says when it is
+ * done with `commit` or `cancel`.
+ *
+ * The keys it handles, it prevents (`event.preventDefault()`): the grid
+ * acts on the others, Enter and Tab (commit, and move), Escape (cancel).
+ * The grid commits `value()` when the focus leaves the editor, and checks
+ * a value by the column's type before it saves it, as it does for its own
+ * editors; undo, conflicts, errors on the cell and "Ada is editing" are
+ * the grid's.
+ */
+export interface CellEditorContext {
+  /** The box to draw in, over the cell. */
+  element: HTMLElement;
+  /** The cell's value, as the browser has it. */
+  value: CellValue;
+  /** The character typed that opened the editor, if one did. */
+  text: string | null;
+  /** The row's id, and its values by column key. */
+  id: unknown;
+  row: Record<string, CellValue>;
+  column: ColumnConfig;
+  /** The options of the column's editor (`editor={{"name", %{...}}}`). */
+  options: Record<string, unknown>;
+  /** The name of the cell, for the editor's input (`aria-label`). */
+  label: string;
+  /** The grid's locale, when it has one. */
+  locale: string | null;
+  /** Saves a value; `move` goes to the next cell, as Enter or Tab do. */
+  commit(value: CellValue, move?: "down" | "up" | "right" | "left"): void;
+  /** Lets the edit go, as Escape does. */
+  cancel(): void;
+}
+
+export interface CellEditor {
+  /** Takes the focus; the first control of `element` takes it unless given. */
+  focus?(): void;
+  /** The value as it is now: what the grid saves when the focus leaves the editor. */
+  value?(): CellValue;
+  /** Whether a node is the editor's own, outside `element` (a list it put elsewhere). */
+  contains?(node: Node): boolean;
+  /** Called when the editor closes. */
+  destroy?(): void;
+}
+
+export type CellEditorFactory = (context: CellEditorContext) => CellEditor;

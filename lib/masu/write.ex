@@ -391,6 +391,10 @@ defmodule Masu.Write do
       :error ->
         true
 
+      # An editor's form: a version of the value the person saw.
+      {:ok, {:version, version}} ->
+        Masu.Edit.version(Column.get(Column.find(columns, key), row)) == version
+
       {:ok, seen} ->
         column = Column.find(columns, key)
         now = Column.get(column, row)

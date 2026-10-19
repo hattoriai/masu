@@ -192,7 +192,7 @@ defmodule Masu.Value do
   @doc """
   The value as the browser gets it in JSON: numbers and booleans as they
   are, decimals as strings (no digit is lost), dates and times in ISO
-  8601, atoms and other terms as text.
+  8601, atoms as text, and other terms as `Masu.Wire` says.
   """
   @spec to_wire(term()) :: term()
   def to_wire(nil), do: nil
@@ -204,12 +204,8 @@ defmodule Masu.Value do
 
   def to_wire(%{__struct__: Decimal} = value), do: Decimal.to_string(value, :normal)
 
-  def to_wire(value) do
-    case String.Chars.impl_for(value) do
-      nil -> inspect(value)
-      _impl -> to_string(value)
-    end
-  end
+  # Any other value: its own (Masu.Wire), its text, or how it inspects.
+  def to_wire(value), do: Masu.Wire.to_wire(value)
 
   defp decimal?, do: Code.ensure_loaded?(Decimal)
 end

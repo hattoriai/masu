@@ -578,6 +578,33 @@ defmodule Masu.Test do
     run_action(view, id, :cell, label, to_string(key), payload)
   end
 
+  @doc """
+  Opens the editor of the cell of the row `row_id` and the column `key`
+  of the grid `id`, when the column's `editor` is a form of yours: the
+  grid renders it, which `Phoenix.LiveViewTest.render/1` then has. A
+  value it would post is saved with `edit/4`, as the browser saves it.
+  Returns the view.
+  """
+  @spec open_editor(struct(), String.t(), term(), String.t() | atom()) :: struct()
+  def open_editor(view, id, row_id, key) do
+    case event(view, id, "masu:cell_editor", %{"id" => row_id, "key" => to_string(key)}) do
+      %{"error" => _error} ->
+        flunk(
+          "the grid #{id} has no editor of a form for the cell #{inspect(row_id)}, #{inspect(key)}"
+        )
+
+      _reply ->
+        view
+    end
+  end
+
+  @doc "Closes the editor of a cell of the grid `id`, as Escape does. Returns the view."
+  @spec close_editor(struct(), String.t()) :: struct()
+  def close_editor(view, id) do
+    event(view, id, "masu:cell_editor", %{"open" => false})
+    view
+  end
+
   @doc "Closes the panel of an item of the grid `id`, as Escape does. Returns the view."
   @spec close_panel(struct(), String.t()) :: struct()
   def close_panel(view, id) do

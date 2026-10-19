@@ -91,6 +91,7 @@ defmodule Masu.Grid do
        pending: %{},
        cell_menu: [],
        action_panel: nil,
+       cell_editor: nil,
        column_specs: nil,
        types: %{},
        load: :inline,
@@ -1311,6 +1312,29 @@ defmodule Masu.Grid do
   def handle_event("masu:action_panel", %{"open" => false}, socket),
     do: {:reply, %{}, assign(socket, action_panel: nil)}
 
+  # The editor of a cell that is a form of the app's (a column's `editor`
+  # function): rendered here, in a popover, with the cell's value as the
+  # row has it now, and a version of it that the edit carries back.
+  def handle_event("masu:cell_editor", %{"open" => false}, socket),
+    do: {:reply, %{}, assign(socket, cell_editor: nil)}
+
+  def handle_event("masu:cell_editor", %{"id" => id, "key" => key}, socket) when is_binary(key) do
+    assigns = socket.assigns
+    row_id = row_id(assigns)
+
+    with %Column{editable: true, editor: {:form, _fun}} = column <-
+           Column.find(assigns.columns, key),
+         [row | _] <- fetch_row(assigns, id, row_id),
+         true <- row_edits?(assigns, row, column) do
+      value = Column.get(column, row)
+      version = Masu.Edit.version(value)
+      editor = %{id: id, key: key, row: row, value: value, version: version}
+      {:reply, %{"version" => version}, assign(socket, cell_editor: editor)}
+    else
+      _other -> {:reply, %{"error" => "editor"}, assign(socket, cell_editor: nil)}
+    end
+  end
+
   # A row's detail (the `:detail` slot) opened or closed.
   def handle_event("masu:detail", %{"id" => id} = params, socket) do
     open = Enum.reject(socket.assigns.open_details, &(&1 == id))
@@ -1546,6 +1570,23 @@ defmodule Masu.Grid do
   end
 
   defp action_context(_assigns, _action, _column, _params), do: {:error, "row"}
+
+  # Whether the row's state lets the column's cell edit.
+  defp row_edits?(assigns, row, column) do
+    (is_nil(assigns.row_editable) or assigns.row_editable.(row) != false) and
+      Column.editable?(column, row)
+  end
+
+  # The open editor of a cell that is a form of the app's: the column, as
+  # the grid shows it now (none, when it no longer edits with a form).
+  defp cell_editor(%{cell_editor: nil}), do: nil
+
+  defp cell_editor(%{cell_editor: %{key: key}, columns: columns}) do
+    case Column.find(columns, key) do
+      %Column{editable: true, editor: {:form, _fun}} = column -> column
+      _other -> nil
+    end
+  end
 
   # What every action's context has: the grid, the scope, and a ref of
   # its own (for `:async`).
@@ -2263,6 +2304,15 @@ defmodule Masu.Grid do
         >
           {render_slot([panel.slot], @action_panel.context)}
         </div>
+        <.live_component
+          :if={column = cell_editor(assigns)}
+          module={Masu.CellEditor}
+          id={"#{@id}-cell-editor"}
+          grid={@id}
+          column={column}
+          editor={@cell_editor}
+          scope={@scope}
+        />
       </div>
       <%!-- The scroll box is the server's, for the details it renders in it;
            its rows are the browser's (phx-update="ignore"). --%>
@@ -2510,6 +2560,7 @@ defmodule Masu.Grid do
       "filterable" => column.filterable,
       "filters" => column.filter_ops && Enum.map(column.filter_ops, &Atom.to_string/1),
       "editable" => column.editable,
+      "editor" => editor_config(column.editor),
       "creatable" => column.creatable,
       "values" => column.values && Enum.map(column.values, &Value.to_wire/1),
       "decimals" => column.decimals,
@@ -2519,6 +2570,14 @@ defmodule Masu.Grid do
       "aggregate" => aggregate_name(column.aggregate)
     }
   end
+
+  # An editor of the app's: its form, rendered here, or the browser's own,
+  # by name, with its options.
+  defp editor_config(nil), do: nil
+  defp editor_config({:form, _fun}), do: %{"kind" => "form"}
+
+  defp editor_config({:js, name, options}),
+    do: %{"kind" => "js", "name" => name, "options" => options}
 
   defp aggregate_name(nil), do: nil
   defp aggregate_name(aggregate) when is_atom(aggregate), do: Atom.to_string(aggregate)
