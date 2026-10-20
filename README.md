@@ -299,9 +299,9 @@ pushes `v<version>`.
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/hattoriai/masu/blob/main/CONTRIBUTING.md): when a change needs an issue
+See [CONTRIBUTING.md](CONTRIBUTING.md): when a change needs an issue
 first, and what a pull request needs. Report a security problem
-privately, as [SECURITY.md](https://github.com/hattoriai/masu/blob/main/SECURITY.md) says.
+privately, as [SECURITY.md](SECURITY.md) says.
 
 ## License
 

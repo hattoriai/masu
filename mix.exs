@@ -128,7 +128,9 @@ defmodule Masu.MixProject do
         "guides/theming.md",
         "guides/accessibility.md",
         "guides/limits.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md"
       ],
       groups_for_extras: [
         Guides: [
