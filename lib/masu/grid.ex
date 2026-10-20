@@ -790,7 +790,15 @@ defmodule Masu.Grid do
 
   defp list_views(socket), do: socket
 
-  defp views_key(assigns), do: assigns.views_key || assigns.id
+  # A scope keeps its views apart from another's: an account's, say.
+  defp views_key(assigns) do
+    key = assigns.views_key || assigns.id
+
+    case Map.get(assigns, :views_scope) do
+      nil -> key
+      scope -> "#{key}@#{scope}"
+    end
+  end
 
   defp source_opts(assigns) do
     [
@@ -807,13 +815,16 @@ defmodule Masu.Grid do
   # A column that the source cannot sort or filter by does neither. A
   # column is editable when the grid edits, and it names a field.
   # A column takes a value on a new row when the grid creates rows, as it
-  # takes one in an edit. An enum's values are its own, or its schema's.
+  # takes one in an edit; a field of `create_with` takes neither. An
+  # enum's values are its own, or its schema's.
   defp supported(source, columns, assigns) do
     edits? = edits?(assigns)
     creates? = creates?(assigns)
+    fixed = assigns |> Map.get(:create_with, %{}) |> Map.keys() |> Enum.map(&to_string/1)
 
     Enum.map(columns, fn column ->
-      field? = column.editable != false and named_field?(column)
+      field? = settable?(column, fixed)
+
       many? = Source.many?(source, column)
 
       column = %{
@@ -854,6 +865,11 @@ defmodule Masu.Grid do
   # The operators of a column of one value, of those its source runs.
   defp scalar_ops(nil), do: nil
   defp scalar_ops(ops), do: ops -- [:all_of, :none_of]
+
+  # A column the person may set: a field, not `editable={false}`, nor
+  # one of `create_with`.
+  defp settable?(column, fixed),
+    do: column.editable != false and named_field?(column) and to_string(column.field) not in fixed
 
   # A field of a map or struct: not a function, nor a place in a row that
   # is a list.

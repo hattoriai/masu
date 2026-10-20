@@ -112,6 +112,26 @@ defmodule Masu.WriteTest do
       end
     end
 
+    test "a new row's create_with fields win over what the changeset cast" do
+      cast = fn row, params ->
+        Ecto.Changeset.cast({row, %{name: :string, account: :string}}, params, [:name, :account])
+      end
+
+      write = %Write{
+        grid: "g",
+        op: :create,
+        changes: [%Change{index: 0, params: %{"name" => "Eve", "account" => "evil"}}],
+        grid_config: %{
+          source: nil,
+          changeset: cast,
+          struct: %{id: 7, name: nil, account: nil},
+          create_with: %{account: "acme"}
+        }
+      }
+
+      assert Write.saved(Write.save(write)) == [%{id: 7, name: "Eve", account: "acme"}]
+    end
+
     test "a ref is a ref" do
       assert_raise ArgumentError, ~r/not the ref/, fn -> Masu.reply("nope", :ok) end
     end

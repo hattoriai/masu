@@ -117,6 +117,11 @@ defmodule Masu.Components do
     doc:
       "with `changeset`: the struct of a new row (or a function that gives it), which the changeset casts and the repo inserts; the person adds rows"
 
+  attr :create_with, :any,
+    default: nil,
+    doc:
+      "fields every new row gets, as a map or keyword list (`%{account_id: @current_scope.account.id}`): put on `struct` before the changeset and again after it, so params cannot change them; the person neither sets nor edits a cell of these fields"
+
   attr :on_update, :any,
     default: nil,
     doc:
@@ -181,6 +186,11 @@ defmodule Masu.Components do
   attr :views_key, :string,
     default: nil,
     doc: "with `views`: the name of the grid in the store; its id unless given"
+
+  attr :views_scope, :any,
+    default: nil,
+    doc:
+      "with `views`: whose views these are, such as the account's id; the store keeps each scope's views apart, so a view shared in one is not offered in another"
 
   attr :columns_menu, :boolean,
     default: false,
@@ -444,6 +454,7 @@ defmodule Masu.Components do
       live={@live}
       changeset={@changeset}
       struct={@struct}
+      create_with={create_with!(@id, @create_with)}
       on_update={@on_update}
       on_create={@on_create}
       on_delete={@on_delete}
@@ -476,6 +487,7 @@ defmodule Masu.Components do
       url={@url}
       views={@views}
       views_key={@views_key}
+      views_scope={@views_scope}
       columns_menu={@columns_menu}
       person={@person}
       row_id={@row_id}
@@ -546,6 +558,18 @@ defmodule Masu.Components do
          )
 
   defp check_row_id!(_assigns), do: :ok
+
+  defp create_with!(_id, nil), do: %{}
+  defp create_with!(_id, fields) when is_map(fields), do: fields
+
+  defp create_with!(id, fields) do
+    if Keyword.keyword?(fields) do
+      Map.new(fields)
+    else
+      raise ArgumentError,
+            "<.data_grid id=#{inspect(id)}> create_with is a map or a keyword list of fields"
+    end
+  end
 
   # A controlled grid's rows are the LiveView's page: what reads the
   # source's rows beyond them, or writes them, is not for it.

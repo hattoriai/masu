@@ -7,6 +7,18 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `views_scope`: whose views a grid's views are, such as the account's
+  id. The store keeps each scope's views apart (under `"orders@42"`), so
+  a view shared in one account is not offered in another. Without it,
+  every account has the grid's one pool, as before.
+- `create_with`: fields every new row gets, as a map or keyword list
+  (`create_with={[account_id: @current_scope.account.id]}`). The grid
+  puts them on `struct` before the changeset and on the changeset after
+  it, so params cannot change them, and a column of one of these fields
+  neither takes a value on a new row nor edits.
+
 ## [0.3.0] - 2026-10-20
 
 ### Added
