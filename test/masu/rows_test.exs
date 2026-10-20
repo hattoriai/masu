@@ -141,6 +141,25 @@ defmodule Masu.RowsTest do
     end
   end
 
+  describe "a grid with create_with" do
+    test "puts its fields on every new row, and the person sets or edits none of them",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/rows/account")
+
+      assert {:ok, [_id]} = add_rows(view, "people", %{name: "Grace"})
+      assert List.last(rows(view, "people")) == %{"name" => "Grace", "account" => "acme"}
+
+      assert {:error, [{:error, [{"account", "This cell cannot be set."}]}]} =
+               add_rows(view, "people", %{name: "Eve", account: "evil"})
+
+      assert {:error, [{1, "account", "This cell cannot be edited."}]} =
+               edit(view, "people", [{1, :account, "evil"}])
+
+      assert %{"creatable" => false, "editable" => false} =
+               Enum.find(config_of(view, "people")["columns"], &(&1["key"] == "account"))
+    end
+  end
+
   describe "a grid with functions of its own" do
     test "adds and deletes through them; a delete it cannot undo has no token", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/rows/things")

@@ -17,7 +17,13 @@ defmodule MasuTest.ViewsLive do
   @impl true
   def mount(params, _session, socket) do
     store = if params["store"] == "ecto", do: MasuTest.EctoViews, else: Masu.Views.Memory
-    {:ok, assign(socket, user: %{id: params["user"] || "ada"}, store: store)}
+
+    {:ok,
+     assign(socket,
+       user: %{id: params["user"] || "ada"},
+       account: params["account"],
+       store: store
+     )}
   end
 
   @impl true
@@ -29,6 +35,7 @@ defmodule MasuTest.ViewsLive do
       url
       views={@store}
       user={@user}
+      views_scope={@account}
       columns_menu
       sort={[:name]}
     >

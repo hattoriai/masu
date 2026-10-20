@@ -160,6 +160,27 @@ defmodule Masu.ViewsTest do
       assert [%{"name" => "Team"}] = grid_config(ada)["views"]
     end
 
+    test "a scope keeps its views apart from another's" do
+      for store <- ~w(memory ecto) do
+        ada = open("/views?store=#{store}&user=ada&account=1")
+        sort(ada, "people", {"age", :desc})
+        view_event(ada, %{"action" => "save", "name" => "Oldest", "shared" => true})
+
+        assert [%{"name" => "Oldest"}] =
+                 grid_config(open("/views?store=#{store}&user=alan&account=1"))["views"]
+
+        other = open("/views?store=#{store}&user=alan&account=2")
+        assert grid_config(other)["views"] == []
+
+        # The same person in another account starts with no last view.
+        assert view(open("/views?store=#{store}&user=ada&account=2"), "people") == %{}
+
+        assert view(open("/views?store=#{store}&user=ada&account=1"), "people") == %{
+                 "sort" => "-age"
+               }
+      end
+    end
+
     test "a view needs a name" do
       assert %{"error" => "A view needs a name."} =
                view_event(open("/views"), %{"action" => "save", "name" => " "})

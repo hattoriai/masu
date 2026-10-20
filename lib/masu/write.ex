@@ -298,7 +298,8 @@ defmodule Masu.Write do
       Ecto source, each row read, compared again and saved in a
       transaction that locks it; for a list, the changeset applied;
     * `:create` - `changeset.(struct, params)`, inserted by the repo, or
-      applied for a list;
+      applied for a list; the grid's `create_with` fields go on the
+      struct first, and on the changeset after, over what it cast;
     * `:delete` - `Repo.delete`, in a transaction that locks the row; a
       list's row taken out of its copy;
     * `:restore` - the row inserted again; a list's put back.
@@ -451,7 +452,16 @@ defmodule Masu.Write do
   defp save_one(%{op: :create, grid_config: config} = write, change) do
     changeset = config.changeset || missing(write, "changeset")
     struct = config.struct || missing(write, "struct")
-    changeset = changeset.(new_struct(struct), change.params)
+    fields = Map.get(config, :create_with, %{})
+
+    # The fields of `create_with` before the changeset, for its
+    # validations, and after it, over what it cast.
+    changeset =
+      struct
+      |> new_struct()
+      |> put_fields(fields)
+      |> changeset.(change.params)
+      |> Ecto.Changeset.change(fields)
 
     case config.source do
       %Source{module: EctoSource} -> config.repo.insert(changeset, config.repo_opts)
@@ -486,6 +496,10 @@ defmodule Masu.Write do
 
   defp new_struct(fun) when is_function(fun, 0), do: fun.()
   defp new_struct(struct), do: struct
+
+  defp put_fields(row, fields) when fields == %{}, do: row
+  defp put_fields(row, fields) when is_struct(row), do: struct!(row, fields)
+  defp put_fields(row, fields), do: Map.merge(row, fields)
 
   # The row as it is now, locked: the cells someone changed since the
   # person saw them are refused, the others saved.

@@ -278,6 +278,31 @@ order, with a flash; a row that the filters leave out says so.
 A new row takes values in the columns that edit (`editable={false}` and
 columns of a `value` function do not).
 
+### Fields of the person's own: `create_with`
+
+The grid puts nothing of the person's on a new row by itself. In an app
+of many accounts, give it `create_with`, the fields every new row gets:
+
+```heex
+<.data_grid
+  id="tasks"
+  source={@tasks}
+  repo={Repo}
+  changeset={&Task.changeset/2}
+  struct={%Task{status: :todo}}
+  create_with={[account_id: @current_scope.account.id]}
+>
+```
+
+Here `@tasks` is the account's tasks, `where(Task, account_id: ^id)`:
+`create_with` is for new rows, and the `source` scopes what the grid
+reads, edits and deletes. The grid puts them on the struct before the changeset (so its
+validations see them) and on the changeset after it, over whatever it
+cast: even a changeset that casts `account_id` cannot take another
+account from the params. A column of one of these fields neither takes
+a value on a new row nor edits. `on_create` saves your own way and
+gets none of them: take the account from `write.scope` there.
+
 A paste of more lines than there are rows below asks to add the rest as
 new rows, saved at once: those the server refuses stay as drafts, with
 their errors, and the grid goes to the first of them.

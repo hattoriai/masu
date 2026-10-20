@@ -37,6 +37,7 @@ defmodule MasuTest.Router do
     live("/rows/tasks", MasuTest.TasksLive)
     live("/rows/people", MasuTest.RowsPeopleLive)
     live("/rows/things", MasuTest.RowsThingsLive)
+    live("/rows/account", MasuTest.RowsAccountLive)
     live("/counts", MasuTest.CountsLive)
     live("/blocks", MasuTest.BlocksLive)
     live("/ids", MasuTest.IdsLive)

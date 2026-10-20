@@ -51,6 +51,7 @@ defmodule Masu.Edit do
       repo_opts: assigns.repo_opts,
       changeset: assigns[:changeset],
       struct: assigns[:struct],
+      create_with: assigns[:create_with] || %{},
       columns: assigns.all_columns,
       row_id: row_id,
       grid: assigns.id,
