@@ -28,6 +28,8 @@ export interface ColumnConfig {
   filterable: boolean;
   /** The operators its source filters it by (Masu.Source's `filters/2`); null: every operator of its type. */
   filters?: string[] | null;
+  /** Of many values (a path through several related rows): each cell's value is a list. */
+  many?: boolean;
   editable: boolean;
   /** A new row takes a value in it (`create`). */
   creatable?: boolean;

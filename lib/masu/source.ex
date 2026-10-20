@@ -56,8 +56,21 @@ defmodule Masu.Source do
   Whether the source can sort and filter by a column. A database can sort
   only by a field it stores, not by a function of the row; the grid makes
   such a column one that does not sort or filter.
+
+  Without it, every column but one of a related row's field
+  (`field={[:customer, :name]}`, `Masu.Column.path?/1`): a source of
+  your own sorts and filters by a path when it says so.
   """
   @callback supports?(state(), Column.t()) :: boolean()
+
+  @doc """
+  Whether a column of a related row's field (`Masu.Column.path?/1`) is of
+  many values: its path goes through several related rows (a `has_many`).
+  Such a column does not sort or group, and filters by "has any of",
+  "has all of", "has none of", "has none" and "has some". Without it, a
+  column is of many values when it says `many={true}`.
+  """
+  @callback many?(state(), Column.t()) :: boolean()
 
   @doc """
   The operators of `Masu.Filter` the source filters a column by. Without
@@ -153,6 +166,7 @@ defmodule Masu.Source do
               {:ids, [term()]} | {:query, term()}
 
   @optional_callbacks supports?: 2,
+                      many?: 2,
                       filters: 2,
                       columns: 1,
                       totals: 1,
@@ -382,6 +396,18 @@ defmodule Masu.Source do
   @doc false
   @spec supports?(t(), Column.t()) :: boolean()
   def supports?(%__MODULE__{module: module, state: state}, column) do
-    if function_exported?(module, :supports?, 2), do: module.supports?(state, column), else: true
+    if function_exported?(module, :supports?, 2),
+      do: module.supports?(state, column),
+      else: not Column.path?(column)
+  end
+
+  @doc false
+  # Whether a column is of many values: its own `many`, else its source's.
+  @spec many?(t(), Column.t()) :: boolean()
+  def many?(_source, %Column{many: many}) when is_boolean(many), do: many
+
+  def many?(%__MODULE__{module: module, state: state}, column) do
+    Column.path?(column) and function_exported?(module, :many?, 2) and
+      module.many?(state, column)
   end
 end

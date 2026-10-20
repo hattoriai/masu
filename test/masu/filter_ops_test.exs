@@ -115,7 +115,13 @@ defmodule Masu.FilterOpsTest do
       refute :contains in Filter.ops(:integer)
 
       assert Filter.ops(:integer) ==
-               Filter.ops() -- [:contains, :not_contains, :starts_with, :ends_with]
+               Filter.ops() --
+                 [:contains, :not_contains, :starts_with, :ends_with, :all_of, :none_of]
+    end
+
+    test "of many values: has any of, all of, none of, none and some" do
+      assert Filter.many_ops() == [:in, :all_of, :none_of, :is_nil, :not_nil]
+      refute :all_of in Filter.ops(:text)
     end
 
     test "offered: those of the type the source runs, and between of ≥ and ≤" do

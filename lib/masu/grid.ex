@@ -34,7 +34,7 @@ defmodule Masu.Grid do
 
   use Phoenix.LiveComponent
 
-  alias Masu.{Action, Column, Group, Layout, Query, Source, Tree, Value, View}
+  alias Masu.{Action, Column, Filter, Group, Layout, Query, Source, Tree, Value, View}
   alias Masu.Export.{Download, Ticket}
   alias Masu.Source.Ecto, as: EctoSource
   alias Masu.Source.Given
@@ -814,17 +814,28 @@ defmodule Masu.Grid do
 
     Enum.map(columns, fn column ->
       field? = column.editable != false and named_field?(column)
+      many? = Source.many?(source, column)
 
       column = %{
         column
         | editable: edits? and field?,
           creatable: creates? and field?,
+          many: many?,
           values: column.values || enum_values(source, column)
       }
 
-      if Source.supports?(source, column),
-        do: with_filter_ops(column, Source.filter_ops(source, column)),
-        else: %{column | sortable: false, filterable: false, searchable: false}
+      cond do
+        not Source.supports?(source, column) ->
+          %{column | sortable: false, filterable: false, searchable: false}
+
+        many? ->
+          ops = Source.filter_ops(source, column) || Filter.many_ops()
+          column = %{column | sortable: false, aggregate: nil}
+          with_filter_ops(column, Enum.filter(Filter.many_ops(), &(&1 in ops)))
+
+        true ->
+          with_filter_ops(column, scalar_ops(Source.filter_ops(source, column)))
+      end
     end)
   end
 
@@ -839,6 +850,10 @@ defmodule Masu.Grid do
 
   defp with_filter_ops(column, []), do: %{column | filter_ops: [], filterable: false}
   defp with_filter_ops(column, ops), do: %{column | filter_ops: ops}
+
+  # The operators of a column of one value, of those its source runs.
+  defp scalar_ops(nil), do: nil
+  defp scalar_ops(ops), do: ops -- [:all_of, :none_of]
 
   # A field of a map or struct: not a function, nor a place in a row that
   # is a list.
@@ -858,7 +873,7 @@ defmodule Masu.Grid do
 
   defp enum_values(
          %Source{module: EctoSource, state: state},
-         %Column{type: :enum} = column
+         %Column{type: :enum, value: nil} = column
        ),
        do: EctoSource.enum_values(state, column.field)
 
@@ -2319,11 +2334,11 @@ defmodule Masu.Grid do
   defp cells(columns, row) do
     Enum.map(columns, fn
       %Column{slot: nil} = column ->
-        column |> Column.get(row) |> Value.to_wire()
+        Column.wire(column, row)
 
       # An editable column of HEEx sends its value too, for the editor.
       %Column{slot: slot, editable: true} = column ->
-        [slot_html(slot, row), column |> Column.get(row) |> Value.to_wire()]
+        [slot_html(slot, row), Column.wire(column, row)]
 
       %Column{slot: slot} ->
         slot_html(slot, row)
@@ -2507,7 +2522,7 @@ defmodule Masu.Grid do
                 <%= if column.slot do %>
                   {render_slot([column.slot], row)}
                 <% else %>
-                  {column |> Column.get(row) |> Value.to_wire()}
+                  {Column.wire(column, row)}
                 <% end %>
               </div>
             </div>
@@ -2702,6 +2717,7 @@ defmodule Masu.Grid do
       "sortable" => column.sortable,
       "filterable" => column.filterable,
       "filters" => column.filter_ops && Enum.map(column.filter_ops, &Atom.to_string/1),
+      "many" => column.many == true,
       "editable" => column.editable,
       "editor" => editor_config(column.editor),
       "creatable" => column.creatable,

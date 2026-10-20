@@ -220,7 +220,7 @@ defmodule Masu.History do
     end
   end
 
-  defp wire(column, row), do: column |> Column.get(row) |> Value.to_wire()
+  defp wire(column, row), do: Column.wire(column, row)
 
   defp cells(config, row) do
     for %Column{field: field} = column <- config.columns, field != nil, into: %{} do

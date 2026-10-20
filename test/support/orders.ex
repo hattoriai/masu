@@ -109,6 +109,10 @@ defmodule MasuTest.Orders do
 
       for id <- 1..237, do: Repo.insert!(item(id))
 
+      # Sales of customers of companies, with tags and lines: columns of
+      # related rows (Masu.Column paths).
+      :ok = MasuTest.Sales.setup!(Repo)
+
       for {number, customer, status, total, day} <- [
             {"A-1", "Acme", "paid", "10.00", 1},
             {"A-2", "Bob's", "late", "250.50", 2},

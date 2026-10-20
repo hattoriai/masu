@@ -13,6 +13,11 @@ defmodule Masu.Filter do
     * `:in`: one of the values of a list;
     * `:is_nil` and `:not_nil`: no value, or any value (with no `value`).
 
+  A column of many values (a path through several related rows, see
+  `Masu.Column`) filters by `:in` ("has any of" the values), `:all_of`
+  ("has all of"), `:none_of` ("has none of"), `:is_nil` ("has none":
+  no related row) and `:not_nil` ("has some").
+
   The value is read for the column's type (see `Masu.Column`): a date
   column takes `"2026-10-17"` or a `Date`, a number column `"12.5"` or
   `12.5`.
@@ -34,8 +39,14 @@ defmodule Masu.Filter do
     :between,
     :in,
     :is_nil,
-    :not_nil
+    :not_nil,
+    :all_of,
+    :none_of
   ]
+
+  # Of a column of many values only, and the operators of one.
+  @many_only [:all_of, :none_of]
+  @many_ops [:in, :all_of, :none_of, :is_nil, :not_nil]
 
   @text_ops [:contains, :not_contains, :starts_with, :ends_with]
 
@@ -54,6 +65,8 @@ defmodule Masu.Filter do
           | :in
           | :is_nil
           | :not_nil
+          | :all_of
+          | :none_of
 
   @type t :: %__MODULE__{key: String.t(), op: op(), value: term()}
 
@@ -66,16 +79,21 @@ defmodule Masu.Filter do
 
   @doc "The operators of a filter on a column of `type`: those of text only for text and enums."
   @spec ops(Column.type()) :: [op()]
-  def ops(type) when type in [:text, :enum], do: @ops
-  def ops(_type), do: @ops -- @text_ops
+  def ops(type) when type in [:text, :enum], do: @ops -- @many_only
+  def ops(_type), do: @ops -- (@text_ops ++ @many_only)
+
+  @doc "The operators of a filter on a column of many values (`Masu.Column.many?/1`)."
+  @spec many_ops() :: [op()]
+  def many_ops, do: @many_ops
 
   @doc false
   # The operators a column offers, of those its source runs (`direct`):
   # those of its type, and `:between`, which Masu runs as `:gte` and
-  # `:lte` (expand/2).
+  # `:lte` (expand/2). Those of many values stay, for a column the
+  # source says is of many values (the grid keeps them for it alone).
   @spec offered([op()], Column.type()) :: [op()]
   def offered(direct, type) do
-    ops = Enum.filter(ops(type), &(&1 in direct))
+    ops = Enum.filter(ops(type) ++ @many_only, &(&1 in direct))
 
     if :between not in ops and :gte in ops and :lte in ops,
       do: ops ++ [:between],
@@ -124,6 +142,12 @@ defmodule Masu.Filter do
     end
   end
 
+  defp check_op(%Column{many: true, key: key}, op) when op not in @many_ops,
+    do: {:error, "#{op} is not for the column #{inspect(key)} of many values"}
+
+  defp check_op(%Column{many: many, key: key}, op) when op in @many_only and many != true,
+    do: {:error, "#{op} is for a column of many values, not #{inspect(key)}"}
+
   defp check_op(%Column{type: type}, op) when op in @text_ops and type not in [:text, :enum],
     do: {:error, "#{op} is for text, not #{type}"}
 
@@ -147,7 +171,7 @@ defmodule Masu.Filter do
   defp cast_value(_type, :between, value),
     do: {:error, "between takes a list of two values, got: #{inspect(value)}"}
 
-  defp cast_value(type, :in, values) when is_list(values) do
+  defp cast_value(type, op, values) when op in [:in | @many_only] and is_list(values) do
     Enum.reduce_while(values, {:ok, []}, fn value, {:ok, acc} ->
       case cast_one(type, value) do
         {:ok, value} -> {:cont, {:ok, [value | acc]}}
@@ -160,8 +184,8 @@ defmodule Masu.Filter do
     end
   end
 
-  defp cast_value(_type, :in, value),
-    do: {:error, "in takes a list of values, got: #{inspect(value)}"}
+  defp cast_value(_type, op, value) when op in [:in | @many_only],
+    do: {:error, "#{op} takes a list of values, got: #{inspect(value)}"}
 
   defp cast_value(_type, op, nil), do: {:error, "#{op} needs a value"}
   defp cast_value(type, _op, value), do: cast_one(type, value)
@@ -206,6 +230,26 @@ defmodule Masu.Filter do
       :ends_with -> String.ends_with?(text, part)
     end
   end
+
+  @doc """
+  Whether the values of a column of many values (a list, or nil: not
+  loaded) meet the filter, as `Masu.Source.List` checks them.
+  """
+  @spec match_many?(t(), [term()] | nil) :: boolean()
+  def match_many?(filter, nil), do: match_many?(filter, [])
+  def match_many?(%__MODULE__{op: :is_nil}, values), do: values == []
+  def match_many?(%__MODULE__{op: :not_nil}, values), do: values != []
+
+  def match_many?(%__MODULE__{op: :in, value: wanted}, values),
+    do: Enum.any?(wanted, &member?(values, &1))
+
+  def match_many?(%__MODULE__{op: :all_of, value: wanted}, values),
+    do: Enum.all?(wanted, &member?(values, &1))
+
+  def match_many?(%__MODULE__{op: :none_of, value: wanted}, values),
+    do: not Enum.any?(wanted, &member?(values, &1))
+
+  defp member?(values, wanted), do: Enum.any?(values, &(Value.compare(&1, wanted) == :eq))
 
   @doc false
   @spec to_wire(t()) :: map()

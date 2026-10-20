@@ -14,7 +14,7 @@ import { allows, describe, replaceFilter } from "./filters";
 import { fromTSV, inputText, invalid, matching, placePaste, sendValue, shownValue } from "./parse";
 import { FilterMenu } from "./menu";
 import { drop, floats, follow, lift, place as placeAt } from "./float";
-import { copyText, formatter, type Formatter } from "./format";
+import { copyText, formatter, manyFormatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { moveKey, pins, scrollFor, visualLeft, type Pins } from "./layout";
 import { indexAt, rowTop, totalHeight, type Gap } from "./offsets";
@@ -695,7 +695,7 @@ export class Grid {
       } else {
         const value = row[col + 1] as CellValue;
         cell.textContent = this.formatters[col](value);
-        cell.classList.toggle("masu-null", value === null);
+        cell.classList.toggle("masu-null", value === null || (Array.isArray(value) && value.length === 0));
       }
       if (col === 0) this.decorateFirstCell(cell, row);
 
@@ -1496,9 +1496,10 @@ export class Grid {
 
     // A cell of HEEx has its value only when it edits.
     const sent = data[cell.col + 1];
-    const known = !column.html || Array.isArray(sent);
+    const known = column.many || !column.html || Array.isArray(sent);
     if (builtIn.includes("filter") && column.filterable && known) {
-      const value = rawValue(sent);
+      // Of many values: by none or some, not by the cell's values.
+      const value = column.many ? null : rawValue(sent);
       const filter = (spec: FilterSpec) => () =>
         this.setQuery({ ...this.query, filters: replaceFilter(this.query.filters, column.key, spec) });
       // Only the filters the column's source runs.
@@ -1541,10 +1542,12 @@ export class Grid {
         }
       }
       if (allows(column, "is_nil")) {
-        more.push({ name: "filter-empty", label: this.message("filter_empty", {}), run: filter({ key: column.key, op: "is_nil" }) });
+        const words = this.message(column.many ? "filter_none" : "filter_empty", {});
+        more.push({ name: "filter-empty", label: words, run: filter({ key: column.key, op: "is_nil" }) });
       }
       if (allows(column, "not_nil")) {
-        more.push({ name: "filter-not-empty", label: this.message("filter_not_empty", {}), run: filter({ key: column.key, op: "not_nil" }) });
+        const words = this.message(column.many ? "filter_some" : "filter_not_empty", {});
+        more.push({ name: "filter-not-empty", label: words, run: filter({ key: column.key, op: "not_nil" }) });
       }
       group(more);
     }
@@ -2028,7 +2031,10 @@ export class Grid {
 
   private makeFormatters(): void {
     const locale = this.config.locale ?? undefined;
-    this.formatters = this.columns.map((column) => formatter(column.type, locale, column.decimals, column.raw));
+    this.formatters = this.columns.map((column) => {
+      const format = formatter(column.type, locale, column.decimals, column.raw);
+      return column.many ? manyFormatter(format) : format;
+    });
     // A count is an integer; an average of integers has decimals.
     this.aggregateFormatters = this.columns.map((column, col) =>
       column.aggregate === "count" || column.aggregate === "count_distinct"
@@ -4664,6 +4670,11 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   op_lte_time: "on or before",
   op_between: "between",
   op_in: "is one of",
+  op_in_many: "has any of",
+  op_all_of: "has all of",
+  op_none_of: "has none of",
+  op_is_nil_many: "has none",
+  op_not_nil_many: "has some",
   op_is_nil: "is empty",
   op_not_nil: "is not empty",
   not_editable: "{count} cells cannot be edited",
@@ -4768,6 +4779,8 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   exclude_value: "Exclude {label}",
   filter_empty: "Filter by empty",
   filter_not_empty: "Filter by not empty",
+  filter_none: "Filter by none",
+  filter_some: "Filter by some",
   filter_gt: "Greater than {label}",
   filter_lt: "Less than {label}",
   filter_gte: "At least {label}",

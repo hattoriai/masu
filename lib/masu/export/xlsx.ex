@@ -48,7 +48,7 @@ defmodule Masu.Export.Xlsx do
     Stream.concat([[head], rows, ["</sheetData></worksheet>"]])
   end
 
-  defp data_row(columns, {data, r}), do: row(r, Enum.map(columns, &{&1, Column.get(&1, data)}))
+  defp data_row(columns, {data, r}), do: row(r, Enum.map(columns, &{&1, Column.flat(&1, data)}))
 
   defp row(r, cells) do
     [

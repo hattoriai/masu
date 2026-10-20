@@ -47,6 +47,24 @@ defmodule Masu.Column do
   0): a query tool's rows, which come as lists of values in the order of
   its columns. Its key is the place as a string unless given.
 
+  ## Fields of related rows
+
+  `field={[:customer, :name]}` reads a field of a related row: a path of
+  the row's associations (or keys of maps in it) to a field. Its key is
+  the path joined with dots (`"customer.name"`) and its label the path in
+  words ("Customer name") unless given. An Ecto source sorts, filters,
+  searches and groups by it in the database, with a join; a list follows
+  the path in each row. The column is read-only.
+
+  A path through several related rows (a `has_many` or `many_to_many`:
+  `[:tags, :name]`) is a column of many values: a list of the values of
+  the rows that are loaded. It does not sort or group; it filters by
+  "has any of" (`:in`), "has all of" (`:all_of`), "has none of"
+  (`:none_of`), "has none" (`:is_nil`) and "has some" (`:not_nil`). The
+  source says whether a path is of many values (an Ecto source from its
+  associations, a list from its rows); `many={true}` says so for a
+  source of your own.
+
   ## Editing
 
   In a grid that edits, `values` lists the values of an `:enum` column,
@@ -89,7 +107,7 @@ defmodule Masu.Column do
 
   @type t :: %__MODULE__{
           key: String.t(),
-          field: atom() | String.t() | non_neg_integer() | nil,
+          field: atom() | String.t() | non_neg_integer() | [atom()] | nil,
           value: (term() -> term()) | nil,
           label: String.t(),
           type: type(),
@@ -111,7 +129,8 @@ defmodule Masu.Column do
           filter_ops: [Masu.Filter.op()] | nil,
           editor: editor() | nil,
           slot: map() | nil,
-          auto: map() | nil
+          auto: map() | nil,
+          many: boolean() | nil
         }
 
   @typedoc """
@@ -166,7 +185,10 @@ defmodule Masu.Column do
     editor: nil,
     # A column of `type={:auto}`: its attributes, to make it again of the
     # type its values have (typed/2).
-    auto: nil
+    auto: nil,
+    # A path through several related rows: a list of values. nil: its
+    # source says (c:Masu.Source.many?/2).
+    many: nil
   ]
 
   @doc "The types a column can have."
@@ -178,7 +200,8 @@ defmodule Masu.Column do
   or map of the same names).
 
   `field` names the value of a row (a key of a map or a field of a
-  struct); `value`, a function of the row, computes it instead. `key`
+  struct), or is a path to a field of a related row (`[:customer,
+  :name]`); `value`, a function of the row, computes it instead. `key`
   names the column on the wire and in `Masu.Test`; it is the field as a
   string unless given. `label` is the field in words unless given.
 
@@ -202,7 +225,7 @@ defmodule Masu.Column do
       key: key,
       field: field,
       value: value,
-      label: or_default(attrs, :label, humanize(key)),
+      label: or_default(attrs, :label, humanize(label_key(attrs, key, field))),
       type: type,
       width: or_default(attrs, :width, Map.fetch!(@widths, type)),
       min_width: or_default(attrs, :min_width, 48),
@@ -221,9 +244,22 @@ defmodule Masu.Column do
       aggregate: aggregate!(Map.get(attrs, :aggregate)),
       filter_ops: filters!(Map.get(attrs, :filters), type),
       editor: editor!(Map.get(attrs, :editor)),
-      slot: if(Map.get(attrs, :inner_block), do: attrs)
+      slot: if(Map.get(attrs, :inner_block), do: attrs),
+      many: many!(Map.get(attrs, :many), field)
     }
   end
+
+  defp many!(nil, _field), do: nil
+  defp many!(many, field) when is_boolean(many) and is_list(field), do: many
+  defp many!(false, _field), do: false
+
+  defp many!(other, field),
+    do:
+      raise(
+        ArgumentError,
+        "a Masu column's many is a boolean, of a column whose field is a path, got: " <>
+          "#{inspect(other)} for the field #{inspect(field)}"
+      )
 
   defp editor!(nil), do: nil
   defp editor!(fun) when is_function(fun, 1), do: {:form, fun}
@@ -311,16 +347,29 @@ defmodule Masu.Column do
             "unknown Masu column type #{inspect(type)}; the types are #{inspect(@types)} or :auto"
     end
 
+    {path!(field), value, type}
+  end
+
+  # A path of one step is its field.
+  defp path!([field]) when is_atom(field) and field != nil, do: field
+
+  defp path!([_, _ | _] = path) do
+    if Enum.all?(path, &(is_atom(&1) and &1 != nil)), do: path, else: raise_field(path)
+  end
+
+  defp path!(field) do
     check_field!(field)
-    {field, value, type}
+    field
   end
 
   defp check_field!(field) when is_atom(field) or is_binary(field), do: :ok
   defp check_field!(place) when is_integer(place) and place >= 0, do: :ok
+  defp check_field!(field), do: raise_field(field)
 
-  defp check_field!(field) do
+  defp raise_field(field) do
     raise ArgumentError,
-          "a Masu column's field is a key of a row, or a place in a row that is a list (from 0), got: #{inspect(field)}"
+          "a Masu column's field is a key of a row, a path of keys to a field of a related row " <>
+            "([:customer, :name]), or a place in a row that is a list (from 0), got: #{inspect(field)}"
   end
 
   # A slot's attribute that is not given is absent; one given as nil is
@@ -404,18 +453,64 @@ defmodule Masu.Column do
   def get(%__MODULE__{field: place}, row) when is_integer(place) and is_list(row),
     do: Enum.at(row, place)
 
+  def get(%__MODULE__{field: [_ | _] = path}, row), do: follow(path, row)
   def get(%__MODULE__{field: field}, %{} = row), do: Map.get(row, field)
   def get(%__MODULE__{}, _row), do: nil
 
+  @doc false
+  # The value of the column for a row as the browser gets it: a list of
+  # values, for a column of many values.
+  @spec wire(t(), term()) :: term()
+  def wire(%__MODULE__{many: true} = column, row),
+    do: column |> get(row) |> List.wrap() |> Enum.map(&Masu.Value.to_wire/1)
+
+  def wire(column, row), do: column |> get(row) |> Masu.Value.to_wire()
+
+  @doc false
+  # The value of the column for a row in one cell of a file (an export):
+  # the values of a column of many values in one text, or nil.
+  @spec flat(t(), term()) :: term()
+  def flat(%__MODULE__{many: true} = column, row) do
+    case wire(column, row) do
+      [] -> nil
+      values -> Enum.map_join(values, ", ", &to_string/1)
+    end
+  end
+
+  def flat(column, row), do: get(column, row)
+
+  # The value at the end of a path: nil where a related row is missing or
+  # not loaded; the values of each of several rows (a list), without nils.
+  defp follow([], value), do: value
+  defp follow(_path, nil), do: nil
+  defp follow(_path, %{__struct__: Ecto.Association.NotLoaded}), do: nil
+
+  defp follow(path, rows) when is_list(rows),
+    do: rows |> Enum.map(&follow(path, &1)) |> List.flatten() |> Enum.reject(&is_nil/1)
+
+  defp follow([step | path], %{} = row), do: follow(path, Map.get(row, step))
+  defp follow(_path, _value), do: nil
+
   @doc """
   Whether the column's values can be sorted and filtered by a database:
-  it reads a field, not a function of the row.
+  it reads a field, or a path to a field of a related row, not a function
+  of the row.
   """
   @spec stored?(t()) :: boolean()
   def stored?(%__MODULE__{value: nil, field: field}) when is_atom(field) and field != nil,
     do: true
 
+  def stored?(%__MODULE__{value: nil, field: [_ | _]}), do: true
   def stored?(%__MODULE__{}), do: false
+
+  @doc "Whether the column reads a field of a related row (`field={[:customer, :name]}`)."
+  @spec path?(t()) :: boolean()
+  def path?(%__MODULE__{value: nil, field: [_ | _]}), do: true
+  def path?(%__MODULE__{}), do: false
+
+  @doc "Whether the column's value is a list: a path through several related rows."
+  @spec many?(t()) :: boolean()
+  def many?(%__MODULE__{many: many}), do: many == true
 
   @doc "Finds a column by its key."
   @spec find([t()], String.t()) :: t() | nil
@@ -424,12 +519,20 @@ defmodule Masu.Column do
   defp to_key(key) when is_atom(key), do: Atom.to_string(key)
   defp to_key(key) when is_binary(key), do: key
   defp to_key(key) when is_integer(key), do: Integer.to_string(key)
+  defp to_key([_ | _] = path), do: Enum.map_join(path, ".", &Atom.to_string/1)
 
   defp humanize(key) do
     key
     |> String.replace("_", " ")
     |> String.trim()
     |> String.capitalize()
+  end
+
+  # A path's label is its steps in words, unless it has a key of its own.
+  defp label_key(attrs, key, field) do
+    if is_list(field) and is_nil(Map.get(attrs, :key)),
+      do: Enum.map_join(field, " ", &Atom.to_string/1),
+      else: key
   end
 
   defp default_align(type) when type in [:integer, :number, :decimal], do: :end

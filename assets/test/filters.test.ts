@@ -88,3 +88,18 @@ test("replaceFilter() keeps one filter a column", () => {
   assert.deepEqual(replaceFilter(filters, "a", { key: "a", op: "gt", value: 5 }), [{ key: "b", op: "eq", value: 2 }, { key: "a", op: "gt", value: 5 }]);
   assert.deepEqual(replaceFilter(filters, "b", null), [{ key: "a", op: "eq", value: 1 }]);
 });
+
+test("a column of many values: has any of, all of, none of, none and some, in its words", () => {
+  const tags: ColumnConfig = { ...column("tags", "enum", "Tags"), many: true };
+  assert.deepEqual(opsFor("enum", null, true), ["in", "all_of", "none_of", "is_nil", "not_nil"]);
+  assert.deepEqual(opsFor("text", ["in", "is_nil"], true), ["in", "is_nil"]);
+  assert.equal(arity("all_of"), "list");
+  assert.equal(arity("none_of"), "list");
+
+  const words = { ...messages, op_in_many: "has any of", op_all_of: "has all of", op_is_nil_many: "has none" };
+  const show = (value: unknown) => String(value);
+  assert.equal(describe({ key: "tags", op: "in", value: ["gift", "bulk"] }, tags, show, words), "Tags has any of gift, bulk");
+  assert.equal(describe({ key: "tags", op: "all_of", value: ["gift"] }, tags, show, words), "Tags has all of gift");
+  assert.equal(describe({ key: "tags", op: "is_nil" }, tags, show, words), "Tags has none");
+  assert.deepEqual(makeFilter(tags, "none_of", ["gift"]), { key: "tags", op: "none_of", value: ["gift"] });
+});

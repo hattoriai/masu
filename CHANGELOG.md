@@ -7,13 +7,53 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-20
+
 ### Added
 
+- Columns of related rows: a `:col`'s `field` may be a path of
+  associations to a field, `field={[:customer, :name]}`. Its key is
+  `"customer.name"` and its label "Customer name" unless given.
+  - A path of `belongs_to` and `has_one` is one value. An Ecto source
+    sorts, filters, searches, groups and totals by it, and counts its
+    values for the enum menu. It adds a `LEFT JOIN` for each step only
+    when one of these needs it, as a named binding (`:customer`,
+    `:customer_company`), and uses a binding of that name that the
+    query already has. The source preloads the paths' associations, so
+    that the blocks are still read by key. A list follows the path in
+    each row.
+  - A path through a `has_many` or `many_to_many` is of many values: a
+    list in each cell, shown apart ("gift, urgent"). It filters by "has
+    any of" (`:in`), "has all of" (`:all_of`), "has none of"
+    (`:none_of`), "has none" (`:is_nil`) and "has some" (`:not_nil`). An
+    Ecto source runs these as subqueries of the related rows, never as
+    joins, so that no row repeats and the count stays right. The search
+    finds a row by any of its values. Such a column does not sort or
+    group, and its enum menu counts the rows that have each value.
+  - Columns of related rows are read-only. A selection of every row
+    that filters by one is a query of the schema's rows by their keys,
+    so that an `update_all` of it runs in PostgreSQL, MySQL and SQLite.
+  - `Masu.Column.path?/1`, `Masu.Column.many?/1`, `Masu.Filter.many_ops/0`,
+    the optional `c:Masu.Source.many?/2`, and the column attribute
+    `many`.
+  - The messages `op_in_many`, `op_all_of`, `op_none_of`,
+    `op_is_nil_many`, `op_not_nil_many`, `filter_none` and
+    `filter_some`.
 - Groups that start open: `expanded={:all}` on a grouped grid opens
   every group at every level, and `expanded={[:status]}` the groups of
   the columns it names. A group the person closes stays closed, with a
   new filter or view too; the groups of a column grouped from the
   header menu start open by the same rule.
+
+### Changed
+
+- A source of your own without `c:Masu.Source.supports?/2` does not sort
+  or filter by a column of a related row's field. Its other columns
+  work as before. A controlled grid (`on_query`) sorts and filters by
+  every column, paths too: its LiveView gets the path's key.
+- An Ecto source names its query's first binding `:masu`, unless the
+  query names it, so that the conditions on its fields and on joined
+  fields take their types.
 
 ### Fixed
 

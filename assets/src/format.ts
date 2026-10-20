@@ -97,8 +97,14 @@ function decimalFormatter(locale: string | undefined): Formatter {
   };
 }
 
-/** The text of a value for a copy: the value itself. */
+/** A column of many values: each value as `format` shows it, apart. */
+export function manyFormatter(format: Formatter): Formatter {
+  return (value) => (Array.isArray(value) ? (value as CellValue[]).map(format).join(", ") : format(value));
+}
+
+/** The text of a value for a copy: the value itself (the values of many, apart). */
 export function copyText(value: CellValue): string {
+  if (Array.isArray(value)) return (value as CellValue[]).map(copyText).join(", ");
   if (value === true) return "TRUE";
   if (value === false) return "FALSE";
   return plain(value);
