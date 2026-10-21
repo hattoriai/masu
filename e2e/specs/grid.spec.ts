@@ -1180,3 +1180,40 @@ test.describe("rows without a count, and pages", () => {
     await expect(page.locator("#notes-r12-c0")).toHaveText("Thirteen");
   });
 });
+
+// Issho's pointers, by the symbols the grid sets on its element: a person's
+// pointer over a cell is that cell (its row's id and its column's key, and
+// where in it), which another page, in another order, finds where it is there.
+test("a pointer over a cell is the row and the column, found again in another order", async ({ page }) => {
+  await openPage(page, "/small");
+  const cell = page.locator('#small .masu-body .masu-row[aria-rowindex="3"] .masu-cell').first();
+  const name = (await cell.textContent())!.trim();
+  const box = (await cell.boundingBox())!;
+  type Place = { cell: [unknown, string]; x: number; y: number };
+  const at = await page.locator("#small").evaluate(
+    (el, [x, y]) => (el as unknown as Record<symbol, (x: number, y: number) => Place>)[Symbol.for("issho.point")](x, y),
+    [box.x + box.width / 4, box.y + box.height / 2],
+  );
+  expect(at.cell[1]).toBe("name");
+  expect(at.x).toBeCloseTo(0.25, 1);
+  expect(at.y).toBeCloseTo(0.5, 1);
+
+  // In another order, the place is where that row is now.
+  const sort = header(page, "small", "name");
+  await sort.click();
+  await sort.click();
+  await settled(page, "small");
+  const now = page.locator("#small .masu-body .masu-row .masu-cell", { hasText: name }).first();
+  const there = (await now.boundingBox())!;
+  const located = await page.locator("#small").evaluate(
+    (el, at) => {
+      const rect = (el as unknown as Record<symbol, (at: unknown) => DOMRect | null>)[Symbol.for("issho.locator")](at);
+      return rect && { x: rect.x, y: rect.y, width: rect.width };
+    },
+    at,
+  );
+  expect(located).not.toBeNull();
+  expect(Math.abs(located!.y - there.y)).toBeLessThan(2);
+  expect(Math.abs(located!.x - there.x)).toBeLessThan(2);
+  expect(there.y).not.toBeCloseTo(box.y, 0);
+});
