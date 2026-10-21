@@ -97,7 +97,7 @@ defmodule Masu.Source.KeysetTest do
     {blocks, sql} = queries(fn -> blocks(source, [160, 200], 40) end)
 
     assert blocks |> List.flatten() |> ids() == Enum.slice(all, 160, 80)
-    assert [_jump, values, nulls] = sql
+    assert [values, nulls] = Enum.take(sql, -2)
     assert values =~ ~s(i0."name" <= ?)
     assert nulls =~ ~s(i0."name" IS NULL)
   end
@@ -109,7 +109,7 @@ defmodule Masu.Source.KeysetTest do
              source([Sort.new("score", :desc), Sort.new("name", :asc)])
   end
 
-  test "a jump reads by OFFSET, and the block after it by key" do
+  test "a jump reads the sort values of the row before it by OFFSET, then the block by key" do
     source = source([Sort.new("score", :asc), Sort.new("name", :asc)])
     all = source |> Source.rows(0, 1000) |> ids()
 
@@ -117,9 +117,52 @@ defmodule Masu.Source.KeysetTest do
 
     assert ids(jump) == Enum.slice(all, 120, 30)
     assert ids(next) == Enum.slice(all, 150, 30)
-    assert [first, second] = sql
-    assert first =~ "OFFSET"
-    refute second =~ "OFFSET"
+    assert [values, block, after_block] = sql
+    # Only the sort values, which an index of them has: not the rows.
+    assert values =~ ~r/^SELECT i0."score", i0."name", i0."id" FROM/
+    assert values =~ "OFFSET"
+    refute block =~ "OFFSET"
+    refute after_block =~ "OFFSET"
+  end
+
+  test "a jump counts its OFFSET from the nearest block before it that the grid read" do
+    source = source([Sort.new("score", :asc), Sort.new("name", :asc)])
+    all = source |> Source.rows(0, 1000) |> ids()
+
+    {[_first, _second, jump], sql} = queries(fn -> blocks(source, [0, 30, 150], 30) end)
+
+    assert ids(jump) == Enum.slice(all, 150, 30)
+    assert [_first, _second, values, _block] = sql
+    # From the last row the grid read, by key, with the range an index
+    # reads from: not from the first row.
+    assert values =~ ~r/^SELECT i0."score", i0."name", i0."id" FROM/
+    assert values =~ ~s(i0."score" >= ?)
+    assert values =~ "OFFSET"
+  end
+
+  for sorts <- [
+        [],
+        [{"name", :asc}],
+        [{"name", :desc}],
+        [{"score", :asc}, {"name", :desc}],
+        [{"score", :desc}, {"name", :asc}]
+      ] do
+    test "jumps, first or after a block, are the rows an OFFSET reads, sorted by #{inspect(sorts)}" do
+      sorts =
+        Enum.map(unquote(Macro.escape(sorts)), fn {key, direction} -> Sort.new(key, direction) end)
+
+      all = sorts |> source() |> Source.rows(0, 1000) |> ids()
+
+      # Each place, first and after a block before it, into the NULLs of
+      # the first sort and past the last row.
+      for froms <- [[1], [37], [120], [200], [230], [237], [300], [0, 120], [40, 200], [100, 230]] do
+        blocks = blocks(source(sorts), froms, 25)
+        from = List.last(froms)
+
+        assert blocks |> List.last() |> ids() == Enum.slice(all, from, 25),
+               "a jump to #{from} after #{inspect(froms)}"
+      end
+    end
   end
 
   test "a new query starts again" do
