@@ -1,7 +1,7 @@
 # Benchmark results
 
-Made by `mix bench` (see [README.md](README.md)) on 2026-10-19, commit
-355da19 (with changes). Apple M1 Pro, 10 schedulers, Elixir
+Made by `mix bench` (see [README.md](README.md)) on 2026-10-21, commit
+99aaa06. Apple M1 Pro, 10 schedulers, Elixir
 1.20.1, OTP 29, PostgreSQL 16.14 (Homebrew).
 chromium 141.0.7390.37, firefox 142.0.1, webkit 26.0.
 
@@ -17,34 +17,50 @@ and the memory of the rows.
 | --- | --- | --- | --- |
 | rows in the process (bytes) | 9 MB | 86 MB | 863 MB |
 | block in the middle | 0.7 µs | 0.7 µs | 0.7 µs |
-| mount (init and prepare) | 0.04 ms | 0.44 ms | 245 ms |
-| search, the next | 3 ms | 27 ms | 274 ms |
-| sort by name | 23 ms | 396 ms | 5161 ms |
-| search, the first | 36 ms | 355 ms | 5028 ms |
+| mount (init and prepare) | 0.04 ms | 0.43 ms | 241 ms |
+| search, the next | 3 ms | 26 ms | 276 ms |
+| sort by name | 22 ms | 379 ms | 5375 ms |
+| search, the first | 37 ms | 362 ms | 4539 ms |
 
 ## Server: `Masu.Source.Ecto` on PostgreSQL
 
 The median time of each job. A block is 100 rows. "By key" is the
-block after a block that the grid read, as when the person scrolls;
-"by OFFSET" is the block after a jump, as when the person drags the
-scrollbar. The table has an index on `(signed_up, id)`. The `OFFSET`
-jobs do not run at ten million rows: one takes minutes, as it reads
-millions of rows from the disk.
+block after a block that the grid read, as when the person scrolls.
+The table has an index on `(signed_up, id)`.
 
 |  | 100,000 rows | 1,000,000 rows | 10,000,000 rows |
 | --- | --- | --- | --- |
-| first block | 0.22 ms | 0.22 ms | 0.22 ms |
-| middle block, by key | 0.24 ms | 0.25 ms | 0.24 ms |
-| sorted by date, middle block, by key | 0.26 ms | 0.34 ms | 3 ms |
-| count, count_limit of 10,000 | 0.45 ms | 0.51 ms | 0.8 ms |
+| first block | 0.22 ms | 0.22 ms | 0.23 ms |
+| middle block, by key | 0.26 ms | 0.24 ms | 0.27 ms |
+| sorted by date, middle block, by key | 0.27 ms | 0.36 ms | 2 ms |
+| count, count_limit of 10,000 | 0.71 ms | 0.75 ms | 0.95 ms |
 | search, first block | 3 ms | 5 ms | 5 ms |
-| count | 3 ms | 22 ms | 2463 ms |
-| middle block, by OFFSET | 4 ms | 28 ms | – |
-| sorted by date, middle block, by OFFSET | 8 ms | 159 ms | – |
-| search of no row, count | 20 ms | 125 ms | 1289 ms |
-| search, count | 21 ms | 128 ms | 1293 ms |
-| search of no row, count, count_limit of 10,000 | 47 ms | 346 ms | 3641 ms |
-| search, count, count_limit of 10,000 | 54 ms | 42 ms | 45 ms |
+| count | 3 ms | 22 ms | 2299 ms |
+| search, count | 21 ms | 127 ms | 1315 ms |
+| search of no row, count | 21 ms | 125 ms | 1440 ms |
+| search of no row, count, count_limit of 10,000 | 48 ms | 343 ms | 3643 ms |
+| search, count, count_limit of 10,000 | 53 ms | 45 ms | 46 ms |
+
+## Server: jumps of `Masu.Source.Ecto` on PostgreSQL
+
+A jump is a block of 100 rows at a place that the grid did not read, as
+when the person drags the scrollbar. A first jump has no block read
+before it. A jump "on from the middle" comes after the grid read the
+block in the middle. The median time of up to five runs (after one run
+to warm up) in ten seconds. PostgreSQL stops a query after a timeout.
+
+|  | 100,000 rows | 1,000,000 rows | 10,000,000 rows |
+| --- | --- | --- | --- |
+| first jump to a tenth | 0.66 ms | 6 ms | 75 ms |
+| first jump to nine tenths | 5 ms | 68 ms | 712 ms |
+| first jump to the middle | 3 ms | 28 ms | 395 ms |
+| jump of 1,000 rows on from the middle | 3 ms | 29 ms | 390 ms |
+| jump of a tenth of the rows on from the middle | 4 ms | 34 ms | 466 ms |
+| sorted by date, first jump to a tenth | 2 ms | 41 ms | 2331 ms |
+| sorted by date, first jump to nine tenths | 15 ms | 277 ms | 21474 ms |
+| sorted by date, first jump to the middle | 8 ms | 173 ms | 12105 ms |
+| sorted by date, jump of 1,000 rows on from the middle | 9 ms | 150 ms | 11667 ms |
+| sorted by date, jump of a tenth of the rows on from the middle | 12 ms | 246 ms | 14663 ms |
 
 ## Browser: a Masu grid and two LiveView baselines
 
