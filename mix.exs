@@ -52,7 +52,9 @@ defmodule Masu.MixProject do
       # The benchmarks in bench/: Benchee, and PostgreSQL for the Ecto source.
       {:benchee, "~> 1.3", only: :dev},
       {:ecto_sql, "~> 3.13", only: [:dev, :test]},
-      {:postgrex, "~> 0.20", only: :dev},
+      # PostgreSQL and MySQL for the tests too, with MASU_DB.
+      {:postgrex, "~> 0.20", only: [:dev, :test]},
+      {:myxql, "~> 0.8", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ecto, "~> 3.13", optional: true},

@@ -94,14 +94,42 @@ A store of your own implements the five callbacks of `Masu.Views`. Views
 are kept by `views_key` (the grid's id unless given): give two grids of
 the same rows on two pages the same key to share their views.
 
+In an app of many accounts, give the grid `views_scope`, so that each
+account's views are its own:
+
+```heex
+<.data_grid
+  id="orders"
+  source={@orders}
+  repo={Repo}
+  views={MyApp.GridViews}
+  user={@current_scope.user}
+  views_scope={@current_scope.account.id}
+>
+```
+
+Without it, every account has the grid's one pool of views: a view
+shared in one account is offered in every other, with its name and its
+params (a filter's values, such as a customer's name). The store keeps
+a scope's views under `"orders@42"`, the key and the scope. A view
+never shows more rows than the grid's `source` does: applying one, the
+grid takes its params as it takes a link's, as filters, order and
+columns of the rows the source already has. So scope the `source` to
+the account too.
+
 ## Views that no longer apply
 
 A view is kept as its params, so it outlives changes to the grid: a
 column added since takes its declared place, a column removed is left
 out, and a sort or filter on a column that no longer sorts or filters,
-or a filter value that no longer reads, is dropped. The grid says so to
-the person ("Part of this view no longer applies: plan"); a link or a
-saved view never fails a grid.
+or a filter value that no longer reads, is dropped. A part past a bound
+of [What the browser may send](limits.md#what-the-browser-may-send), or
+with a NUL character, is dropped too: a search of more than 1,000 bytes
+(shown as "search"), more than 100 filters ("filters"), sorts ("sort") or
+groups ("group"), or a filter whose value is too long (shown by its
+column). The whole part goes, never a cut of it. The grid says so to the
+person ("Part of this view no longer applies: plan"); a link or a saved
+view never fails a grid.
 
 ## Following someone
 

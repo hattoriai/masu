@@ -9,12 +9,43 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `views_scope`: whose views a grid's views are, such as the account's
+  id. The store keeps each scope's views apart (under `"orders@42"`), so
+  a view shared in one account is not offered in another. Without it,
+  every account has the grid's one pool, as before.
+- `create_with`: fields every new row gets, as a map or keyword list
+  (`create_with={[account_id: @current_scope.account.id]}`). The grid
+  puts them on `struct` before the changeset and on the changeset after
+  it, so params cannot change them, and a column of one of these fields
+  neither takes a value on a new row nor edits.
 - A `read` of your own gets `seek` with the block: for a jump, `seek.()`
   gives the sort values of the row before the block, as `after` does,
   from one query of the sort values only. `after_row || seek.()` reads a
   jump by key too (#53).
 
 ### Changed
+
+- Every error the grid shows a person is a sentence, with a capital and a
+  full stop: "The filter contains is for text, not integer.", "A query
+  has more than 100 filters.", "There is no column \"nope\"." The errors
+  of a query were lowercase, without one. They are also the errors of
+  `Masu.Filter.cast/2` and `Masu.Query.new/2`, and of the `ArgumentError`
+  of a grid whose own `filters` do not check: a test or a log that matches
+  on their text needs the new text. A view that is no longer there says
+  "This view no longer exists." (it said "no such view").
+
+- What the browser sends is bound where it comes in, and refused past
+  the bound, never cut short (see "What the browser may send" in the
+  limits guide): a search, the search of a column's values and the text
+  of a filter value of at most 1,000 bytes; at most 100 filters, 100 sorts
+  and 100 groups in a query; at most 10,000 values in a list filter; a
+  view's name of at most 255 bytes. Texts are counted in bytes.
+  - An event answers with an error ("The search is longer than 1,000
+    bytes."), and `Masu.Filter.cast/2` returns one, also for the grid's
+    `filters`. The search of a column's values gets no values.
+  - A link or a saved view drops a part past a bound, whole, and says so
+    ("Part of this view no longer applies: search"), as it does for a
+    column that is gone.
 
 - The browser asks for no rows while rows it asked for have not come
   (for ten seconds at most), and then for the rows on the screen: a drag
@@ -28,6 +59,40 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   database reads only the index: on PostgreSQL, a jump to the middle of
   ten million rows sorted by a date takes 0.2 s, not 12 s (minutes from
   the disk), and a jump of 1,000 rows on from a block 1 ms (#53).
+
+### Fixed
+
+- A view's name was checked against its bound of 255 bytes before it was
+  trimmed, and saved trimmed: a name with spaces around it that took it
+  past the bound was refused, and a name of only spaces past it was "too
+  long" rather than "A view needs a name." The name is now trimmed first,
+  and checked as it is saved.
+
+- An id from the browser that the source could not read crashed the
+  LiveView: an integer key sent `"abc"` raised `Ecto.Query.CastError`,
+  and a text or UUID key with a NUL reached PostgreSQL, which rejects it.
+  Every id an event names (an edit, paste, fill or undo, a delete, a
+  selection, a row's action, detail, history or editor, a locate) is now
+  checked before a source reads it: a number, or a text of at most 1,000
+  bytes without a NUL; an Ecto source also casts it with its primary
+  key's type and dumps it as its repo's adapter does (a `:binary_id` on
+  PostgreSQL is a UUID). An id that does not check is a row not found. A
+  source of your own may check its ids with the new optional callback
+  `id?/2` of `Masu.Source`.
+- A search, a text filter or the search of a column's values on a field
+  that is not stored as text failed on PostgreSQL ("function
+  lower(bigint) does not exist"): a column without a `type` is of text,
+  and searched, whatever its field. An Ecto source now casts such a field
+  to a text first, as each database casts (Ecto's `type/2`); a field of
+  text stays `lower(field)`, which an index serves.
+- A text with a NUL character crashed the LiveView: PostgreSQL rejects
+  `\u0000` in the jsonb of the last view the grid keeps (`views`), and the
+  grid matched on `:ok`. A NUL is now refused in the texts the browser
+  sends to a query, a view or a cell: the search and the filters of a
+  query, a link or a saved view (that part is dropped), the name of a
+  view, and an edited or new cell (that cell is refused). The history
+  asks its store only for the key of a column, and for a batch token the
+  grid could have made.
 
 ## [0.3.0] - 2026-10-20
 

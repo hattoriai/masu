@@ -86,7 +86,10 @@ column with a `value` function is shown but does not sort, filter or
 search.
 
 The text filters and the search compare without case, with
-`lower(field) LIKE ...`, which PostgreSQL, MySQL and SQLite all run. On a
+`lower(field) LIKE ...`, which PostgreSQL, MySQL and SQLite all run. A
+field that is not stored as text (a number, a date, a UUID) is cast to
+one first, as each database casts: a column without a `type` is of text,
+and searched, whatever its field. On a
 large table, an index on `lower(field)` (or a trigram index in
 PostgreSQL) keeps the search fast. A sort needs an index on its column,
 as any `ORDER BY` with a `LIMIT` does.

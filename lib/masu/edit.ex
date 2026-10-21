@@ -19,7 +19,7 @@ defmodule Masu.Edit do
   # or `[id, key, message, value]` for a cell changed meanwhile, with its
   # value now.
 
-  alias Masu.{Column, Source, Value, Write}
+  alias Masu.{Column, Input, Source, Value, Write}
   alias Masu.Write.Change
 
   @max_edits 5_000
@@ -51,6 +51,7 @@ defmodule Masu.Edit do
       repo_opts: assigns.repo_opts,
       changeset: assigns[:changeset],
       struct: assigns[:struct],
+      create_with: assigns[:create_with] || %{},
       columns: assigns.all_columns,
       row_id: row_id,
       grid: assigns.id,
@@ -112,12 +113,13 @@ defmodule Masu.Edit do
           token: String.t() | nil
         }
   def update(edits, assigns, row_id, origin) when is_list(edits) do
-    {edits, refused} =
-      edits
-      |> Enum.take(@max_edits)
-      |> Enum.split_with(&editable?(&1, assigns.columns))
+    {with_nul, edits} = edits |> Enum.take(@max_edits) |> Enum.split_with(&nul?/1)
+    {edits, refused} = Enum.split_with(edits, &editable?(&1, assigns.columns))
 
-    errors = Enum.map(refused, &[&1["id"], &1["key"], "This cell cannot be edited."])
+    errors =
+      Enum.map(refused, &[&1["id"], &1["key"], "This cell cannot be edited."]) ++
+        Enum.map(with_nul, &[&1["id"], &1["key"], nul_message()])
+
     by_id = Enum.group_by(edits, & &1["id"])
     ids = Map.keys(by_id)
 
@@ -240,6 +242,12 @@ defmodule Masu.Edit do
     (row_editable == nil or row_editable.(row) != false) and
       Column.editable?(Column.find(assigns.columns, key), row)
   end
+
+  # A text with a NUL character is never saved: PostgreSQL cannot store it.
+  defp nul?(%{"value" => value}), do: Input.nul?(value)
+  defp nul?(_edit), do: false
+
+  defp nul_message, do: Input.nul_message("the text of this cell")
 
   defp editable?(%{"id" => _id, "key" => key, "value" => value} = edit, columns)
        when is_binary(key) do
@@ -379,7 +387,9 @@ defmodule Masu.Edit do
         match?(%Column{creatable: true}, Column.find(assigns.columns, key)) and value?(value)
       end)
 
-    case refused do
+    {with_nul, cells} = Enum.split_with(cells, fn {_key, value} -> Input.nul?(value) end)
+
+    case refused ++ with_nul do
       [] ->
         edits = Enum.map(cells, fn {key, value} -> %{"key" => key, "value" => value} end)
 
@@ -389,8 +399,10 @@ defmodule Masu.Edit do
           keys: Enum.map(edits, & &1["key"])
         }
 
-      refused ->
-        {:error, Enum.map(refused, fn {key, _value} -> [key, "This cell cannot be set."] end)}
+      _refused ->
+        {:error,
+         Enum.map(refused, fn {key, _value} -> [key, "This cell cannot be set."] end) ++
+           Enum.map(with_nul, fn {key, _value} -> [key, nul_message()] end)}
     end
   end
 

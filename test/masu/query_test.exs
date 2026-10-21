@@ -59,31 +59,31 @@ defmodule Masu.QueryTest do
   end
 
   test "a filter that does not check is an error" do
-    assert {:error, "no column \"nope\""} =
+    assert {:error, "There is no column \"nope\"."} =
              Query.from_wire(
                %{"filters" => [%{"key" => "nope", "op" => "eq", "value" => 1}]},
                @columns
              )
 
-    assert {:error, "the column \"secret\" does not filter"} =
+    assert {:error, "The column \"secret\" does not filter."} =
              Query.from_wire(
                %{"filters" => [%{"key" => "secret", "op" => "eq", "value" => 1}]},
                @columns
              )
 
-    assert {:error, "contains is for text, not integer"} =
+    assert {:error, "The filter contains is for text, not integer."} =
              Query.from_wire(
                %{"filters" => [%{"key" => "age", "op" => "contains", "value" => "1"}]},
                @columns
              )
 
-    assert {:error, "\"old\" is not a integer"} =
+    assert {:error, "The value \"old\" is not of the type integer."} =
              Query.from_wire(
                %{"filters" => [%{"key" => "age", "op" => "gt", "value" => "old"}]},
                @columns
              )
 
-    assert {:error, "not a filter operator: \"like\""} =
+    assert {:error, "Not a filter operator: \"like\"."} =
              Query.from_wire(
                %{"filters" => [%{"key" => "name", "op" => "like", "value" => "a"}]},
                @columns

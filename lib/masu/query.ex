@@ -27,7 +27,7 @@ defmodule Masu.Query do
   the same way.
   """
 
-  alias Masu.{Column, Filter, Sort}
+  alias Masu.{Column, Filter, Input, Sort}
 
   @type t :: %__MODULE__{
           sorts: [Sort.t()],
@@ -54,11 +54,17 @@ defmodule Masu.Query do
 
   The sorts on a column that does not sort, and the repeated ones, are
   left out. A filter that does not check is an error, so that a grid
-  never shows rows the person did not ask for.
+  never shows rows the person did not ask for. So is a query with more
+  than 100 sorts, filters or groups, a text over 1,000 bytes, a list
+  filter of more than 10,000 values, and a text with a NUL character.
   """
   @spec from_wire(map(), [Column.t()]) :: {:ok, t()} | {:error, String.t()}
   def from_wire(params, columns) when is_map(params) do
-    with {:ok, sorts} <- wire_sorts(Map.get(params, "sorts", []), columns),
+    with :ok <- Input.count(params["sorts"], :sorts),
+         :ok <- Input.count(params["filters"], :filters),
+         :ok <- Input.count(params["groups"], :groups),
+         :ok <- Input.search(params["search"]),
+         {:ok, sorts} <- wire_sorts(Map.get(params, "sorts", []), columns),
          {:ok, filters} <- wire_filters(Map.get(params, "filters", []), columns) do
       {:ok,
        %__MODULE__{
@@ -137,7 +143,7 @@ defmodule Masu.Query do
         {:cont, {:ok, [Sort.new(key, String.to_existing_atom(dir)) | acc]}}
 
       sort, _acc ->
-        {:halt, {:error, "not a sort: #{inspect(sort)}"}}
+        {:halt, {:error, Input.sentence("not a sort: #{inspect(sort)}")}}
     end)
     |> case do
       {:ok, sorts} -> {:ok, sorts |> Enum.reverse() |> check_sorts(columns)}
@@ -145,7 +151,8 @@ defmodule Masu.Query do
     end
   end
 
-  defp wire_sorts(sorts, _columns), do: {:error, "not a list of sorts: #{inspect(sorts)}"}
+  defp wire_sorts(sorts, _columns),
+    do: {:error, Input.sentence("not a list of sorts: #{inspect(sorts)}")}
 
   defp wire_filters(filters, columns) when is_list(filters) do
     filters
@@ -153,11 +160,11 @@ defmodule Masu.Query do
       %{"key" => key, "op" => op} = filter, {:ok, acc} when is_binary(key) and is_binary(op) ->
         case op_from_wire(op) do
           {:ok, op} -> {:cont, {:ok, [Filter.new(key, op, filter["value"]) | acc]}}
-          :error -> {:halt, {:error, "not a filter operator: #{inspect(op)}"}}
+          :error -> {:halt, {:error, Input.sentence("not a filter operator: #{inspect(op)}")}}
         end
 
       filter, _acc ->
-        {:halt, {:error, "not a filter: #{inspect(filter)}"}}
+        {:halt, {:error, Input.sentence("not a filter: #{inspect(filter)}")}}
     end)
     |> case do
       {:ok, filters} -> filters |> Enum.reverse() |> cast_filters(columns)
@@ -165,7 +172,8 @@ defmodule Masu.Query do
     end
   end
 
-  defp wire_filters(filters, _columns), do: {:error, "not a list of filters: #{inspect(filters)}"}
+  defp wire_filters(filters, _columns),
+    do: {:error, Input.sentence("not a list of filters: #{inspect(filters)}")}
 
   defp op_from_wire(op) do
     case Enum.find(Filter.ops(), &(Atom.to_string(&1) == op)) do

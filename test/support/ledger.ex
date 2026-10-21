@@ -1,6 +1,8 @@
 defmodule MasuTest.HistoryRepo do
-  @moduledoc "A SQLite repo of its own, for a history kept apart from the rows."
-  use Ecto.Repo, otp_app: :masu, adapter: Ecto.Adapters.SQLite3
+  @moduledoc "A repo of its own, for a history kept apart from the rows."
+  use Ecto.Repo, otp_app: :masu, adapter: MasuTest.DB.adapter()
+
+  def __mix_recompile__?, do: MasuTest.DB.adapter() != __adapter__()
 end
 
 defmodule MasuTest.Ledger do
@@ -10,7 +12,6 @@ defmodule MasuTest.Ledger do
   import Ecto.Changeset
 
   alias Masu.History.Memory
-  alias Mix.Tasks.Masu.Gen.History, as: GenHistory
 
   schema "ledger" do
     field(:item, :string)
@@ -32,6 +33,7 @@ defmodule MasuTest.Ledger do
       MasuTest.Repo.insert!(%__MODULE__{id: id, item: item, amount: amount})
     end
 
+    MasuTest.DB.reset_ids!(MasuTest.Repo, "ledger")
     Memory.clear()
     MasuTest.Repo.query!("DELETE FROM masu_history")
     MasuTest.HistoryRepo.query!("DELETE FROM masu_history")
@@ -39,27 +41,12 @@ defmodule MasuTest.Ledger do
   end
 
   @doc "Runs the migration of `mix masu.gen.history` in a repo."
-  def migrate_history!(repo) do
-    dir = Path.join(System.tmp_dir!(), "masu-history-#{System.pid()}-#{inspect(repo)}")
-    File.rm_rf!(dir)
-    shell = Mix.shell()
-    Mix.shell(Mix.Shell.Quiet)
-    GenHistory.write(dir, "masu_history", :masu_test, "20260101000000")
-    Mix.shell(shell)
-    # The same migration's module, for each repo.
-    Code.put_compiler_option(:ignore_module_conflict, true)
-    Ecto.Migrator.run(repo, dir, :up, all: true, log: false)
-    Code.put_compiler_option(:ignore_module_conflict, false)
-    File.rm_rf!(dir)
-    :ok
-  end
+  def migrate_history!(repo),
+    do: MasuTest.DB.generated!(repo, Mix.Tasks.Masu.Gen.History, "masu_history", "20260101000000")
 
   @doc "The history's repo of its own, with its table."
   def start_history_repo! do
-    path = Path.join(System.tmp_dir!(), "masu-history-#{System.pid()}.db")
-    File.rm(path)
-    System.at_exit(fn _status -> File.rm(path) end)
-    {:ok, _pid} = MasuTest.HistoryRepo.start_link(database: path, pool_size: 1)
+    :ok = MasuTest.DB.start!(MasuTest.HistoryRepo, "_history")
     migrate_history!(MasuTest.HistoryRepo)
   end
 end
@@ -72,6 +59,34 @@ end
 defmodule MasuTest.OtherHistory do
   @moduledoc "A history in a repo of its own: recorded after the row's transaction."
   use Masu.History.Ecto, repo: MasuTest.HistoryRepo
+end
+
+defmodule MasuTest.StrictHistory do
+  @moduledoc "The memory history, which raises on a NUL in any text, as PostgreSQL does."
+  @behaviour Masu.History
+
+  alias Masu.History.Memory
+
+  @impl true
+  def record(entries), do: Memory.record(entries)
+  @impl true
+  def for_cell(grid, row_id, key, opts),
+    do: Memory.for_cell(strict(grid), row_id, strict(key), opts)
+
+  @impl true
+  def for_row(grid, row_id, opts), do: Memory.for_row(strict(grid), row_id, opts)
+  @impl true
+  def recent(grid, opts), do: Memory.recent(strict(grid), opts)
+  @impl true
+  def batch(grid, batch), do: Memory.batch(strict(grid), strict(batch))
+  @impl true
+  def entry(grid, id), do: Memory.entry(strict(grid), id)
+  @impl true
+  def repo, do: nil
+
+  defp strict(text) do
+    if String.contains?(text, <<0>>), do: raise("invalid byte sequence: 0x00"), else: text
+  end
 end
 
 defmodule MasuTest.BrokenHistory do
@@ -109,7 +124,8 @@ defmodule MasuTest.LedgerLive do
     "same" => MasuTest.SameHistory,
     "other" => MasuTest.OtherHistory,
     "memory" => Masu.History.Memory,
-    "broken" => MasuTest.BrokenHistory
+    "broken" => MasuTest.BrokenHistory,
+    "strict" => MasuTest.StrictHistory
   }
 
   @impl true

@@ -27,7 +27,7 @@ defmodule Masu.View do
   `"hide" => ""` hides no column, `"filter" => ""` has no filter.
   """
 
-  alias Masu.{Column, Filter, Layout, Query, Sort}
+  alias Masu.{Column, Filter, Input, Layout, Query, Sort}
 
   @type t :: %__MODULE__{query: Query.t(), layout: Layout.t(), page: non_neg_integer()}
 
@@ -87,13 +87,20 @@ defmodule Masu.View do
   sorts or filters, a filter value that no longer reads) is left out, and
   its column's key is in the list it gives, so that the grid can say so:
   a link or a saved view never fails a grid.
+
+  A part past a bound (`Masu.Query.from_wire/2` lists them), or with a
+  NUL character, is left out whole, never cut short: the whole search
+  (`"search"` in the list), all the filters when there are too many
+  (`"filters"`), all the sorts (`"sort"`) or groups (`"group"`). A filter
+  whose value is past a bound or has a NUL is left out alone, by its
+  column's key.
   """
   @spec from_params(map(), [Column.t()], t()) :: {t(), [String.t()]}
   def from_params(params, columns, %__MODULE__{} = default) when is_map(params) do
     {sorts, dropped_sorts} = read_sorts(params["sort"], columns, default.query.sorts)
     {filters, dropped_filters} = read_filters(params["filter"], columns, default.query.filters)
 
-    search = read_search(params["q"], default.query.search)
+    {search, dropped_search} = read_search(params["q"], default.query.search)
     keys = MapSet.new(columns, & &1.key)
 
     layout =
@@ -121,7 +128,7 @@ defmodule Masu.View do
       end)
       |> Layout.fit(columns)
 
-    groups = read_groups(params["group"], columns, default.query.groups)
+    {groups, dropped_groups} = read_groups(params["group"], columns, default.query.groups)
 
     view = %__MODULE__{
       query: %Query{sorts: sorts, filters: filters, search: search, groups: groups},
@@ -129,7 +136,7 @@ defmodule Masu.View do
       page: read_page(params["page"], default.page)
     }
 
-    {view, Enum.uniq(dropped_sorts ++ dropped_filters)}
+    {view, Enum.uniq(dropped_sorts ++ dropped_filters ++ dropped_search ++ dropped_groups)}
   end
 
   def from_params(_params, _columns, default), do: {default, []}
@@ -143,28 +150,45 @@ defmodule Masu.View do
 
   defp read_page(_page, default), do: default
 
-  defp read_search(q, _default) when is_binary(q),
-    do: q |> String.trim() |> then(&if(&1 == "", do: nil, else: &1))
+  defp read_search(q, default) when is_binary(q) do
+    case Input.search(q) do
+      :ok -> {q |> String.trim() |> then(&if(&1 == "", do: nil, else: &1)), []}
+      {:error, _message} -> {default, ["search"]}
+    end
+  end
 
-  defp read_search(_q, default), do: default
+  defp read_search(_q, default), do: {default, []}
 
-  defp read_groups(text, columns, _default) when is_binary(text),
-    do: text |> String.split(",", trim: true) |> Query.groups(columns)
+  defp read_groups(text, columns, default) when is_binary(text) do
+    keys = String.split(text, ",", trim: true)
 
-  defp read_groups(_text, _columns, default), do: default
+    case Input.count(keys, :groups) do
+      :ok -> {Query.groups(keys, columns), []}
+      {:error, _message} -> {default, ["group"]}
+    end
+  end
+
+  defp read_groups(_text, _columns, default), do: {default, []}
 
   defp read_sorts(nil, _columns, default), do: {default, []}
 
-  defp read_sorts(text, columns, _default) when is_binary(text) do
-    text
-    |> String.split(",", trim: true)
-    |> Enum.map(fn
-      "-" <> key -> Sort.new(key, :desc)
-      key -> Sort.new(key, :asc)
-    end)
-    |> Enum.uniq_by(& &1.key)
-    |> Enum.split_with(&match?(%Column{sortable: true}, Column.find(columns, &1.key)))
-    |> then(fn {sorts, dropped} -> {sorts, Enum.map(dropped, & &1.key)} end)
+  defp read_sorts(text, columns, default) when is_binary(text) do
+    keys = String.split(text, ",", trim: true)
+
+    case Input.count(keys, :sorts) do
+      :ok ->
+        keys
+        |> Enum.map(fn
+          "-" <> key -> Sort.new(key, :desc)
+          key -> Sort.new(key, :asc)
+        end)
+        |> Enum.uniq_by(& &1.key)
+        |> Enum.split_with(&match?(%Column{sortable: true}, Column.find(columns, &1.key)))
+        |> then(fn {sorts, dropped} -> {sorts, Enum.map(dropped, & &1.key)} end)
+
+      {:error, _message} ->
+        {default, ["sort"]}
+    end
   end
 
   defp read_sorts(_other, _columns, default), do: {default, []}
@@ -172,14 +196,23 @@ defmodule Masu.View do
   defp read_filters(nil, _columns, default), do: {default, []}
   defp read_filters("", _columns, _default), do: {[], []}
 
-  defp read_filters(filters, columns, default) when is_map(filters) do
+  defp read_filters(filters, columns, default) when is_map(filters) or is_list(filters) do
+    case Input.count(filters, :filters) do
+      :ok -> read_filter_list(filters, columns)
+      {:error, _message} -> {default, ["filters"]}
+    end
+  end
+
+  defp read_filters(_other, _columns, default), do: {default, []}
+
+  defp read_filter_list(filters, columns) when is_map(filters) do
     filters
     |> Enum.sort_by(fn {index, _filter} -> index |> Integer.parse() |> elem_or(0) end)
     |> Enum.map(fn {_index, filter} -> filter end)
-    |> read_filters(columns, default)
+    |> read_filter_list(columns)
   end
 
-  defp read_filters(filters, columns, _default) when is_list(filters) do
+  defp read_filter_list(filters, columns) do
     Enum.reduce(filters, {[], []}, fn filter, {ok, dropped} ->
       case read_filter(filter, columns) do
         {:ok, filter} -> {[filter | ok], dropped}
@@ -188,8 +221,6 @@ defmodule Masu.View do
     end)
     |> then(fn {ok, dropped} -> {Enum.reverse(ok), Enum.reverse(dropped)} end)
   end
-
-  defp read_filters(_other, _columns, default), do: {default, []}
 
   defp read_filter(%{"key" => key, "op" => op} = filter, columns)
        when is_binary(key) and is_binary(op) do

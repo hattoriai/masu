@@ -275,7 +275,22 @@ mix dialyzer
 mix bench                  # the benchmarks (bench/README.md), with PostgreSQL
 ```
 
-The ExUnit suite tests the Ecto source on SQLite. `mix test.js` runs the
+The ExUnit suite tests the Ecto source on SQLite, in a file of its own,
+with no setup. `MASU_DB` runs it on PostgreSQL or MySQL instead, in a
+`masu_test` database (and `masu_test_history`) that each run drops and
+creates again. `docker-compose.yml` has both servers:
+
+```sh
+docker compose up -d
+MASU_DB=postgres mix test
+MASU_DB=mysql mix test
+```
+
+`MASU_DB_URL` points to another server, for example
+`ecto://user:pass@localhost:5432/masu_test`. CI runs the suite on all
+three.
+
+`mix test.js` runs the
 tests of the pure modules in `assets/test/` (the block cache, the
 geometry of the rows and the keys, the sort, the copied text and the
 formats) with Node's test runner.
@@ -299,6 +314,12 @@ without watchers, on port 4098 (set `E2E_PORT` for another port). A
 task) builds the bundle, checks that `priv/static` holds only the four
 bundle files (`mix masu.release_check`), publishes to Hex, and tags and
 pushes `v<version>`.
+
+## Contributing
+
+See [CONTRIBUTING.md](https://github.com/hattoriai/masu/blob/main/CONTRIBUTING.md): when a change needs an issue
+first, and what a pull request needs. Report a security problem
+privately, as [SECURITY.md](https://github.com/hattoriai/masu/blob/main/SECURITY.md) says.
 
 ## License
 

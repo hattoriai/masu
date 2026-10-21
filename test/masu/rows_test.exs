@@ -41,7 +41,9 @@ defmodule Masu.RowsTest do
       {:ok, view, _html} = live(conn, "/rows/tasks")
 
       assert {:ok, [id]} = add_rows(view, "tasks", %{title: "Write", points: "3"})
-      assert [%{"title" => "Write", "status" => "todo", "points" => "3"}] = rows(view, "tasks")
+      assert [%{"title" => "Write", "status" => "todo", "points" => points}] = rows(view, "tasks")
+      # MySQL keeps the column's two decimals: 3.00.
+      assert Decimal.equal?(points, "3")
       assert ids(view, "tasks") == [id]
       assert %Task{title: "Write", status: :todo} = Repo.get!(Task, id)
       assert view |> element("#log") |> render() =~ "saved Write"
@@ -138,6 +140,25 @@ defmodule Masu.RowsTest do
       assert ids(view, "people") == rest
       assert {:ok, [^first]} = restore_rows(view, "people", undo)
       assert ids(view, "people") == [first | rest]
+    end
+  end
+
+  describe "a grid with create_with" do
+    test "puts its fields on every new row, and the person sets or edits none of them",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/rows/account")
+
+      assert {:ok, [_id]} = add_rows(view, "people", %{name: "Grace"})
+      assert List.last(rows(view, "people")) == %{"name" => "Grace", "account" => "acme"}
+
+      assert {:error, [{:error, [{"account", "This cell cannot be set."}]}]} =
+               add_rows(view, "people", %{name: "Eve", account: "evil"})
+
+      assert {:error, [{1, "account", "This cell cannot be edited."}]} =
+               edit(view, "people", [{1, :account, "evil"}])
+
+      assert %{"creatable" => false, "editable" => false} =
+               Enum.find(config_of(view, "people")["columns"], &(&1["key"] == "account"))
     end
   end
 

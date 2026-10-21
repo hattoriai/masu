@@ -151,6 +151,61 @@ thousand rows. An Ecto source asks the database instead.
 A paste, a fill or an emptied range saves at most five thousand cells at
 once, and only of rows that the browser can ask for.
 
+## What the browser may send
+
+Any person can craft the events the browser sends, so Masu checks the
+texts and lists below where they come in, and no source or store needs
+to check them again. A text or a list
+past a bound is refused, never cut short. Texts are counted in bytes, not
+characters: "é" is two bytes.
+
+| What | At most |
+| --- | --- |
+| The search of the grid, the search of a column's values, the text of a filter value (each value of a list filter too) | 1,000 bytes |
+| Filters in a query | 100 |
+| Sorts in a query | 100 |
+| Groups in a query | 100 |
+| Values of a list filter (`:in`, `:all_of`, `:none_of`) | 10,000 |
+| The name of a saved view | 255 bytes |
+
+Filters, sorts and groups are counted as they are sent, before repeated
+sorts and groups are removed.
+
+A NUL character (`\u0000`) is refused in every text of the table, and in
+a text that a person edits or adds to a cell. PostgreSQL cannot store
+one. A NUL is never meaningful in a search, so the person gets an error.
+
+What the grid does past a bound, or with a NUL, depends on where the text
+came from:
+
+- **An event of the grid** (a query, a name for a view) is answered with
+  an error: "The search is longer than 1,000 bytes." The grid keeps the
+  query it had. A filter that does not check is an error in the grid's
+  own `filters` too.
+- **The search of a column's values** (the filter menu) gets no values,
+  as the menu has no place for an error.
+- **A link or a view** (the URL, a saved view, the last view) is left out
+  of the view where it is past a bound, and the grid says so (see
+  [Views that no longer apply](views.md#views-that-no-longer-apply)). The
+  whole part goes, never a cut of it: the search, or all the filters
+  when there are too many.
+- **An edit, a paste, a fill or a new row** refuses the cell with the
+  NUL, and saves the others.
+
+The keys of columns are matched against the grid's own columns, so a
+layout never holds text from the browser.
+
+The id of a row that an event names (an edit, a delete, a selection, a
+row's action, detail, history or editor, where another person is) is
+checked before any source reads it: a number, or a text of at most 1,000
+bytes without a NUL. An Ecto source also casts it with its primary key's
+type and dumps it as its repo's adapter does, so an integer key refuses
+`"abc"`, and a `:binary_id` on PostgreSQL refuses a text that is not a
+UUID. An id that does not check is a row that is not there: the edit or
+delete of it is refused, it is never selected, and no query gets it. A
+source of your own checks its ids with the optional `id?/2` (see
+`Masu.Source`).
+
 ## A primary key of several fields
 
 An Ecto source finds a row to edit by a primary key of one field.

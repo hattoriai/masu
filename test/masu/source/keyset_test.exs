@@ -81,25 +81,39 @@ defmodule Masu.Source.KeysetTest do
     end
   end
 
+  # PostgreSQL sorts NULLs last when ascending; SQLite and MySQL first.
+  defp postgres?, do: MasuTest.DB.adapter() == Ecto.Adapters.Postgres
+
+  # A field in the SQL: `i0."name"`, or with backquotes in MySQL.
+  defp column(field) do
+    if MasuTest.DB.adapter() == Ecto.Adapters.MyXQL, do: "i0.`#{field}`", else: ~s(i0."#{field}")
+  end
+
+  # A comparison with a parameter: `$1` in PostgreSQL, `?` in the others.
+  defp comparison(field, op), do: "#{column(field)} #{op} #{if postgres?(), do: "$", else: "?"}"
+
   test "a block by key has a range on the first sort, which an index reads from" do
-    # Ascending in SQLite, the 47 items with no score come first.
+    # Ascending in SQLite and MySQL, the 47 items with no score come first;
+    # in PostgreSQL, last.
     source = source([Sort.new("score", :asc), Sort.new("name", :desc)])
     {_blocks, [_first, second]} = queries(fn -> blocks(source, [0, 60], 60) end)
 
-    assert second =~ ~s(i0."score" >= ?)
+    assert second =~ comparison("score", ">=")
   end
 
   test "a block where the values of the first sort end goes on with its NULLs" do
-    # Descending in SQLite, the 33 items with no name come after the others.
-    source = source([Sort.new("name", :desc)])
+    # The 33 items with no name come after the others: descending in SQLite
+    # and MySQL, ascending in PostgreSQL.
+    {direction, op} = if postgres?(), do: {:asc, ">="}, else: {:desc, "<="}
+    source = source([Sort.new("name", direction)])
     all = source |> Source.rows(0, 1000) |> ids()
 
     {blocks, sql} = queries(fn -> blocks(source, [160, 200], 40) end)
 
     assert blocks |> List.flatten() |> ids() == Enum.slice(all, 160, 80)
     assert [values, nulls] = Enum.take(sql, -2)
-    assert values =~ ~s(i0."name" <= ?)
-    assert nulls =~ ~s(i0."name" IS NULL)
+    assert values =~ comparison("name", op)
+    assert nulls =~ "#{column("name")} IS NULL"
   end
 
   test "the primary key that ends the order goes the way of the last sort" do
@@ -119,7 +133,7 @@ defmodule Masu.Source.KeysetTest do
     assert ids(next) == Enum.slice(all, 150, 30)
     assert [values, block, after_block] = sql
     # Only the sort values, which an index of them has: not the rows.
-    assert values =~ ~r/^SELECT i0."score", i0."name", i0."id" FROM/
+    assert values =~ "SELECT #{column("score")}, #{column("name")}, #{column("id")} FROM"
     assert values =~ "OFFSET"
     refute block =~ "OFFSET"
     refute after_block =~ "OFFSET"
@@ -135,8 +149,8 @@ defmodule Masu.Source.KeysetTest do
     assert [_first, _second, values, _block] = sql
     # From the last row the grid read, by key, with the range an index
     # reads from: not from the first row.
-    assert values =~ ~r/^SELECT i0."score", i0."name", i0."id" FROM/
-    assert values =~ ~s(i0."score" >= ?)
+    assert values =~ "SELECT #{column("score")}, #{column("name")}, #{column("id")} FROM"
+    assert values =~ comparison("score", ">=")
     assert values =~ "OFFSET"
   end
 

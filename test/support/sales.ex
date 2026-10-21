@@ -53,23 +53,13 @@ end
 
 defmodule MasuTest.Sales do
   @moduledoc """
-  The tables of sales, customers, companies, tags and lines, with their
-  rows, in a repo: SQLite in the tests, PostgreSQL or MySQL by hand.
+  The rows of sales, customers, companies, tags and lines, in a repo
+  whose tables `MasuTest.Tables` made.
   """
 
   alias MasuTest.{Company, Customer, Line, Sale, Tag}
 
   def setup!(repo) do
-    for sql <- [
-          "CREATE TABLE companies (id INTEGER PRIMARY KEY, name TEXT, country TEXT, size TEXT)",
-          "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, company_id INTEGER)",
-          "CREATE TABLE sales (id INTEGER PRIMARY KEY, number TEXT, amount INTEGER, customer_id INTEGER)",
-          "CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT)",
-          "CREATE TABLE sale_tags (sale_id INTEGER, tag_id INTEGER)",
-          "CREATE TABLE sale_lines (id INTEGER PRIMARY KEY, product TEXT, sale_id INTEGER)"
-        ],
-        do: repo.query!(sql)
-
     for {id, name, country, size} <- [
           {1, "Acme", "PT", :large},
           {2, "Globex", "US", :small},

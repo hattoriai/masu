@@ -109,3 +109,40 @@ defmodule MasuTest.RowsThingsLive do
   defp delete(%{name: "Keep"}), do: {:error, "Kept."}
   defp delete(_row), do: :ok
 end
+
+defmodule MasuTest.RowsAccountLive do
+  @moduledoc """
+  A grid of an account's people: its changeset casts the account from
+  params, and `create_with` sets it.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket),
+    do: {:ok, assign(socket, people: [%{id: 1, name: "Ada", account: "acme"}])}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.data_grid
+      id="people"
+      rows={@people}
+      changeset={&changeset/2}
+      struct={fn -> %{id: System.unique_integer([:positive]) + 1000, name: nil, account: nil} end}
+      create_with={[account: "acme"]}
+      sort={[:id]}
+    >
+      <:col field={:name} />
+      <:col field={:account} />
+    </.data_grid>
+    """
+  end
+
+  def changeset(person, params) do
+    {person, %{name: :string, account: :string}}
+    |> Ecto.Changeset.cast(params, [:name, :account])
+    |> Ecto.Changeset.validate_required([:name, :account])
+  end
+end

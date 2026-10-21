@@ -34,7 +34,7 @@ defmodule Masu.Grid do
 
   use Phoenix.LiveComponent
 
-  alias Masu.{Action, Column, Filter, Group, Layout, Query, Source, Tree, Value, View}
+  alias Masu.{Action, Column, Filter, Group, Input, Layout, Query, Source, Tree, Value, View}
   alias Masu.Export.{Download, Ticket}
   alias Masu.Source.Ecto, as: EctoSource
   alias Masu.Source.Given
@@ -790,7 +790,15 @@ defmodule Masu.Grid do
 
   defp list_views(socket), do: socket
 
-  defp views_key(assigns), do: assigns.views_key || assigns.id
+  # A scope keeps its views apart from another's: an account's, say.
+  defp views_key(assigns) do
+    key = assigns.views_key || assigns.id
+
+    case Map.get(assigns, :views_scope) do
+      nil -> key
+      scope -> "#{key}@#{scope}"
+    end
+  end
 
   defp source_opts(assigns) do
     [
@@ -807,13 +815,16 @@ defmodule Masu.Grid do
   # A column that the source cannot sort or filter by does neither. A
   # column is editable when the grid edits, and it names a field.
   # A column takes a value on a new row when the grid creates rows, as it
-  # takes one in an edit. An enum's values are its own, or its schema's.
+  # takes one in an edit; a field of `create_with` takes neither. An
+  # enum's values are its own, or its schema's.
   defp supported(source, columns, assigns) do
     edits? = edits?(assigns)
     creates? = creates?(assigns)
+    fixed = assigns |> Map.get(:create_with, %{}) |> Map.keys() |> Enum.map(&to_string/1)
 
     Enum.map(columns, fn column ->
-      field? = column.editable != false and named_field?(column)
+      field? = settable?(column, fixed)
+
       many? = Source.many?(source, column)
 
       column = %{
@@ -854,6 +865,11 @@ defmodule Masu.Grid do
   # The operators of a column of one value, of those its source runs.
   defp scalar_ops(nil), do: nil
   defp scalar_ops(ops), do: ops -- [:all_of, :none_of]
+
+  # A column the person may set: a field, not `editable={false}`, nor
+  # one of `create_with`.
+  defp settable?(column, fixed),
+    do: column.editable != false and named_field?(column) and to_string(column.field) not in fixed
 
   # A field of a map or struct: not a function, nor a place in a row that
   # is a list.
@@ -1039,12 +1055,13 @@ defmodule Masu.Grid do
 
   # The values of a column for its filter menu: among the rows of the
   # query without the column's own filters, so that the menu offers the
-  # values the person may add.
+  # values the person may add. A search past the bound, or with a NUL, is
+  # not run: the menu cannot show an error, so it gets no values.
   def handle_event("masu:values", %{"key" => key} = params, socket) when is_binary(key) do
     %{source: source, query: query, all_columns: columns} = socket.assigns
 
-    case Column.find(columns, key) do
-      %Column{filterable: true} = column ->
+    case {Column.find(columns, key), Input.search(params["search"])} do
+      {%Column{filterable: true} = column, :ok} ->
         others = %{query | filters: Enum.reject(query.filters, &(&1.key == key))}
         search = if is_binary(params["search"]), do: String.trim(params["search"])
         values = Source.values(source, column, others, columns, search: search, limit: 50)
@@ -1268,7 +1285,7 @@ defmodule Masu.Grid do
   def handle_event("masu:select", params, socket) when is_map(params) do
     %{selection: selection} = socket.assigns
 
-    selection = change_selection(selection, params)
+    selection = change_selection(selection, params, socket.assigns.source)
 
     socket = assign(socket, selection: selection)
     summary = selection_summary(socket.assigns)
@@ -1374,12 +1391,20 @@ defmodule Masu.Grid do
       when store != nil do
     grid = socket.assigns.id
 
-    # Only of a row the grid's query shows this person.
+    # Only of a row the grid's query shows this person, and of a cell of
+    # one of the grid's columns: a key of no column has no history.
     entries =
       case {params["key"], fetch_row(socket.assigns, id, row_id(socket.assigns))} do
-        {_key, []} -> []
-        {key, _row} when is_binary(key) -> store.for_cell(grid, id, key, limit: 50)
-        {_key, _row} -> store.for_row(grid, id, limit: 50)
+        {_key, []} ->
+          []
+
+        {key, _row} when is_binary(key) ->
+          if Column.find(socket.assigns.all_columns, key),
+            do: store.for_cell(grid, id, key, limit: 50),
+            else: []
+
+        {_key, _row} ->
+          store.for_row(grid, id, limit: 50)
       end
 
     sizes =
@@ -1408,7 +1433,7 @@ defmodule Masu.Grid do
     edits =
       case params do
         %{"entry" => id} -> grid |> store.entry(id) |> List.wrap() |> restore_value(store, grid)
-        %{"batch" => batch} when is_binary(batch) -> grid |> store.batch(batch) |> restore_edits()
+        %{"batch" => batch} when is_binary(batch) -> restore_batch(store, grid, batch)
         _other -> []
       end
 
@@ -1495,7 +1520,7 @@ defmodule Masu.Grid do
   # params; saving and deleting a named view.
   def handle_event("masu:view", %{"action" => "apply", "id" => id}, socket) do
     case Enum.find(socket.assigns.saved_views, &(&1.id == id)) do
-      nil -> {:reply, %{"error" => "no such view"}, socket}
+      nil -> {:reply, %{"error" => "This view no longer exists."}, socket}
       saved -> apply_params(socket, saved.params)
     end
   end
@@ -1511,14 +1536,20 @@ defmodule Masu.Grid do
       when is_binary(name) do
     %{views: views, user: user, view_params: view_params} = socket.assigns
 
-    case String.trim(name) do
-      "" ->
+    # The name as it is saved, trimmed, is the one checked.
+    name = String.trim(name)
+
+    case {name, Input.name(name)} do
+      {"", _check} ->
         {:reply, %{"error" => "A view needs a name."}, socket}
 
-      _name when is_nil(views) or is_nil(user) ->
+      {_name, {:error, message}} ->
+        {:reply, %{"error" => message}, socket}
+
+      {_name, :ok} when is_nil(views) or is_nil(user) ->
         {:reply, %{"error" => "This grid does not keep views."}, socket}
 
-      name ->
+      {name, :ok} ->
         case views.save(
                views_key(socket.assigns),
                user,
@@ -1539,12 +1570,14 @@ defmodule Masu.Grid do
   end
 
   # How many rows are selected, and whether they are every row of the query.
-  defp change_selection(_selection, %{"all" => all}) when is_boolean(all),
+  defp change_selection(_selection, %{"all" => all}, _source) when is_boolean(all),
     do: %{all: all, ids: MapSet.new(), except: MapSet.new()}
 
-  defp change_selection(selection, %{"ids" => ids, "on" => on})
+  # An id that cannot be of a row is not selected: an action's `{:ids,
+  # ids}` and the query of every row but some have only ids of rows.
+  defp change_selection(selection, %{"ids" => ids, "on" => on}, source)
        when is_list(ids) and is_boolean(on) do
-    ids = Enum.take(ids, 10_000)
+    ids = ids |> Enum.take(10_000) |> Enum.filter(&Source.id?(source, &1))
 
     case {selection.all, on} do
       {true, true} ->
@@ -1561,7 +1594,7 @@ defmodule Masu.Grid do
     end
   end
 
-  defp change_selection(selection, _params), do: selection
+  defp change_selection(selection, _params, _source), do: selection
 
   defp selection_summary(%{selection: %{all: true, except: except}, total: total}),
     do: %{all: true, count: max(total - MapSet.size(except), 0)}
@@ -1710,6 +1743,15 @@ defmodule Masu.Grid do
   defp restored(edits, errors) do
     refused = MapSet.new(errors, fn [id, key | _] -> {id, key} end)
     Enum.count(edits, &(not MapSet.member?(refused, {&1["id"], &1["key"]})))
+  end
+
+  # A batch is a token the grid made (16 characters): a text that is not
+  # one is an unknown batch.
+  defp restore_batch(store, grid, batch) do
+    case Input.text(batch, "a batch", 64) do
+      :ok -> grid |> store.batch(batch) |> restore_edits()
+      {:error, _message} -> []
+    end
   end
 
   defp restore_edits(entries) do

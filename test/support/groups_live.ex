@@ -1,7 +1,7 @@
 defmodule MasuTest.GroupsLive do
   @moduledoc """
   Orders grouped by the columns of `?group=status,customer`, from the
-  SQLite table (`?source=ecto`), or as a list (`?source=list`), the groups
+  test repo's table (`?source=ecto`), or as a list (`?source=list`), the groups
   of `?open=status` (or `?open=all`) open.
   """
   use Phoenix.LiveView
