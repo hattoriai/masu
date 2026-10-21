@@ -1,7 +1,6 @@
 defmodule Masu.Source.RelatedTest do
-  # Columns of related rows (`field={[:customer, :name]}`) in the SQLite
-  # repo of test_helper.exs. The same queries run by hand on PostgreSQL
-  # and MySQL: see `MasuTest.Sales`.
+  # Columns of related rows (`field={[:customer, :name]}`) in the repo of
+  # test_helper.exs: SQLite, PostgreSQL or MySQL by MASU_DB.
   use ExUnit.Case, async: false
 
   import Ecto.Query
@@ -28,7 +27,7 @@ defmodule Masu.Source.RelatedTest do
 
   # NULL comes first in SQLite and MySQL, last in PostgreSQL.
   defp nulls(list, nulls) do
-    if Repo.__adapter__() == Ecto.Adapters.Postgres, do: list ++ nulls, else: nulls ++ list
+    if MasuTest.DB.adapter() == Ecto.Adapters.Postgres, do: list ++ nulls, else: nulls ++ list
   end
 
   defp numbers(queryable \\ Sale, opts),

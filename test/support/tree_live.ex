@@ -30,17 +30,13 @@ defmodule MasuTest.Accounts do
   end
 
   def setup!(repo) do
-    repo.query!("""
-    CREATE TABLE accounts (id INTEGER PRIMARY KEY, parent_id INTEGER, name TEXT, balance DECIMAL)
-    """)
-
     for account <- all(), do: repo.insert!(account)
-    :ok
+    MasuTest.DB.reset_ids!(repo, "accounts")
   end
 end
 
 defmodule MasuTest.TreeLive do
-  @moduledoc "A chart of accounts in a tree: a list, or the SQLite table with `?source=ecto`."
+  @moduledoc "A chart of accounts in a tree: a list, or the table of the test repo with `?source=ecto`."
   use Phoenix.LiveView
 
   import Masu.Components

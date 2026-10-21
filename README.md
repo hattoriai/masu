@@ -272,7 +272,22 @@ mix dialyzer
 mix bench                  # the benchmarks (bench/README.md), with PostgreSQL
 ```
 
-The ExUnit suite tests the Ecto source on SQLite. `mix test.js` runs the
+The ExUnit suite tests the Ecto source on SQLite, in a file of its own,
+with no setup. `MASU_DB` runs it on PostgreSQL or MySQL instead, in a
+`masu_test` database (and `masu_test_history`) that each run drops and
+creates again. `docker-compose.yml` has both servers:
+
+```sh
+docker compose up -d
+MASU_DB=postgres mix test
+MASU_DB=mysql mix test
+```
+
+`MASU_DB_URL` points to another server, for example
+`ecto://user:pass@localhost:5432/masu_test`. CI runs the suite on all
+three.
+
+`mix test.js` runs the
 tests of the pure modules in `assets/test/` (the block cache, the
 geometry of the rows and the keys, the sort, the copied text and the
 formats) with Node's test runner.

@@ -1,5 +1,5 @@
 defmodule MasuTest.SelectLive do
-  @moduledoc "Orders to select (the SQLite table, or a list with `?source=list`); a button reads the selection."
+  @moduledoc "Orders to select (the table of the test repo, or a list with `?source=list`); a button reads the selection."
   use Phoenix.LiveView
 
   import Masu.Components
