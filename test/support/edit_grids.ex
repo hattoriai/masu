@@ -151,3 +151,30 @@ defmodule MasuTest.SheetLive do
     """
   end
 end
+
+defmodule MasuTest.IsshoGridLive do
+  @moduledoc "A grid whose people are those of an Issho room, agents too."
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  on_mount(Masu.Live)
+  on_mount(Issho.Live)
+
+  @impl true
+  def mount(_params, session, socket) do
+    {:ok,
+     assign(socket,
+       grid: MasuTest.SheetLive.grid(session["topic"]),
+       issho: [instance: session["instance"], room: session["room"]],
+       user: %{id: session["user"], name: session["name"]}
+     )}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.data_grid {@grid} issho={@issho} user={@user} />
+    """
+  end
+end

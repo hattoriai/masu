@@ -15,6 +15,11 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   room's policy; the people see the agent's cell, and its rows flash in
   its color. An agent leaves a cell that someone is editing. Issho is an
   optional dependency.
+- `issho`: a grid's people are those of an Issho room, instead of
+  `presence`'s, agents among them: a person's cell and range are in the
+  room's awareness, the cell they edit is a lock of the room, and their
+  view goes with them for following. `people={false}` hides the avatars
+  above the grid, for a page that lists its people itself.
 - `Masu.Sheet`: a grid outside the LiveView, for a job, a test or an
   agent. Define a grid once as `data_grid`'s attributes
   (`<.data_grid {MyApp.Grids.tasks(@current_scope)} />`), and

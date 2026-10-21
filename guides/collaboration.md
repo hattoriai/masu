@@ -151,6 +151,33 @@ person who leaves or whose connection drops. A person's name, color and
 avatar, and their view unless `share_view={false}`, go to everyone who
 has the grid open: give `user` only what they may see.
 
+## In an Issho room
+
+On a page whose other parts are in an [Issho](https://hex.pm/packages/issho)
+room (a Kotoba text, a Hakushi canvas), the grid's people can be the
+room's, instead of `presence`'s: the same people, in the same colors,
+with the agents among them.
+
+```heex
+<.data_grid
+  {MyApp.Grids.tasks(@current_scope)}
+  issho={[instance: MyApp.Issho, room: "project:#{@project.id}", actor: @current_user]}
+  user={%{id: @current_user.id, name: @current_user.name}}
+  people={false}
+/>
+```
+
+The LiveView needs Issho's hook too (`on_mount Issho.Live`). The grid is
+the place `"project:7/tasks"` of the room, its id after the room: a
+person's cell and range go into the room's awareness, the cell they edit
+is a lock of the room, and their view goes with them, for following.
+`people={false}` leaves out the avatars above the grid, for a page that
+lists the room's people itself (`Issho.Components.people/1`); the cells
+still show who is where.
+
+The rows still come and go the grid's way (`live`): Issho carries only
+who is there and where.
+
 ## Agents
 
 An agent reads and changes a grid as a person does, in an
