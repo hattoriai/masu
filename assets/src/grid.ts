@@ -248,13 +248,18 @@ export class Grid {
   constructor(el: HTMLElement, transport: Transport) {
     this.el = el;
     this.id = el.id;
-    // Issho's pointer of an agent at work in the grid goes to its cell
-    // (Issho's `locate`, through the symbol it reads, with no import of it).
+    // Issho's pointers, through the symbols it reads (no import of it): an
+    // agent at work in the grid is drawn at its cell (`locate`), and a
+    // person's pointer over a cell is that cell (`point`), drawn on it on
+    // each screen, whatever the order or the scroll there.
     const locator = (at: unknown) => this.locate(at);
-    (el as unknown as Record<symbol, unknown>)[Symbol.for("issho.locator")] = locator;
+    const pointer = (x: number, y: number) => this.cellUnder(x, y);
+    const element = el as unknown as Record<symbol, unknown>;
+    element[Symbol.for("issho.locator")] = locator;
+    element[Symbol.for("issho.point")] = pointer;
     this.cleanups.push(() => {
-      const element = el as unknown as Record<symbol, unknown>;
       if (element[Symbol.for("issho.locator")] === locator) delete element[Symbol.for("issho.locator")];
+      if (element[Symbol.for("issho.point")] === pointer) delete element[Symbol.for("issho.point")];
     });
     this.transport = transport;
     this.config = readConfig(el);
@@ -4302,6 +4307,22 @@ export class Grid {
   }
 
   /**
+   * The cell under a point of the viewport, as the others find it (its
+   * row's id and its column's key), and where in it (x and y, fractions of
+   * its box); null over no cell of this grid.
+   */
+  private cellUnder(x: number, y: number): { cell: [unknown, string]; x: number; y: number } | null {
+    const target = document.elementFromPoint(x, y) as HTMLElement | null;
+    const cell = target && this.gridEl.contains(target) ? this.cellAt(target) : null;
+    const data = cell ? this.dataAt(cell.row) : null;
+    const column = cell ? this.columns[cell.col] : undefined;
+    if (!cell || !data || !column) return null;
+    const box = target!.closest<HTMLElement>(".masu-cell")!.getBoundingClientRect();
+    const fraction = (value: number, from: number, size: number) => Math.round(Math.min(1, Math.max(0, size > 0 ? (value - from) / size : 0.5)) * 100) / 100;
+    return { cell: [data[0], column.key], x: fraction(x, box.left, box.width), y: fraction(y, box.top, box.height) };
+  }
+
+  /**
    * The selected range as the others can draw it in their own order: the
    * ids of its rows that the browser has (at most 500) and its columns'
    * keys.
@@ -4317,12 +4338,12 @@ export class Grid {
     return { rows, keys: this.columns.slice(range.left, range.right + 1).map((column) => column.key) };
   }
 
-  /** The Issho room of the grid: the part of its document before the "/". */
   /** The room the grid follows in: none for a grid that takes no part in following (`follow={false}`). */
   private followRoom(): string | null {
     return this.config.follow === false ? null : this.room();
   }
 
+  /** The Issho room of the grid: the part of its document before the "/". */
   private room(): string | null {
     const doc = this.el.dataset.isshoDoc;
     return doc ? doc.slice(0, doc.indexOf("/") > 0 ? doc.indexOf("/") : doc.length) : null;

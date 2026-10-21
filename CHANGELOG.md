@@ -41,6 +41,9 @@ On Issho 0.3: following and agents' motion are the room's.
   of it with reduced motion.
 - An agent's page pointer (`Issho.Components.pointers/1`) goes to its
   cell or range: the grid says where they are on the page.
+- A person's page pointer over a cell is that cell (Issho's `point`: its
+  row's id, its column's key, and where in it): each page draws it on
+  that cell, whatever its order or scroll.
 - `follow={false}`: a grid that takes no part in following, though its
   room's other blocks do (its avatars are not buttons, and its view stays
   its person's).
