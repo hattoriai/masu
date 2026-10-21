@@ -36,6 +36,16 @@ defmodule Masu.Issho.PeopleTest do
     %{instance: instance, room: room, grid: grid, bob: bob, ctx: ctx}
   end
 
+  # Waits for an awareness frame of the room that passes `check`.
+  defp assert_aware(participant, check) do
+    receive do
+      {Participant, ^participant, "aware", %{"states" => states}} ->
+        if check.(states), do: :ok, else: assert_aware(participant, check)
+    after
+      1_000 -> flunk("no awareness frame passed")
+    end
+  end
+
   defp call(name, args, ctx), do: Issho.Tools.call(Masu.Issho.tools(), name, args, ctx)
 
   test "a person's grid shows where an agent of the room is, and its avatar",
@@ -61,11 +71,12 @@ defmodule Masu.Issho.PeopleTest do
       "editing" => true
     })
 
-    assert_receive {Participant, ^watcher, "aware", %{"states" => states}}, 1_000
-
-    assert Enum.any?(Map.values(states), fn %{"key" => key, "state" => state} ->
-             key == "bob" and state["place"] == %{"doc" => grid, "at" => %{"cell" => [1, "name"]}}
-           end)
+    # The frames come as the room's awareness sends them: Bob's join, then his cell.
+    assert_aware(watcher, fn states ->
+      Enum.any?(Map.values(states), fn %{"key" => key, "state" => state} ->
+        key == "bob" and state["place"] == %{"doc" => grid, "at" => %{"cell" => [1, "name"]}}
+      end)
+    end)
 
     assert {:error, "Nothing saved: Row 1, name: Bob is editing this cell."} =
              call(

@@ -66,19 +66,16 @@ if Code.ensure_loaded?(Issho.Tool) do
     # A person's cell or range in the grid, from their place: the cells as
     # [id, key] pairs, at most 500 rows.
     def selection_of(grid, who) do
-      with {:ok, at, name} <- Issho.Tools.place_of(grid.participant, grid.grid, who) do
-        case at do
-          %{"range" => %{"rows" => [_ | _] = rows, "keys" => [_ | _] = keys}} ->
-            {:ok, name, at, for(id <- Enum.take(rows, 500), key <- keys, do: [id, key])}
-
-          %{"cell" => [id, key]} ->
-            {:ok, name, at, [[id, key]]}
-
-          _other ->
-            {:error, "#{name} has no cell selected in the grid."}
-        end
-      end
+      with {:ok, at, name} <- Issho.Tools.place_of(grid.participant, grid.grid, who),
+           {:ok, cells} <- cells(at, name),
+           do: {:ok, name, at, cells}
     end
+
+    defp cells(%{"range" => %{"rows" => [_ | _] = rows, "keys" => [_ | _] = keys}}, _name),
+      do: {:ok, for(id <- Enum.take(rows, 500), key <- keys, do: [id, key])}
+
+    defp cells(%{"cell" => [id, key]}, _name), do: {:ok, [[id, key]]}
+    defp cells(_at, name), do: {:error, "#{name} has no cell selected in the grid."}
 
     def name(participant, key) do
       case Issho.Participant.people(participant) do
