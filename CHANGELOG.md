@@ -7,6 +7,16 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- A jump of an Ecto source (the scrollbar dragged to rows the grid did
+  not read) counts its `OFFSET` over the sort values of the rows, not
+  the rows, from the nearest block before it that the grid read, and
+  reads the block by key. With an index of the sort's columns, the
+  database reads only the index: on PostgreSQL, a jump to the middle of
+  ten million rows sorted by a date takes 0.2 s, not 12 s (minutes from
+  the disk), and a jump of 1,000 rows on from a block 1 ms (#53).
+
 ## [0.3.0] - 2026-10-20
 
 ### Added

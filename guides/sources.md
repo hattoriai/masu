@@ -98,8 +98,9 @@ of a tenant's schema:
 <.data_grid id="orders" source={Order} repo={MyApp.Repo} repo_opts={[prefix: @tenant]}>
 ```
 
-A jump into the middle of a large table (the scrollbar dragged) is an
-`OFFSET`, which gets slower deep into it: the database still reads the
+A jump into the middle of a large table (the scrollbar dragged) counts
+an `OFFSET` over the sort values, which gets slower deep into it: the
+database still reads the
 rows before it. See [Known limits](limits.md).
 
 ### Fields of related rows

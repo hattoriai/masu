@@ -86,9 +86,9 @@ three pages of 50). In Chromium, with a list source:
 * An Ecto source on PostgreSQL reads a block of 100 rows in 0.25 ms,
   at the top of a table and in the middle of ten million rows: by key,
   not `OFFSET`. Sorted by a column with an index, 2 ms. A jump (the
-  scrollbar dragged to rows the grid did not read) is an `OFFSET`: to
-  the middle of ten million rows it takes 0.4 s, and 12 s sorted by a
-  column with an index (see [Known limits](guides/limits.md)). A
+  scrollbar dragged to rows the grid did not read) counts an `OFFSET`
+  over the index: to the middle of ten million rows it takes 0.14 s, and
+  0.2 s sorted by a column with an index (see [Known limits](guides/limits.md)). A
   `count(*)` of ten million rows takes seconds: `count={:deferred}`.
 * A list source keeps its rows in the LiveView's process, about 1 KB a
   row for each person. It is for up to about 10,000 rows, which it sorts
