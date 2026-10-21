@@ -143,7 +143,7 @@ defmodule Masu.Query do
         {:cont, {:ok, [Sort.new(key, String.to_existing_atom(dir)) | acc]}}
 
       sort, _acc ->
-        {:halt, {:error, "not a sort: #{inspect(sort)}"}}
+        {:halt, {:error, Input.sentence("not a sort: #{inspect(sort)}")}}
     end)
     |> case do
       {:ok, sorts} -> {:ok, sorts |> Enum.reverse() |> check_sorts(columns)}
@@ -151,7 +151,8 @@ defmodule Masu.Query do
     end
   end
 
-  defp wire_sorts(sorts, _columns), do: {:error, "not a list of sorts: #{inspect(sorts)}"}
+  defp wire_sorts(sorts, _columns),
+    do: {:error, Input.sentence("not a list of sorts: #{inspect(sorts)}")}
 
   defp wire_filters(filters, columns) when is_list(filters) do
     filters
@@ -159,11 +160,11 @@ defmodule Masu.Query do
       %{"key" => key, "op" => op} = filter, {:ok, acc} when is_binary(key) and is_binary(op) ->
         case op_from_wire(op) do
           {:ok, op} -> {:cont, {:ok, [Filter.new(key, op, filter["value"]) | acc]}}
-          :error -> {:halt, {:error, "not a filter operator: #{inspect(op)}"}}
+          :error -> {:halt, {:error, Input.sentence("not a filter operator: #{inspect(op)}")}}
         end
 
       filter, _acc ->
-        {:halt, {:error, "not a filter: #{inspect(filter)}"}}
+        {:halt, {:error, Input.sentence("not a filter: #{inspect(filter)}")}}
     end)
     |> case do
       {:ok, filters} -> filters |> Enum.reverse() |> cast_filters(columns)
@@ -171,7 +172,8 @@ defmodule Masu.Query do
     end
   end
 
-  defp wire_filters(filters, _columns), do: {:error, "not a list of filters: #{inspect(filters)}"}
+  defp wire_filters(filters, _columns),
+    do: {:error, Input.sentence("not a list of filters: #{inspect(filters)}")}
 
   defp op_from_wire(op) do
     case Enum.find(Filter.ops(), &(Atom.to_string(&1) == op)) do

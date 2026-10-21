@@ -1520,7 +1520,7 @@ defmodule Masu.Grid do
   # params; saving and deleting a named view.
   def handle_event("masu:view", %{"action" => "apply", "id" => id}, socket) do
     case Enum.find(socket.assigns.saved_views, &(&1.id == id)) do
-      nil -> {:reply, %{"error" => "no such view"}, socket}
+      nil -> {:reply, %{"error" => "This view no longer exists."}, socket}
       saved -> apply_params(socket, saved.params)
     end
   end
@@ -1536,17 +1536,20 @@ defmodule Masu.Grid do
       when is_binary(name) do
     %{views: views, user: user, view_params: view_params} = socket.assigns
 
-    case {Input.name(name), String.trim(name)} do
-      {{:error, message}, _name} ->
-        {:reply, %{"error" => "#{message}."}, socket}
+    # The name as it is saved, trimmed, is the one checked.
+    name = String.trim(name)
 
-      {:ok, ""} ->
+    case {name, Input.name(name)} do
+      {"", _check} ->
         {:reply, %{"error" => "A view needs a name."}, socket}
 
-      {:ok, _name} when is_nil(views) or is_nil(user) ->
+      {_name, {:error, message}} ->
+        {:reply, %{"error" => message}, socket}
+
+      {_name, :ok} when is_nil(views) or is_nil(user) ->
         {:reply, %{"error" => "This grid does not keep views."}, socket}
 
-      {:ok, name} ->
+      {name, :ok} ->
         case views.save(
                views_key(socket.assigns),
                user,

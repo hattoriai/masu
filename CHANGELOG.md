@@ -21,20 +21,35 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Every error the grid shows a person is a sentence, with a capital and a
+  full stop: "The filter contains is for text, not integer.", "A query
+  has more than 100 filters.", "There is no column \"nope\"." The errors
+  of a query were lowercase, without one. They are also the errors of
+  `Masu.Filter.cast/2` and `Masu.Query.new/2`, and of the `ArgumentError`
+  of a grid whose own `filters` do not check: a test or a log that matches
+  on their text needs the new text. A view that is no longer there says
+  "This view no longer exists." (it said "no such view").
+
 - What the browser sends is bound where it comes in, and refused past
   the bound, never cut short (see "What the browser may send" in the
   limits guide): a search, the search of a column's values and the text
   of a filter value of at most 1,000 bytes; at most 100 filters, 100 sorts
   and 100 groups in a query; at most 10,000 values in a list filter; a
   view's name of at most 255 bytes. Texts are counted in bytes.
-  - An event answers with an error ("the search is longer than 1,000
-    bytes"), and `Masu.Filter.cast/2` returns one, also for the grid's
+  - An event answers with an error ("The search is longer than 1,000
+    bytes."), and `Masu.Filter.cast/2` returns one, also for the grid's
     `filters`. The search of a column's values gets no values.
   - A link or a saved view drops a part past a bound, whole, and says so
     ("Part of this view no longer applies: search"), as it does for a
     column that is gone.
 
 ### Fixed
+
+- A view's name was checked against its bound of 255 bytes before it was
+  trimmed, and saved trimmed: a name with spaces around it that took it
+  past the bound was refused, and a name of only spaces past it was "too
+  long" rather than "A view needs a name." The name is now trimmed first,
+  and checked as it is saved.
 
 - An id from the browser that the source could not read crashed the
   LiveView: an integer key sent `"abc"` raised `Ecto.Query.CastError`,
