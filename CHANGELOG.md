@@ -47,6 +47,12 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   PostgreSQL is a UUID). An id that does not check is a row not found. A
   source of your own may check its ids with the new optional callback
   `id?/2` of `Masu.Source`.
+- A search, a text filter or the search of a column's values on a field
+  that is not stored as text failed on PostgreSQL ("function
+  lower(bigint) does not exist"): a column without a `type` is of text,
+  and searched, whatever its field. An Ecto source now casts such a field
+  to a text first, as each database casts (Ecto's `type/2`); a field of
+  text stays `lower(field)`, which an index serves.
 - A text with a NUL character crashed the LiveView: PostgreSQL rejects
   `\u0000` in the jsonb of the last view the grid keeps (`views`), and the
   grid matched on `:ok`. A NUL is now refused in the texts the browser
