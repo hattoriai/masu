@@ -122,9 +122,14 @@ the account too.
 A view is kept as its params, so it outlives changes to the grid: a
 column added since takes its declared place, a column removed is left
 out, and a sort or filter on a column that no longer sorts or filters,
-or a filter value that no longer reads, is dropped. The grid says so to
-the person ("Part of this view no longer applies: plan"); a link or a
-saved view never fails a grid.
+or a filter value that no longer reads, is dropped. A part past a bound
+of [What the browser may send](limits.md#what-the-browser-may-send), or
+with a NUL character, is dropped too: a search of more than 1,000 bytes
+(shown as "search"), more than 100 filters ("filters"), sorts ("sort") or
+groups ("group"), or a filter whose value is too long (shown by its
+column). The whole part goes, never a cut of it. The grid says so to the
+person ("Part of this view no longer applies: plan"); a link or a saved
+view never fails a grid.
 
 ## Following someone
 

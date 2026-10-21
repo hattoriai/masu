@@ -34,7 +34,7 @@ defmodule Masu.Grid do
 
   use Phoenix.LiveComponent
 
-  alias Masu.{Action, Column, Filter, Group, Layout, Query, Source, Tree, Value, View}
+  alias Masu.{Action, Column, Filter, Group, Input, Layout, Query, Source, Tree, Value, View}
   alias Masu.Export.{Download, Ticket}
   alias Masu.Source.Ecto, as: EctoSource
   alias Masu.Source.Given
@@ -1055,12 +1055,13 @@ defmodule Masu.Grid do
 
   # The values of a column for its filter menu: among the rows of the
   # query without the column's own filters, so that the menu offers the
-  # values the person may add.
+  # values the person may add. A search past the bound, or with a NUL, is
+  # not run: the menu cannot show an error, so it gets no values.
   def handle_event("masu:values", %{"key" => key} = params, socket) when is_binary(key) do
     %{source: source, query: query, all_columns: columns} = socket.assigns
 
-    case Column.find(columns, key) do
-      %Column{filterable: true} = column ->
+    case {Column.find(columns, key), Input.search(params["search"])} do
+      {%Column{filterable: true} = column, :ok} ->
         others = %{query | filters: Enum.reject(query.filters, &(&1.key == key))}
         search = if is_binary(params["search"]), do: String.trim(params["search"])
         values = Source.values(source, column, others, columns, search: search, limit: 50)
@@ -1390,12 +1391,20 @@ defmodule Masu.Grid do
       when store != nil do
     grid = socket.assigns.id
 
-    # Only of a row the grid's query shows this person.
+    # Only of a row the grid's query shows this person, and of a cell of
+    # one of the grid's columns: a key of no column has no history.
     entries =
       case {params["key"], fetch_row(socket.assigns, id, row_id(socket.assigns))} do
-        {_key, []} -> []
-        {key, _row} when is_binary(key) -> store.for_cell(grid, id, key, limit: 50)
-        {_key, _row} -> store.for_row(grid, id, limit: 50)
+        {_key, []} ->
+          []
+
+        {key, _row} when is_binary(key) ->
+          if Column.find(socket.assigns.all_columns, key),
+            do: store.for_cell(grid, id, key, limit: 50),
+            else: []
+
+        {_key, _row} ->
+          store.for_row(grid, id, limit: 50)
       end
 
     sizes =
@@ -1424,7 +1433,7 @@ defmodule Masu.Grid do
     edits =
       case params do
         %{"entry" => id} -> grid |> store.entry(id) |> List.wrap() |> restore_value(store, grid)
-        %{"batch" => batch} when is_binary(batch) -> grid |> store.batch(batch) |> restore_edits()
+        %{"batch" => batch} when is_binary(batch) -> restore_batch(store, grid, batch)
         _other -> []
       end
 
@@ -1527,14 +1536,17 @@ defmodule Masu.Grid do
       when is_binary(name) do
     %{views: views, user: user, view_params: view_params} = socket.assigns
 
-    case String.trim(name) do
-      "" ->
+    case {Input.name(name), String.trim(name)} do
+      {{:error, message}, _name} ->
+        {:reply, %{"error" => "#{message}."}, socket}
+
+      {:ok, ""} ->
         {:reply, %{"error" => "A view needs a name."}, socket}
 
-      _name when is_nil(views) or is_nil(user) ->
+      {:ok, _name} when is_nil(views) or is_nil(user) ->
         {:reply, %{"error" => "This grid does not keep views."}, socket}
 
-      name ->
+      {:ok, name} ->
         case views.save(
                views_key(socket.assigns),
                user,
@@ -1726,6 +1738,15 @@ defmodule Masu.Grid do
   defp restored(edits, errors) do
     refused = MapSet.new(errors, fn [id, key | _] -> {id, key} end)
     Enum.count(edits, &(not MapSet.member?(refused, {&1["id"], &1["key"]})))
+  end
+
+  # A batch is a token the grid made (16 characters): a text that is not
+  # one is an unknown batch.
+  defp restore_batch(store, grid, batch) do
+    case Input.text(batch, "a batch", 64) do
+      :ok -> grid |> store.batch(batch) |> restore_edits()
+      {:error, _message} -> []
+    end
   end
 
   defp restore_edits(entries) do

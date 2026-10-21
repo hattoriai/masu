@@ -27,7 +27,7 @@ defmodule Masu.Query do
   the same way.
   """
 
-  alias Masu.{Column, Filter, Sort}
+  alias Masu.{Column, Filter, Input, Sort}
 
   @type t :: %__MODULE__{
           sorts: [Sort.t()],
@@ -54,11 +54,17 @@ defmodule Masu.Query do
 
   The sorts on a column that does not sort, and the repeated ones, are
   left out. A filter that does not check is an error, so that a grid
-  never shows rows the person did not ask for.
+  never shows rows the person did not ask for. So is a query with more
+  than 100 sorts, filters or groups, a text over 1,000 bytes, a list
+  filter of more than 10,000 values, and a text with a NUL character.
   """
   @spec from_wire(map(), [Column.t()]) :: {:ok, t()} | {:error, String.t()}
   def from_wire(params, columns) when is_map(params) do
-    with {:ok, sorts} <- wire_sorts(Map.get(params, "sorts", []), columns),
+    with :ok <- Input.count(params["sorts"], :sorts),
+         :ok <- Input.count(params["filters"], :filters),
+         :ok <- Input.count(params["groups"], :groups),
+         :ok <- Input.search(params["search"]),
+         {:ok, sorts} <- wire_sorts(Map.get(params, "sorts", []), columns),
          {:ok, filters} <- wire_filters(Map.get(params, "filters", []), columns) do
       {:ok,
        %__MODULE__{

@@ -19,6 +19,32 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it, so params cannot change them, and a column of one of these fields
   neither takes a value on a new row nor edits.
 
+### Changed
+
+- What the browser sends is bound where it comes in, and refused past
+  the bound, never cut short (see "What the browser may send" in the
+  limits guide): a search, the search of a column's values and the text
+  of a filter value of at most 1,000 bytes; at most 100 filters, 100 sorts
+  and 100 groups in a query; at most 10,000 values in a list filter; a
+  view's name of at most 255 bytes. Texts are counted in bytes.
+  - An event answers with an error ("the search is longer than 1,000
+    bytes"), and `Masu.Filter.cast/2` returns one, also for the grid's
+    `filters`. The search of a column's values gets no values.
+  - A link or a saved view drops a part past a bound, whole, and says so
+    ("Part of this view no longer applies: search"), as it does for a
+    column that is gone.
+
+### Fixed
+
+- A text with a NUL character crashed the LiveView: PostgreSQL rejects
+  `\u0000` in the jsonb of the last view the grid keeps (`views`), and the
+  grid matched on `:ok`. A NUL is now refused in the texts the browser
+  sends to a query, a view or a cell: the search and the filters of a
+  query, a link or a saved view (that part is dropped), the name of a
+  view, and an edited or new cell (that cell is refused). The history
+  asks its store only for the key of a column, and for a batch token the
+  grid could have made.
+
 ## [0.3.0] - 2026-10-20
 
 ### Added
