@@ -173,7 +173,9 @@ person's cell and range go into the room's awareness, the cell they edit
 is a lock of the room, and their view goes with them, for following.
 `people={false}` leaves out the avatars above the grid, for a page that
 lists the room's people itself (`Issho.Components.people/1`); the cells
-still show who is where.
+still show who is where. The colors are Issho's: a person's own, else
+their color of the room's palette in Issho's theme (`issho.css`), the
+same as the page's list of people and pointers.
 
 The rows still come and go the grid's way (`live`): Issho carries only
 who is there and where.

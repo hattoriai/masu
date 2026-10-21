@@ -2484,6 +2484,7 @@ defmodule Masu.Grid do
       class={["masu", @density != :normal && "masu-density-#{@density}", @class]}
       phx-hook="Masu"
       phx-target={@myself}
+      data-issho-doc={@issho && Masu.Issho.Live.doc(@issho, @id)}
       data-masu={config(assigns)}
       data-masu-messages={JSON.encode!(@messages)}
       style={"height: #{@height}"}

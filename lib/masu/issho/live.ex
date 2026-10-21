@@ -16,8 +16,6 @@ if Code.ensure_loaded?(Issho.Live) do
     #     grids they have open, with their view (to follow them) and their
     #     first row on the screen.
 
-    @palette ~w(#2563eb #db2777 #16a34a #d97706 #7c3aed #0891b2 #dc2626 #4d7c0f)
-
     @doc false
     # The grid's settings, of its `issho` attribute.
     @spec config(term(), map() | nil) :: map()
@@ -174,16 +172,13 @@ if Code.ensure_loaded?(Issho.Live) do
 
     defp range(_state, _doc), do: nil
 
-    # The person's own color, or the room's palette's: the theme's color
-    # of their index (`--issho-person-n`), else Masu's.
+    # Issho's colors: the person's own (Issho checks it), else the theme's
+    # color of their index in the room's palette (issho.css, Sumi, a dark
+    # mode), the same as Issho's list of people and pointers show.
     defp color(meta, key) do
       case Issho.Color.sanitize(meta["color"]) do
-        nil ->
-          index = meta["palette"] || Issho.Color.index(key)
-          "var(--issho-person-#{index}, #{Enum.at(@palette, index - 1)})"
-
-        color ->
-          color
+        nil -> "var(--issho-person-#{meta["palette"] || Issho.Color.index(key)}, currentColor)"
+        color -> color
       end
     end
 
