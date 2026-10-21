@@ -95,14 +95,16 @@ filters, search, scroll position and selection) is kept aside:
 
 When the views already match, following only scrolls.
 
-The banner is `.masu-following` (its button `.masu-following-stop`), and
-the grid carries `data-following` while it follows. These properties, on
-`.masu` or the page, change their look:
+The look is Issho's, the same as its people list's and every other
+block's on the page: the banner carries Issho's classes
+(`issho-following`, `issho-following-stop`) besides its own
+(`.masu-following`), the grid carries `data-following` while it follows,
+and Issho's properties, on the page, restyle all of them at once:
 
-    .masu {
-      --masu-following-background: #111827;  /* the person's color */
-      --masu-following-text: #fff;
-      --masu-following-ring: none;            /* 2px of the person's color */
+    :root {
+      --issho-following-background: #111827;  /* the person's color */
+      --issho-following-text: #fff;
+      --issho-following-ring: none;            /* a ring of the person's color */
     }
 
 `--masu-follow-color` is the followed person's color, for your own rules.
