@@ -36,8 +36,11 @@ if Code.ensure_loaded?(Issho.Tool) do
     with Issho's (`Issho.Tools.room/0`), over MCP (`Issho.MCP`) or your
     app's own model (`Issho.Tools`).
 
-    `config :masu, Masu.Issho, pace: 120`: the milliseconds an agent
-    stays on each cell it edits, so the people see it move (0 for none).
+    `config :masu, Masu.Issho, pace: 120, travel: true`: `pace`, the
+    milliseconds an agent stays on each cell it edits, typing, so the
+    people see it (0 for none); `travel`, whether it goes to each cell and
+    selects ranges as a drag does, as a person would (false: it is there at
+    once). Only where it goes is sent: each browser draws the way there.
     """
 
     alias Issho.Participant
@@ -122,5 +125,35 @@ if Code.ensure_loaded?(Issho.Tool) do
     @doc false
     @spec pace() :: non_neg_integer()
     def pace, do: Keyword.get(Application.get_env(:masu, __MODULE__, []), :pace, 120)
+
+    @doc false
+    @spec travel?() :: boolean()
+    def travel?, do: Keyword.get(Application.get_env(:masu, __MODULE__, []), :travel, true)
+
+    # As long as a browser takes to glide a cell's mark, and to sweep a range.
+    @glide 400
+    @sweep 350
+
+    @doc false
+    # Goes to a cell, or selects a range as a drag does (pressed on its first
+    # cell, let go on its last): only where the agent goes is sent, each
+    # browser draws the way, and the agent waits as long as that takes.
+    @spec go(map(), {term(), String.t()} | {[term()], [String.t()]}) :: :ok
+    def go(grid, {[first | _] = ids, [key | _] = keys}) do
+      if travel?() do
+        go(grid, {first, key})
+        step(grid, {ids, keys}, @sweep)
+      else
+        step(grid, {ids, keys}, 0)
+      end
+    end
+
+    def go(grid, {id, key}), do: step(grid, {id, key}, if(travel?(), do: @glide, else: 0))
+
+    defp step(grid, place, ms) do
+      _ = Participant.place(grid.participant, place(grid.grid, place))
+      if ms > 0, do: Process.sleep(ms)
+      :ok
+    end
   end
 end

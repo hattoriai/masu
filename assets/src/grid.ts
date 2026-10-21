@@ -210,6 +210,12 @@ export class Grid {
   /** The other people who have the grid open, and their marks. */
   private people: Person[] = [];
   private peerEls: HTMLElement[] = [];
+  // Each person's mark on their cell, kept from one drawing to the next so
+  // that it glides to their next cell; and when a range they selected from
+  // a cell began to sweep over its rows.
+  private peerMarks = new Map<string, HTMLElement>();
+  private peerHadRange = new Map<string, boolean>();
+  private peerSweeps = new Map<string, number>();
   private sentCursor = "null";
   /** The person this person follows (Figma's follow): the grid shows their view, and their place in it. */
   private following: string | null = null;
@@ -242,6 +248,14 @@ export class Grid {
   constructor(el: HTMLElement, transport: Transport) {
     this.el = el;
     this.id = el.id;
+    // Issho's pointer of an agent at work in the grid goes to its cell
+    // (Issho's `locate`, through the symbol it reads, with no import of it).
+    const locator = (at: unknown) => this.locate(at);
+    (el as unknown as Record<symbol, unknown>)[Symbol.for("issho.locator")] = locator;
+    this.cleanups.push(() => {
+      const element = el as unknown as Record<symbol, unknown>;
+      if (element[Symbol.for("issho.locator")] === locator) delete element[Symbol.for("issho.locator")];
+    });
     this.transport = transport;
     this.config = readConfig(el);
     this.columns = this.config.columns;
@@ -4150,6 +4164,11 @@ export class Grid {
   private drawPeople(): void {
     for (const el of this.peerEls) el.remove();
     this.peerEls = [];
+    for (const [id, mark] of this.peerMarks) {
+      if (this.people.some((person) => person.id === id && person.cell)) continue;
+      mark.remove();
+      this.peerMarks.delete(id);
+    }
     if (this.people.length === 0) return;
 
     const rowsById = new Map<string, number>();
@@ -4160,7 +4179,12 @@ export class Grid {
 
     // Their selected ranges: a wash in their color on the cells of their
     // rows, wherever this person's order puts them.
+    // A range selected from a cell (an agent's drag) sweeps over its rows,
+    // from the first; a drawing during the sweep goes on with it.
+    const now = performance.now();
     for (const person of this.people) {
+      if (person.range && this.peerHadRange.get(person.id) === false) this.peerSweeps.set(person.id, now);
+      this.peerHadRange.set(person.id, !!person.range);
       if (!person.range) continue;
       const cols = person.range.keys.map((key) => this.columns.findIndex((column) => column.key === key)).filter((col) => col >= 0);
       if (cols.length === 0) continue;
@@ -4168,11 +4192,21 @@ export class Grid {
       const last = Math.max(...cols);
       const left = this.colLeft(first);
       const width = this.colLeft(last) + this.widths[last] - left;
-      for (const id of person.range.rows) {
+      const began = this.peerSweeps.get(person.id);
+      const elapsed = began === undefined ? Infinity : now - began;
+      if (elapsed > 2_000) this.peerSweeps.delete(person.id);
+      const rows = person.range.rows.length;
+      for (const [line, id] of person.range.rows.entries()) {
         const index = rowsById.get(JSON.stringify(id));
         if (index === undefined) continue;
         const el = document.createElement("div");
         el.className = "masu-peer-range";
+        if (elapsed <= 2_000 && !reducedMotion()) {
+          el.dataset.sweep = "";
+          el.style.setProperty("--masu-sweep-line", `${line / rows}`);
+          el.style.setProperty("--masu-sweep-lines", `${rows}`);
+          el.style.setProperty("--masu-sweep-elapsed", `${Math.round(elapsed)}ms`);
+        }
         el.style.setProperty("--masu-peer-color", person.color);
         el.style.transform = `translateY(${this.rowY(index)}px)`;
         el.style.insetInlineStart = `${left}px`;
@@ -4184,33 +4218,73 @@ export class Grid {
       }
     }
 
+    const drawn = new Set<string>();
     for (const person of this.people) {
       if (!person.cell) continue;
       const index = rowsById.get(JSON.stringify(person.cell[0]));
       const col = this.columns.findIndex((column) => column.key === person.cell![1]);
       if (index === undefined || col < 0) continue;
+      drawn.add(person.id);
 
-      const el = document.createElement("div");
+      // The same mark as before, so that it glides there: longer the farther it goes.
+      const known = this.peerMarks.get(person.id);
+      const el = known ?? document.createElement("div");
+      const y = this.rowY(index);
+      const x = this.colLeft(col);
+      if (known) {
+        const far = Math.hypot(y - (Number(known.dataset.y) || 0), x - (Number(known.dataset.x) || 0));
+        el.style.setProperty("--masu-peer-travel", `${Math.round(Math.min(400, Math.max(80, far * 0.8)))}ms`);
+      }
+      el.dataset.x = String(x);
+      el.dataset.y = String(y);
       el.className = `masu-peer${person.editing ? " masu-peer-editing" : ""}${index === 0 ? " masu-peer-top" : ""}`;
       el.style.setProperty("--masu-peer-color", person.color);
-      el.style.transform = `translateY(${this.rowY(index)}px)`;
-      el.style.insetInlineStart = `${this.colLeft(col)}px`;
+      el.style.transform = `translateY(${y}px)`;
+      el.style.insetInlineStart = `${x}px`;
       if (this.columns[col].pinned) el.classList.add("masu-peer-pinned");
       el.style.width = `${this.widths[col]}px`;
       el.style.height = `${this.config.rowHeight}px`;
       el.dataset.person = person.id;
       el.setAttribute("aria-hidden", "true");
 
-      const label = document.createElement("span");
+      const label = (el.querySelector(":scope > .masu-peer-label") as HTMLElement | null) ?? document.createElement("span");
       label.className = "masu-peer-label";
       const custom = options.peerLabel?.(person);
-      if (custom instanceof HTMLElement) label.appendChild(custom);
+      if (custom instanceof HTMLElement) label.replaceChildren(custom);
       else label.textContent = custom ?? (person.editing ? this.message("peer_typing", { label: person.name ?? "" }) : (person.name ?? ""));
-      el.appendChild(label);
+      if (!label.parentNode) el.appendChild(label);
 
-      this.body.appendChild(el);
-      this.peerEls.push(el);
+      if (el.parentNode !== this.body) this.body.appendChild(el);
+      this.peerMarks.set(person.id, el);
     }
+    for (const [id, mark] of this.peerMarks) {
+      if (drawn.has(id)) continue;
+      mark.remove();
+      this.peerMarks.delete(id);
+    }
+  }
+
+  /**
+   * Where a place of the grid is in the viewport, for Issho's pointers: a
+   * cell (`cell`: a row's id and a column's key), or a range, while its rows
+   * are on this person's screen.
+   */
+  private locate(at: unknown): DOMRect | null {
+    const place = at as { cell?: [unknown, string]; range?: { rows: unknown[]; keys: string[] } } | null;
+    const cells: [unknown, string][] = place?.cell ? [place.cell] : place?.range ? place.range.rows.flatMap((id) => place.range!.keys.map((key) => [id, key] as [unknown, string])) : [];
+    const body = this.body.getBoundingClientRect();
+    let box: { left: number; top: number; right: number; bottom: number } | null = null;
+    for (const [id, key] of cells) {
+      let index: number | undefined;
+      for (const [i, rowEl] of this.rows) if (rowEl.masuRow && JSON.stringify(rowEl.masuRow[0]) === JSON.stringify(id)) index = i;
+      const col = this.columns.findIndex((column) => column.key === key);
+      if (index === undefined || col < 0) continue;
+      const left = body.left + this.colLeft(col);
+      const top = body.top + this.rowY(index);
+      const cell = { left, top, right: left + this.widths[col], bottom: top + this.config.rowHeight };
+      box = box ? { left: Math.min(box.left, cell.left), top: Math.min(box.top, cell.top), right: Math.max(box.right, cell.right), bottom: Math.max(box.bottom, cell.bottom) } : cell;
+    }
+    return box ? new DOMRect(box.left, box.top, box.right - box.left, box.bottom - box.top) : null;
   }
 
   /**
@@ -4986,4 +5060,8 @@ function textWidth(cell: HTMLElement): number {
   const style = getComputedStyle(cell);
   context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
   return context.measureText(cell.textContent ?? "").width;
+}
+
+function reducedMotion(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

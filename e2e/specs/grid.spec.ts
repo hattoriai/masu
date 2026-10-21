@@ -371,6 +371,13 @@ test.describe("presence", () => {
     await alan.locator("#together-r2-c1").click();
     await expect(ada.locator("#together .masu-peer .masu-peer-label")).toHaveText("Alan");
 
+    // To the next cell, the same mark glides there, rather than one drawn anew.
+    const y = await ada.locator("#together .masu-peer").evaluate((el) => { (el as HTMLElement).dataset.seen = "1"; return Number((el as HTMLElement).dataset.y); });
+    await alan.keyboard.press("ArrowDown");
+    await expect.poll(() => ada.locator("#together .masu-peer").evaluate((el) => Number((el as HTMLElement).dataset.y))).toBeGreaterThan(y);
+    await expect(ada.locator('#together .masu-peer[data-seen="1"]')).toHaveCount(1);
+    await alan.keyboard.press("ArrowUp");
+
     await alan.keyboard.type("Al");
     await expect(ada.locator("#together .masu-peer-editing .masu-peer-label")).toHaveText("Alan is typing");
 

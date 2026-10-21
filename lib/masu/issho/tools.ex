@@ -188,7 +188,7 @@ if Code.ensure_loaded?(Issho.Tool) do
     def call(args, ctx) do
       with {:ok, place} <- place(args),
            {:ok, grid} <- Masu.Issho.open(ctx, args.grid),
-           :ok <- Participant.place(grid.participant, Masu.Issho.place(args.grid, place)) do
+           :ok <- Masu.Issho.go(grid, place) do
         {:ok, "Selected."}
       else
         {:error, reason} -> Context.error(reason)
@@ -283,16 +283,18 @@ if Code.ensure_loaded?(Issho.Tool) do
       end)
     end
 
+    # To the cell, typing in it (the others see it, and edit it meanwhile
+    # no more than a person's), then the value saved.
     defp edit_cell(grid, self_key, %{"id" => id, "key" => key} = edit) do
       place = Masu.Issho.place(grid.grid, {id, key})
-      _ = Participant.place(grid.participant, place)
+      :ok = Masu.Issho.go(grid, {id, key})
 
       case Grid.holder(grid, grid.participant, self_key, id, key) do
         nil ->
           locked? = Participant.lock(grid.participant, [place]) == :ok
+          pause()
           result = write(grid, [edit], :edit)
           if locked?, do: Participant.lock(grid.participant, [])
-          pause()
           {length(result.saved), result.errors}
 
         holder ->
@@ -303,7 +305,7 @@ if Code.ensure_loaded?(Issho.Tool) do
     defp at_once(grid, edits) do
       ids = edits |> Enum.map(& &1["id"]) |> Enum.uniq()
       keys = edits |> Enum.map(& &1["key"]) |> Enum.uniq()
-      _ = Participant.place(grid.participant, Masu.Issho.place(grid.grid, {ids, keys}))
+      :ok = Masu.Issho.go(grid, {ids, keys})
       result = write(grid, edits, :paste)
       {length(result.saved), result.errors}
     end
@@ -362,7 +364,7 @@ if Code.ensure_loaded?(Issho.Tool) do
 
         with [first | _] <- ids,
              [key | _] <- Enum.map(Sheet.columns(grid.sheet), & &1.key),
-             do: Participant.place(grid.participant, Masu.Issho.place(args.grid, {first, key}))
+             do: Masu.Issho.go(grid, {first, key})
 
         {:ok,
          %{
@@ -404,7 +406,8 @@ if Code.ensure_loaded?(Issho.Tool) do
       with {:ok, grid} <- Masu.Issho.open(ctx, args.grid),
            :ok <- Participant.authorize(grid.participant, :write) do
         keys = Enum.map(Sheet.columns(grid.sheet), & &1.key)
-        _ = Participant.place(grid.participant, Masu.Issho.place(args.grid, {ids, keys}))
+        :ok = Masu.Issho.go(grid, {ids, keys})
+        if Masu.Issho.travel?(), do: Process.sleep(300)
         result = Sheet.delete(grid.sheet, ids, scope: grid.scope, user: grid.user)
         _ = Participant.place(grid.participant, nil)
 

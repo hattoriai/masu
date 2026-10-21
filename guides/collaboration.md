@@ -192,3 +192,13 @@ then give the agent Masu's tools, with Issho's:
 `read_grid` reads rows in an order, filtered and searched;
 `select_cells` points at a cell or a range; `edit_cells`, `add_rows`
 and `delete_rows` write. An agent leaves a cell that someone is editing.
+
+An agent moves as a person does, so that the people follow it: it goes
+to each cell it edits and types in it a moment before the value lands,
+and selects a range as a drag does, from its first cell. Only where it
+goes is sent: each browser draws the way there, its mark gliding from cell
+to cell and a range sweeping over its rows. With Issho 0.2.1 and its page
+pointers, the agent's pointer goes to its cell too. For changes that land
+at once:
+
+    config :masu, Masu.Issho, pace: 0, travel: false
