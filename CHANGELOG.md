@@ -9,6 +9,14 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `Masu.Sheet`: a grid outside the LiveView, for a job, a test or an
+  agent. Define a grid once as `data_grid`'s attributes
+  (`<.data_grid {MyApp.Grids.tasks(@current_scope)} />`), and
+  `Masu.Sheet.new/1` of the same reads its rows in an order, filtered and
+  searched, and edits, adds and deletes them the grid's way: its
+  changeset or `on_update`, its read-only rules, the compare of a cell
+  changed meanwhile, its history, and its `live` topic, so the people
+  who have the grid open see each change, in the color of who made it.
 - `views_scope`: whose views a grid's views are, such as the account's
   id. The store keeps each scope's views apart (under `"orders@42"`), so
   a view shared in one account is not offered in another. Without it,

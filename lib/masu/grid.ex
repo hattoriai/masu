@@ -800,6 +800,16 @@ defmodule Masu.Grid do
     end
   end
 
+  @doc false
+  # A grid's source and columns, of its attributes, outside a LiveView
+  # (Masu.Sheet): as the grid starts them, with no slots.
+  @spec setup(map()) :: {Source.t(), [Column.t()]}
+  def setup(assigns) do
+    source = new_source(assigns, assigns.input)
+    {columns, _types} = columns_for(assigns, [], source, %{})
+    {source, supported(source, columns, assigns)}
+  end
+
   defp source_opts(assigns) do
     [
       repo: assigns.repo,
