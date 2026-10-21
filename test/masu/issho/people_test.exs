@@ -10,7 +10,7 @@ defmodule Masu.Issho.PeopleTest do
   @endpoint MasuTest.Endpoint
 
   setup do
-    instance = Issho.Test.start!(policy: Masu.Issho.ToolsTest.Policy, presence: true)
+    instance = MasuTest.Issho
     topic = "people-#{System.unique_integer([:positive])}"
     room = "notebook:#{System.unique_integer([:positive])}"
     grid = room <> "/people"

@@ -88,7 +88,7 @@ defmodule Masu.Sheet do
   @doc """
   A sheet of a grid's attributes (a keyword list or a map, as
   `data_grid/1` takes them). The attributes of the LiveView alone
-  (`presence`, `views`, `url`...) are left out.
+  (`issho`, `views`, `url`...) are left out.
   """
   @spec new(keyword() | map()) :: t()
   def new(attrs) when is_list(attrs) or is_map(attrs) do
@@ -252,7 +252,7 @@ defmodule Masu.Sheet do
   # The people who have the grid open see the rows change, in the color
   # of who changed them.
   defp broadcast(%__MODULE__{attrs: %{live: {pubsub, topic}}}, rows, user) do
-    by = if user, do: %{name: Map.get(user, :name), color: Masu.Presence.color(user)}
+    by = Masu.Live.by(user)
     for row <- rows, do: Masu.Live.broadcast_upsert_from(self(), pubsub, topic, row, by)
     :ok
   end

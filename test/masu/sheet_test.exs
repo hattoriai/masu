@@ -107,15 +107,13 @@ defmodule Masu.SheetTest do
     # From another process, as an agent's would be: broadcast_from leaves out the writer.
     Task.async(fn ->
       Sheet.update(sheet, [%{"id" => 2, "key" => "name", "value" => "Alan"}],
-        user: %{id: "agent:1", name: "Assistant"}
+        user: %{id: "agent:1", name: "Assistant", color: "#be185d"}
       )
     end)
     |> Task.await()
 
     assert_receive {Masu.Live, ^topic,
-                    {:upsert, %{id: 2, name: "Alan"}, %{name: "Assistant", color: color}}}
-
-    assert is_binary(color)
+                    {:upsert, %{id: 2, name: "Alan"}, %{name: "Assistant", color: "#be185d"}}}
   end
 
   test "a grid that neither adds nor deletes says so" do

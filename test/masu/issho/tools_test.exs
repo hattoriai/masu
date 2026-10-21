@@ -10,23 +10,8 @@ defmodule Masu.Issho.ToolsTest do
 
   @endpoint MasuTest.Endpoint
 
-  defmodule Policy do
-    @moduledoc false
-    @behaviour Issho.Policy
-
-    @impl true
-    def authorize(%Issho.Identity{key: "agent:reader"}, _room, action)
-        when action in [:write, :lock],
-        do: {:error, :forbidden}
-
-    def authorize(_identity, _room, _action), do: :ok
-
-    @impl true
-    def document(_identity, _id), do: {:error, :not_found}
-  end
-
   setup do
-    instance = Issho.Test.start!(policy: Policy, presence: true)
+    instance = MasuTest.Issho
     topic = "agents-#{System.unique_integer([:positive])}"
     room = "notebook:#{System.unique_integer([:positive])}"
     grid = room <> "/people"

@@ -7,8 +7,12 @@ defmodule Masu.PresenceTest do
 
   @endpoint MasuTest.Endpoint
 
-  defp open(user, params \\ "") do
-    {:ok, view, _html} = live(build_conn(), "/presence?user=#{user}#{params}")
+  setup do
+    %{room: "presence:#{System.unique_integer([:positive])}"}
+  end
+
+  defp open(room, user, params \\ "") do
+    {:ok, view, _html} = live(build_conn(), "/presence?room=#{room}&user=#{user}#{params}")
     view
   end
 
@@ -20,9 +24,9 @@ defmodule Masu.PresenceTest do
     |> LazyHTML.attribute("title")
   end
 
-  test "each person sees the others who have the grid open, not themselves" do
-    ada = open("ada")
-    alan = open("alan")
+  test "each person sees the others who have the grid open, not themselves", %{room: room} do
+    ada = open(room, "ada")
+    alan = open(room, "alan")
 
     assert_eventually(fn -> people(ada) == ["Alan"] end)
     assert_eventually(fn -> people(alan) == ["Ada"] end)
@@ -32,9 +36,10 @@ defmodule Masu.PresenceTest do
     assert_eventually(fn -> people(ada) == [] end)
   end
 
-  test "a person's place goes to the others: a row's id and a column's key, and whether they edit" do
-    ada = open("ada")
-    alan = open("alan")
+  test "a person's place goes to the others: a row's id and a column's key, and whether they edit",
+       %{room: room} do
+    ada = open(room, "ada")
+    alan = open(room, "alan")
     assert_eventually(fn -> people(ada) == ["Alan"] end)
 
     render_hook(element(alan, "#people"), "masu:cursor", %{
@@ -50,9 +55,9 @@ defmodule Masu.PresenceTest do
     )
   end
 
-  test "a refusal names who changed the cell meanwhile" do
-    ada = open("ada")
-    alan = open("alan")
+  test "a refusal names who changed the cell meanwhile", %{room: room} do
+    ada = open(room, "ada")
+    alan = open(room, "alan")
     assert_eventually(fn -> people(ada) == ["Alan"] end)
 
     assert :ok = edit(ada, "people", [{2, "name", "Alan T.", "alan Turing"}])
@@ -61,9 +66,9 @@ defmodule Masu.PresenceTest do
              edit(alan, "people", [{2, "name", "A. Turing", "alan Turing"}])
   end
 
-  test "a person's view and the first row on their screen go to the others" do
-    ada = open("ada")
-    alan = open("alan")
+  test "a person's view and the first row on their screen go to the others", %{room: room} do
+    ada = open(room, "ada")
+    alan = open(room, "alan")
     assert_eventually(fn -> people(ada) == ["Alan"] end)
 
     assert_push_event(ada, "masu:people", %{"people" => [%{name: "Alan", view: view}]}, 1000)
@@ -95,9 +100,9 @@ defmodule Masu.PresenceTest do
     assert_push_event(ada, "masu:people", %{"people" => [%{top: 3}]}, 1000)
   end
 
-  test "a grid with share_view={false} keeps its view from the others" do
-    ada = open("ada")
-    alan = open("alan", "&share=0")
+  test "a grid with share_view={false} keeps its view from the others", %{room: room} do
+    ada = open(room, "ada")
+    alan = open(room, "alan", "&share=0")
     assert_eventually(fn -> people(ada) == ["Alan"] end)
 
     render_hook(element(alan, "#people"), "masu:query", %{
@@ -114,9 +119,9 @@ defmodule Masu.PresenceTest do
     assert_push_event(ada, "masu:people", %{"people" => [%{cell: [3, "name"], view: nil}]}, 1000)
   end
 
-  test "a person's selected range goes to the others as row ids and column keys" do
-    ada = open("ada")
-    alan = open("alan")
+  test "a person's selected range goes to the others as row ids and column keys", %{room: room} do
+    ada = open(room, "ada")
+    alan = open(room, "alan")
     assert_eventually(fn -> people(ada) == ["Alan"] end)
 
     render_hook(element(alan, "#people"), "masu:cursor", %{
@@ -133,9 +138,9 @@ defmodule Masu.PresenceTest do
     )
   end
 
-  test "a saved row flashes in the color of the person who saved it" do
-    ada = open("ada")
-    alan = open("alan", "&color=%23ff0000")
+  test "a saved row flashes in the color of the person who saved it", %{room: room} do
+    ada = open(room, "ada")
+    alan = open(room, "alan", "&color=%23ff0000")
     assert_eventually(fn -> people(ada) == ["Alan"] end)
 
     assert :ok = edit(alan, "people", [{2, "name", "Alan"}])
@@ -145,29 +150,18 @@ defmodule Masu.PresenceTest do
     end)
   end
 
-  test "the :person slot draws the people" do
-    ada = open("ada", "&slot=1")
-    _alan = open("alan")
+  test "the :person slot draws the people", %{room: room} do
+    ada = open(room, "ada", "&slot=1")
+    _alan = open(room, "alan")
     assert_eventually(fn -> render(ada) =~ ~s[<b class="mine">Alan (A)</b>] end)
   end
 
-  test "a person's color is a color of their own, a plain CSS color, or one of the palette" do
-    assert Masu.Presence.color(%{id: 1, color: "#2563eb"}) == "#2563eb"
-    assert Masu.Presence.color(%{id: 1, color: "oklch(60% 0.2 30)"}) == "oklch(60% 0.2 30)"
-
-    assert Masu.Presence.color(%{id: 1, color: "red; background: url(x)"}) ==
-             Masu.Presence.color(%{id: 1})
-
-    assert Masu.Presence.color(%{id: "ada"}) == Masu.Presence.color(%{id: "ada"})
-    assert Masu.Presence.color(%{id: "ada"}) =~ ~r/^#[0-9a-f]{6}$/
-  end
-
-  test "a grid with presence needs live and a user" do
-    assert_raise ArgumentError, ~r/with presence needs live and user/, fn ->
+  test "a grid with presence says it moved to issho" do
+    assert_raise ArgumentError, ~r/presence, which Masu 0.4 removed/, fn ->
       render_component(&Masu.Components.data_grid/1,
         id: "x",
         rows: [],
-        presence: MasuTest.Presence,
+        presence: SomePresence,
         col: [%{field: :name, __slot__: :col, inner_block: nil}]
       )
     end

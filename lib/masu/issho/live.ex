@@ -48,7 +48,7 @@ if Code.ensure_loaded?(Issho.Live) do
 
     @doc false
     # Where the person is now: any of `cell`, `range`, `editing`, `top`
-    # and `view`, as Masu.Presence takes them.
+    # and `view`, as the browser says them.
     @spec put(map(), String.t(), map()) :: :ok | {:error, term()}
     def put(config, grid, changes) do
       doc = doc(config, grid)
@@ -109,9 +109,9 @@ if Code.ensure_loaded?(Issho.Live) do
 
     @doc false
     # The others who have the grid open, or who are in it (an agent), as
-    # Masu.Presence gives them: one a person, their session that moved
+    # the grid draws them: one a person, their session that moved
     # last in the grid.
-    @spec people(map(), String.t()) :: [Masu.Presence.person()]
+    @spec people(map(), String.t()) :: [map()]
     def people(config, grid) do
       doc = doc(config, grid)
       own = Issho.Identity.new(config.actor).key
@@ -171,6 +171,15 @@ if Code.ensure_loaded?(Issho.Live) do
          do: %{"rows" => Enum.take(rows, 500), "keys" => keys}
 
     defp range(_state, _doc), do: nil
+
+    @doc false
+    # The color of the grid's own person in the room, for the flash of the
+    # rows they save.
+    @spec color_of(map()) :: String.t()
+    def color_of(config) do
+      identity = Issho.Identity.new(config.actor)
+      color(%{"color" => identity.color}, identity.key)
+    end
 
     # Issho's colors: the person's own (Issho checks it), else the theme's
     # color of their index in the room's palette (issho.css, Sumi, a dark

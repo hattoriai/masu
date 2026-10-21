@@ -760,9 +760,15 @@ defmodule MasuDev.QuotesLive do
   end
 end
 
-defmodule MasuDev.Presence do
-  @moduledoc "Who has a grid open (Masu.Presence)."
-  use Phoenix.Presence, otp_app: :masu, pubsub_server: MasuDev.PubSub
+defmodule MasuDev.Collaboration do
+  @moduledoc "Who may be in the rooms of the development app (Issho): anyone (development only)."
+  @behaviour Issho.Policy
+
+  @impl true
+  def authorize(_identity, _room, _action), do: :ok
+
+  @impl true
+  def document(_identity, _id), do: {:error, :not_found}
 end
 
 defmodule MasuDev.TogetherLive do
@@ -770,7 +776,7 @@ defmodule MasuDev.TogetherLive do
   Twenty customers that everyone who opens the page shares: the grids
   follow one topic, so an edit in one browser shows in the others, and two
   edits of one cell are a conflict. Each browser is a person (`?as=Ada`,
-  or a name of its own), whom the others see (Masu.Presence). `?room=`
+  or a name of its own), whom the others see (in an Issho room). `?room=`
   gives a page of its own, as the browser tests do, and `?presence=0` a
   page where no one sees the others; `?rows=300` takes more customers, and
   `?share=0` keeps this person's view from those who follow them.
@@ -780,6 +786,7 @@ defmodule MasuDev.TogetherLive do
   import Masu.Components
 
   on_mount(Masu.Live)
+  on_mount(Issho.Live)
 
   @impl true
   def mount(params, _session, socket) do
@@ -791,7 +798,10 @@ defmodule MasuDev.TogetherLive do
        rows: Enum.take(MasuDev.Customers.all(), rows(params)),
        user: user,
        topic: "together:" <> (params["room"] || "main"),
-       presence: if(params["presence"] != "0", do: MasuDev.Presence),
+       issho:
+         if(params["presence"] != "0",
+           do: [instance: MasuDev.Issho, room: "together:" <> (params["room"] || "main")]
+         ),
        share_view: params["share"] != "0",
        locale: params["locale"] || "en-GB"
      )}
@@ -816,7 +826,7 @@ defmodule MasuDev.TogetherLive do
       rows={@rows}
       changeset={&MasuDev.Customers.changeset/2}
       live={{MasuDev.PubSub, @topic}}
-      presence={@presence}
+      issho={@issho}
       user={@user}
       share_view={@share_view}
       label_id="together-label"
@@ -1931,7 +1941,13 @@ Task.async(fn ->
     Supervisor.start_link(
       [
         {Phoenix.PubSub, name: MasuDev.PubSub},
-        MasuDev.Presence,
+        {Issho.Store.Memory, name: MasuDev.IsshoStore},
+        {Issho,
+         name: MasuDev.Issho,
+         pubsub: MasuDev.PubSub,
+         secret_key_base: String.duplicate("masu-dev-issho-", 5),
+         store: {Issho.Store.Memory, MasuDev.IsshoStore},
+         policy: MasuDev.Collaboration},
         Masu.Views.Memory,
         Masu.History.Memory,
         MasuDev.Endpoint

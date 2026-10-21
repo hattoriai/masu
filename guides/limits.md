@@ -33,7 +33,7 @@ totals) in the LiveView: grouping by a column of a hundred thousand
 values holds a hundred thousand groups. SQLite sums decimals as floating
 point numbers; PostgreSQL and MySQL sum them exactly. A database orders
 `NULL` groups by its own rule, a list puts them last. Following a person
-(`Masu.Presence`) does not find their row in a grouped Ecto grid, and a
+(in an Issho room) does not find their row in a grouped Ecto grid, and a
 detail does not show there.
 
 ## A tree in a database

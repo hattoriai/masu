@@ -111,7 +111,12 @@ if Code.ensure_loaded?(Issho.Tool) do
     # Who writes, for the grid's history and the rows' flash.
     defp user(ctx) do
       identity = Issho.Identity.new(ctx.actor)
-      %{id: identity.key, name: identity.name || identity.key}
+
+      color =
+        Issho.Color.sanitize(identity.color) ||
+          "var(--issho-person-#{Issho.Color.index(identity.key)}, currentColor)"
+
+      %{id: identity.key, name: identity.name || identity.key, color: color}
     end
 
     @doc false
