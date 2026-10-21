@@ -5117,7 +5117,10 @@ function textWidth(cell: HTMLElement): number {
   return context.measureText(cell.textContent ?? "").width;
 }
 
+// The person's motion: the app's word for it (Issho's data-issho-motion), else the browser's setting.
 function reducedMotion(): boolean {
+  const said = document.documentElement.dataset.isshoMotion;
+  if (said === "reduced" || said === "full") return said === "reduced";
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 

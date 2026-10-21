@@ -292,7 +292,7 @@ if Code.ensure_loaded?(Issho.Tool) do
       case Grid.holder(grid, grid.participant, self_key, id, key) do
         nil ->
           locked? = Participant.lock(grid.participant, [place]) == :ok
-          pause()
+          :ok = Masu.Issho.pause(grid, {id, key}, Masu.Issho.pace())
           result = write(grid, [edit], :edit)
           if locked?, do: Participant.lock(grid.participant, [])
           {length(result.saved), result.errors}
@@ -312,13 +312,6 @@ if Code.ensure_loaded?(Issho.Tool) do
 
     defp write(grid, edits, origin),
       do: Sheet.update(grid.sheet, edits, scope: grid.scope, user: grid.user, origin: origin)
-
-    defp pause do
-      case Masu.Issho.pace() do
-        0 -> :ok
-        ms -> Process.sleep(ms)
-      end
-    end
 
     defp result(0, [_ | _] = errors),
       do: {:error, "Nothing saved: " <> Enum.map_join(Grid.errors(errors), " ", &describe/1)}
@@ -407,7 +400,7 @@ if Code.ensure_loaded?(Issho.Tool) do
            :ok <- Participant.authorize(grid.participant, :write) do
         keys = Enum.map(Sheet.columns(grid.sheet), & &1.key)
         :ok = Masu.Issho.go(grid, {ids, keys})
-        if Masu.Issho.travel?(), do: Process.sleep(300)
+        :ok = Masu.Issho.pause(grid, {ids, keys}, if(Masu.Issho.travel?(), do: 300, else: 0))
         result = Sheet.delete(grid.sheet, ids, scope: grid.scope, user: grid.user)
         _ = Participant.place(grid.participant, nil)
 

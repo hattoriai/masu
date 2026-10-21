@@ -20,7 +20,11 @@ On Issho 0.3: following and agents' motion are the room's.
   `issho:following` event, with no import of Issho's script). See the
   upgrade guide.
 - An agent goes to a cell and "types" there for `pace` before the value
-  lands (it saved, then waited).
+  lands (it saved, then waited). It moves with `Issho.Motion`: only when
+  someone of the room sees the grid, within a tool call's time budget;
+  Issho's `travel: false` turns it off for every component.
+- Marks glide and ranges sweep only for a person who wants motion, as the
+  app says it (Issho's `data-issho-motion`), else the browser's setting.
 - Requires `{:issho, "~> 0.3"}`.
 
 ### Added

@@ -899,6 +899,15 @@
   .masu-peer { transition: none; }
 }
 
+/* The person's motion, as the app said it (Issho's data-issho-motion). */
+:root[data-issho-motion="reduced"] .masu-peer {
+  transition: none;
+}
+
+:root[data-issho-motion="reduced"] .masu-peer-range[data-sweep] {
+  animation: none;
+}
+
 .masu-peer-label {
   position: absolute;
   bottom: 100%;

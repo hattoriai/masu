@@ -130,30 +130,31 @@ if Code.ensure_loaded?(Issho.Tool) do
     @spec travel?() :: boolean()
     def travel?, do: Keyword.get(Application.get_env(:masu, __MODULE__, []), :travel, true)
 
-    # As long as a browser takes to glide a cell's mark, and to sweep a range.
-    @glide 400
-    @sweep 350
-
     @doc false
     # Goes to a cell, or selects a range as a drag does (pressed on its first
-    # cell, let go on its last): only where the agent goes is sent, each
-    # browser draws the way, and the agent waits as long as that takes.
+    # cell, let go on its last), with Issho's motion (`Issho.Motion`): only
+    # where the agent goes is sent, each browser draws the way, and it moves
+    # only for someone who sees the grid.
     @spec go(map(), {term(), String.t()} | {[term()], [String.t()]}) :: :ok
     def go(grid, {[first | _] = ids, [key | _] = keys}) do
-      if travel?() do
-        go(grid, {first, key})
-        step(grid, {ids, keys}, @sweep)
-      else
-        step(grid, {ids, keys}, 0)
-      end
+      :ok =
+        Issho.Motion.drag(
+          grid.participant,
+          target(grid, {first, key}),
+          target(grid, {ids, keys}),
+          travel: travel?()
+        )
     end
 
-    def go(grid, {id, key}), do: step(grid, {id, key}, if(travel?(), do: @glide, else: 0))
+    def go(grid, place),
+      do: :ok = Issho.Motion.go(grid.participant, target(grid, place), travel: travel?())
 
-    defp step(grid, place, ms) do
-      _ = Participant.place(grid.participant, place(grid.grid, place))
-      if ms > 0, do: Process.sleep(ms)
-      :ok
-    end
+    @doc false
+    # A moment on a place, when someone sees it: typing in a cell, before
+    # rows go.
+    @spec pause(map(), {term(), String.t()} | {[term()], [String.t()]}, non_neg_integer()) :: :ok
+    def pause(grid, place, ms), do: Issho.Motion.pause(grid.participant, target(grid, place), ms)
+
+    defp target(grid, place), do: place(grid.grid, place)
   end
 end
