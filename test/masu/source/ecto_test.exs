@@ -60,6 +60,37 @@ defmodule Masu.Source.EctoTest do
     assert numbers(query, search: "bob") == ~w(A-2)
   end
 
+  test "searches and filters a field that is not text as text, on each database" do
+    # Columns without a type are of text: each is searched, here a number
+    # and a date. PostgreSQL has no lower() of either.
+    columns = [Column.new(field: :id), Column.new(field: :placed_on)]
+
+    run = fn opts ->
+      {:ok, query} = Query.new(opts, columns)
+
+      Order
+      |> Source.new(repo: Repo)
+      |> Source.prepare(query, columns)
+      |> Source.rows(0, 100)
+      |> Enum.map(& &1.id)
+    end
+
+    orders = Repo.all(from(o in Order, order_by: o.id))
+    text? = fn order, text -> String.contains?("#{order.id} #{order.placed_on}", text) end
+
+    assert run.(search: "3") == for(o <- orders, text?.(o, "3"), do: o.id)
+    assert run.(search: "-01-0") == for(o <- orders, text?.(o, "-01-0"), do: o.id)
+    assert run.(filters: [{:id, :contains, "2"}]) == for(o <- orders, "#{o.id}" =~ "2", do: o.id)
+
+    assert run.(filters: [{:id, :not_contains, "2"}]) ==
+             for(o <- orders, not ("#{o.id}" =~ "2"), do: o.id)
+
+    {:ok, query} = Query.new([], columns)
+    source = Order |> Source.new(repo: Repo) |> Source.prepare(query, columns)
+    values = Source.values(source, hd(columns), query, columns, search: "5")
+    assert Enum.map(values, &elem(&1, 0)) == for(o <- orders, "#{o.id}" =~ "5", do: o.id)
+  end
+
   test "counts the query, and reads one block at a time" do
     {:ok, query} = Query.new([filters: [{:status, :eq, "paid"}]], columns())
     source = Order |> Source.new(repo: Repo) |> Source.prepare(query, columns())

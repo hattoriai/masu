@@ -781,7 +781,7 @@ if Code.ensure_loaded?(Ecto.Query) do
 
       ecto
       |> where_many_value(column, ref)
-      |> where_value_search(ref, Keyword.get(opts, :search))
+      |> where_value_search(text(state, ref, f), Keyword.get(opts, :search))
       |> exclude(:order_by)
       |> exclude(:preload)
       |> exclude(:select)
@@ -925,11 +925,11 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     defp lock_row(_state, _id), do: :ok
 
-    defp where_value_search(query, _ref, nil), do: query
-    defp where_value_search(query, _ref, ""), do: query
+    defp where_value_search(query, _field, nil), do: query
+    defp where_value_search(query, _field, ""), do: query
 
-    defp where_value_search(query, ref, text),
-      do: where(query, ^like(ref, "%" <> escape(text) <> "%"))
+    defp where_value_search(query, field, text),
+      do: where(query, ^like(field, "%" <> escape(text) <> "%"))
 
     defp primary_key(%Ecto.Query{from: %{source: {_table, schema}}})
          when is_atom(schema) and schema != nil do
@@ -950,7 +950,7 @@ if Code.ensure_loaded?(Ecto.Query) do
     defp where_filter(query, %Column{field: f} = column, filter, state) do
       if Column.stored?(column) do
         {query, ref} = expression(query, state.root, f)
-        where(query, ^condition(ref, filter))
+        where(query, ^condition(ref, filter, text(state, ref, f)))
       else
         query
       end
@@ -980,19 +980,53 @@ if Code.ensure_loaded?(Ecto.Query) do
     defp condition({b, f}, %Filter{op: :in, value: values}),
       do: dynamic(field(as(^b), ^f) in ^values)
 
-    defp condition(x, %Filter{op: :contains, value: v}), do: like(x, "%" <> escape(v) <> "%")
+    # The filters of a text: of the field as a text (`text/3`).
+    defp condition(_x, %Filter{op: :contains, value: v}, text),
+      do: like(text, "%" <> escape(v) <> "%")
 
-    defp condition({b, f} = x, %Filter{op: :not_contains, value: v}) do
+    defp condition(x, %Filter{op: :not_contains, value: v}, text) do
       pattern = "%" <> escape(v) <> "%"
-
-      dynamic(^null(x) or fragment("lower(?) NOT LIKE ? ESCAPE '!'", field(as(^b), ^f), ^pattern))
+      dynamic(^null(x) or fragment("lower(?) NOT LIKE ? ESCAPE '!'", ^text, ^pattern))
     end
 
-    defp condition(x, %Filter{op: :starts_with, value: v}), do: like(x, escape(v) <> "%")
-    defp condition(x, %Filter{op: :ends_with, value: v}), do: like(x, "%" <> escape(v))
+    defp condition(_x, %Filter{op: :starts_with, value: v}, text),
+      do: like(text, escape(v) <> "%")
 
-    defp like({b, f}, pattern),
-      do: dynamic(fragment("lower(?) LIKE ? ESCAPE '!'", field(as(^b), ^f), ^pattern))
+    defp condition(_x, %Filter{op: :ends_with, value: v}, text),
+      do: like(text, "%" <> escape(v))
+
+    defp condition(x, filter, _text), do: condition(x, filter)
+
+    defp like(text, pattern), do: dynamic(fragment("lower(?) LIKE ? ESCAPE '!'", ^text, ^pattern))
+
+    # A field as a text, for `lower(?) LIKE`: a field of text as it is
+    # (an index on `lower(field)` serves it), any other cast to a text by
+    # Ecto, as each database casts (PostgreSQL has no `lower` of a
+    # number, a date or a UUID; SQLite and MySQL take one).
+    defp text(state, {b, f}, path) do
+      if text_field?(state, path),
+        do: dynamic(field(as(^b), ^f)),
+        else: dynamic(type(field(as(^b), ^f), :string))
+    end
+
+    # Whether a field (or the field at the end of a path) is stored as a
+    # text: its type is `:string`, or a type of its own over one. A query
+    # of no schema is taken as text, as before.
+    defp text_field?(%{base: %{from: %{source: {_table, schema}}}}, path)
+         when is_atom(schema) and schema != nil do
+      {steps, [field]} = path |> List.wrap() |> Enum.split(-1)
+
+      case related(schema, steps) do
+        {:ok, related, _many} ->
+          type = related.__schema__(:type, field)
+          type == nil or Ecto.Type.type(type) == :string
+
+        :error ->
+          true
+      end
+    end
+
+    defp text_field?(_state, _path), do: true
 
     # A filter of many values: the rows whose keys are, or are not, among
     # those of a subquery of the related rows. "Has all of" counts the
@@ -1066,13 +1100,13 @@ if Code.ensure_loaded?(Ecto.Query) do
     defp found(query, %Column{many: true, field: path}, pattern, state) do
       [key] = state.primary_key
       {related, ref} = related_rows(state, path)
-      ids = where(related, ^like(ref, pattern))
+      ids = where(related, ^like(text(state, ref, path), pattern))
       {query, dynamic([r], field(r, ^key) in subquery(ids))}
     end
 
     defp found(query, %Column{field: f}, pattern, state) do
       {query, ref} = expression(query, state.root, f)
-      {query, like(ref, pattern)}
+      {query, like(text(state, ref, f), pattern)}
     end
 
     # The query in the grid's order, and that order as a keyword list, or
