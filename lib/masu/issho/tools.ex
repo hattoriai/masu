@@ -63,6 +63,23 @@ if Code.ensure_loaded?(Issho.Tool) do
       end)
     end
 
+    # A person's cell or range in the grid, from their place: the cells as
+    # [id, key] pairs, at most 500 rows.
+    def selection_of(grid, who) do
+      with {:ok, at, name} <- Issho.Tools.place_of(grid.participant, grid.grid, who) do
+        case at do
+          %{"range" => %{"rows" => [_ | _] = rows, "keys" => [_ | _] = keys}} ->
+            {:ok, name, at, for(id <- Enum.take(rows, 500), key <- keys, do: [id, key])}
+
+          %{"cell" => [id, key]} ->
+            {:ok, name, at, [[id, key]]}
+
+          _other ->
+            {:error, "#{name} has no cell selected in the grid."}
+        end
+      end
+    end
+
     def name(participant, key) do
       case Issho.Participant.people(participant) do
         %{^key => %{"person" => %{"name" => name}}} when is_binary(name) -> name
@@ -84,31 +101,26 @@ if Code.ensure_loaded?(Issho.Tool) do
       """,
       annotations: [read_only: true, idempotent: true]
 
-    arg(:grid, :string, required: true, description: "The grid, as room/grid: notebook:42/tasks")
+    arg :grid, :string, required: true, description: "The grid, as room/grid: notebook:42/tasks"
 
-    arg(
-      :sort,
-      {:array,
-       {:object, [{:key, :string, required: true}, {:dir, {:enum, ["asc", "desc"]}, []}]}},
-      description: "The order: column keys, each asc or desc"
-    )
+    arg :sort,
+        {:array,
+         {:object, [{:key, :string, required: true}, {:dir, {:enum, ["asc", "desc"]}, []}]}},
+        description: "The order: column keys, each asc or desc"
 
-    arg(
-      :filters,
-      {:array,
-       {:object,
-        [
-          {:key, :string, required: true},
-          {:op, :string, required: true},
-          {:value, :any, []}
-        ]}},
-      description:
-        "Filters, all of which a row passes: a column key, an op (eq, not_eq, contains, starts_with, gt, gte, lt, lte, between, in, is_nil, not_nil...) and a value"
-    )
+    arg :filters,
+        {:array,
+         {:object,
+          [{:key, :string, required: true}, {:op, :string, required: true}, {:value, :any, []}]}},
+        description:
+          "Filters, all of which a row passes: a column key, an op (eq, not_eq, contains, starts_with, gt, gte, lt, lte, between, in, is_nil, not_nil...) and a value"
 
-    arg(:search, :string, description: "Text to find in the searchable columns")
-    arg(:offset, :integer, min: 0)
-    arg(:limit, :integer, min: 1, max: 500)
+    arg :search, :string, description: "Text to find in the searchable columns"
+    arg :offset, :integer, min: 0
+    arg :limit, :integer, min: 1, max: 500
+
+    arg :of, :string,
+      description: "A person in the room, by name: the cells they have selected, and their rows"
 
     alias Issho.Tool.Context
     alias Masu.Issho.Tools.Grid
@@ -126,17 +138,27 @@ if Code.ensure_loaded?(Issho.Tool) do
                offset: args[:offset] || 0,
                limit: args[:limit] || 50
              ) do
-        {:ok,
-         %{
-           "grid" => args.grid,
-           "columns" => Grid.columns(grid.sheet),
-           "rows" => Enum.map(rows, &Sheet.to_map(grid.sheet, &1)),
-           "total" => total(total),
-           "offset" => args[:offset] || 0,
-           "can" => grid.sheet |> Sheet.can() |> Map.new(fn {k, v} -> {to_string(k), v} end)
-         }}
+        %{
+          "grid" => args.grid,
+          "columns" => Grid.columns(grid.sheet),
+          "rows" => Enum.map(rows, &Sheet.to_map(grid.sheet, &1)),
+          "total" => total(total),
+          "offset" => args[:offset] || 0,
+          "can" => grid.sheet |> Sheet.can() |> Map.new(fn {k, v} -> {to_string(k), v} end)
+        }
+        |> selected(grid, args[:of])
       else
         {:error, reason} -> Context.error(reason)
+      end
+    end
+
+    defp selected(read, _grid, nil), do: {:ok, read}
+
+    defp selected(read, grid, who) do
+      with {:ok, name, at, cells} <- Grid.selection_of(grid, who) do
+        ids = cells |> Enum.map(&hd/1) |> Enum.uniq()
+        rows = grid.sheet |> Sheet.fetch(ids) |> Enum.map(&Sheet.to_map(grid.sheet, &1))
+        {:ok, Map.put(read, "of", Map.merge(%{"name" => name, "rows" => rows}, at))}
       end
     end
 
@@ -156,11 +178,11 @@ if Code.ensure_loaded?(Issho.Tool) do
       """,
       annotations: [idempotent: true]
 
-    arg(:grid, :string, required: true)
-    arg(:row, :any, description: "A row's id")
-    arg(:key, :string, description: "A column's key")
-    arg(:rows, {:array, :any}, description: "The ids of the rows of a range")
-    arg(:keys, {:array, :string}, description: "The keys of the columns of a range")
+    arg :grid, :string, required: true
+    arg :row, :any, description: "A row's id"
+    arg :key, :string, description: "A column's key"
+    arg :rows, {:array, :any}, description: "The ids of the rows of a range"
+    arg :keys, {:array, :string}, description: "The keys of the columns of a range"
 
     alias Issho.Participant
     alias Issho.Tool.Context
@@ -190,25 +212,29 @@ if Code.ensure_loaded?(Issho.Tool) do
       on each cell as you edit it, and the rows change in your color. Each
       edit is a row's id, a column's key and the value; give `before`, the
       value you read, and the edit is refused if someone changed the cell
-      since. The grid checks each value as it checks a person's: an error
+      since. Or `of`, a person in the room, and a `value`: each cell they
+      have selected takes it. The grid checks each value as it checks a person's: an error
       says why, and a cell changed meanwhile gives its value now.
       """,
       annotations: [destructive: true]
 
-    arg(:grid, :string, required: true)
+    arg :grid, :string, required: true
 
-    arg(
-      :edits,
-      {:array,
-       {:object,
-        [
-          {:row, :any, required: true},
-          {:key, :string, required: true},
-          {:value, :any, []},
-          {:before, :any, []}
-        ]}},
-      required: true
-    )
+    arg :edits,
+        {:array,
+         {:object,
+          [
+            {:row, :any, required: true},
+            {:key, :string, required: true},
+            {:value, :any, []},
+            {:before, :any, []}
+          ]}},
+        description: "The cells, each a row's id, a column's key and the value"
+
+    arg :of, :string,
+      description: "A person in the room, by name: each cell they have selected takes `value`"
+
+    arg :value, :any, description: "With `of`: the value of each of their cells"
 
     alias Issho.Participant
     alias Issho.Tool.Context
@@ -219,11 +245,10 @@ if Code.ensure_loaded?(Issho.Tool) do
     @paced 20
 
     @impl true
-    def call(%{edits: edits} = args, ctx) do
+    def call(args, ctx) do
       with {:ok, grid} <- Masu.Issho.open(ctx, args.grid),
-           :ok <- Participant.authorize(grid.participant, :write) do
-        edits = Enum.map(edits, &edit/1)
-
+           :ok <- Participant.authorize(grid.participant, :write),
+           {:ok, edits} <- edits(grid, args) do
         {saved, errors} =
           if length(edits) <= @paced,
             do: paced(grid, edits),
@@ -234,6 +259,17 @@ if Code.ensure_loaded?(Issho.Tool) do
         {:error, reason} -> Context.error(reason)
       end
     end
+
+    defp edits(_grid, %{edits: [_ | _] = edits}), do: {:ok, Enum.map(edits, &edit/1)}
+
+    defp edits(grid, %{of: who} = args) do
+      with {:ok, _name, _at, cells} <- Grid.selection_of(grid, who),
+           do:
+             {:ok,
+              for([id, key] <- cells, do: %{"id" => id, "key" => key, "value" => args[:value]})}
+    end
+
+    defp edits(_grid, _args), do: {:error, "Give the edits, or `of` a person and a `value`."}
 
     defp edit(edit) do
       %{"id" => edit.row, "key" => edit.key, "value" => edit[:value]}
@@ -308,8 +344,8 @@ if Code.ensure_loaded?(Issho.Tool) do
       """,
       annotations: [destructive: false]
 
-    arg(:grid, :string, required: true)
-    arg(:rows, {:array, :any}, required: true, description: "Each a map of column key to value")
+    arg :grid, :string, required: true
+    arg :rows, {:array, :any}, required: true, description: "Each a map of column key to value"
 
     alias Issho.Participant
     alias Issho.Tool.Context
@@ -358,8 +394,8 @@ if Code.ensure_loaded?(Issho.Tool) do
       description: "Deletes rows of a grid, by their ids, as a person would.",
       annotations: [destructive: true]
 
-    arg(:grid, :string, required: true)
-    arg(:rows, {:array, :any}, required: true, description: "The rows' ids")
+    arg :grid, :string, required: true
+    arg :rows, {:array, :any}, required: true, description: "The rows' ids"
 
     alias Issho.Participant
     alias Issho.Tool.Context

@@ -91,4 +91,33 @@ defmodule Masu.Issho.PeopleTest do
                ctx
              )
   end
+
+  test "an agent reads and edits the cells a person selected in their grid", %{
+    grid: grid,
+    bob: bob,
+    ctx: ctx
+  } do
+    render_hook(element(bob, "#people"), "masu:cursor", %{
+      "cell" => [1, "name"],
+      "editing" => false,
+      "range" => %{"rows" => [1, 2], "keys" => ["city"]}
+    })
+
+    assert {:ok, %{"of" => %{"name" => "Bob", "range" => %{"rows" => [1, 2]}, "rows" => rows}}} =
+             call("read_grid", %{"grid" => grid, "of" => "Bob"}, ctx)
+
+    assert Enum.map(rows, & &1["id"]) == [1, 2]
+
+    # The city column does not edit: the grid's rules answer the agent as anyone.
+    assert {:error, "Nothing saved: " <> _} =
+             call("edit_cells", %{"grid" => grid, "of" => "bob", "value" => "Paris"}, ctx)
+
+    render_hook(element(bob, "#people"), "masu:cursor", %{
+      "cell" => [2, "age"],
+      "editing" => false
+    })
+
+    assert {:ok, %{"saved" => 1}} =
+             call("edit_cells", %{"grid" => grid, "of" => "Bob", "value" => 42}, ctx)
+  end
 end
