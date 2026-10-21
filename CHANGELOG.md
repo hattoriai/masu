@@ -9,6 +9,12 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `Masu.Issho`: agents in a grid, in an Issho room. `Masu.Issho.tools/0`
+  reads a grid (in an order, filtered, searched), points at cells, edits
+  cells, adds and deletes rows, the grid's way (`Masu.Sheet`), under the
+  room's policy; the people see the agent's cell, and its rows flash in
+  its color. An agent leaves a cell that someone is editing. Issho is an
+  optional dependency.
 - `Masu.Sheet`: a grid outside the LiveView, for a job, a test or an
   agent. Define a grid once as `data_grid`'s attributes
   (`<.data_grid {MyApp.Grids.tasks(@current_scope)} />`), and

@@ -150,3 +150,26 @@ ms, and to the others through `Phoenix.Presence`, which also notices a
 person who leaves or whose connection drops. A person's name, color and
 avatar, and their view unless `share_view={false}`, go to everyone who
 has the grid open: give `user` only what they may see.
+
+## Agents
+
+An agent reads and changes a grid as a person does, in an
+[Issho](https://hex.pm/packages/issho) room: the people see where it is,
+the cells it edits, and the rows it saves flash in its color. Its writes
+go the grid's way (`Masu.Sheet`): the changeset, the read-only rules, the
+compare of a cell changed meanwhile, the history and the `live` topic.
+The rows, the scrolling and the queries stay the grid's own: Issho
+carries only who is there and where.
+
+Define the grid once, as `data_grid/1`'s attributes, and say which grid
+an agent may use (see `Masu.Issho`):
+
+    config :masu, Masu.Issho, grids: {MyApp.Grids, :for_agent}
+
+then give the agent Masu's tools, with Issho's:
+
+    tools = Issho.Tools.room() ++ Masu.Issho.tools()
+
+`read_grid` reads rows in an order, filtered and searched;
+`select_cells` points at a cell or a range; `edit_cells`, `add_rows`
+and `delete_rows` write. An agent leaves a cell that someone is editing.
