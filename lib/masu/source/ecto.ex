@@ -525,13 +525,16 @@ if Code.ensure_loaded?(Ecto.Query) do
       state |> nodes(offset, limit) |> Enum.map(&elem(&1, 0))
     end
 
-    # A read of the app's own: the query, and where the block is.
+    # A read of the app's own: the query, and where the block is. For a
+    # jump, `seek` gives the sort values of the row before the block, as
+    # a jump of Masu's own finds them, to read the block by key.
     def rows(%{read: read} = state, offset, limit) when is_function(read, 2) do
       read.(state.query, %{
         offset: offset,
         limit: limit,
         order: state.order,
-        after: after_values(state, offset)
+        after: after_values(state, offset),
+        seek: fn -> seek(state, offset) end
       })
     end
 
@@ -563,10 +566,21 @@ if Code.ensure_loaded?(Ecto.Query) do
       end
     end
 
+    defp seek(%{order: [_ | _] = order} = state, offset) when offset > 0 do
+      case values_at(state, offset - 1) do
+        nil -> nil
+        values -> Enum.zip_with(order, values, fn {_direction, f}, value -> {f, value} end)
+      end
+    end
+
+    defp seek(_state, _offset), do: nil
+
     # The sort values of the row at a place: from the nearest row before
     # it that the grid read, by key, with the range of rows_after/3 that
     # an index reads from; or from the first row. The range leaves out the
     # first sort's NULLs: a place among them is counted from the first row.
+    # With an adapter whose order of NULLs Masu does not know, from the
+    # first row.
     defp values_at(state, at) do
       %{order: [{direction, f} | _] = order} = state
 
@@ -580,7 +594,7 @@ if Code.ensure_loaded?(Ecto.Query) do
         )
 
       from_cursor =
-        case nearest_cursor(state.cursors, at) do
+        case keyset?(state) && nearest_cursor(state.cursors, at) do
           {from, [value | _] = cursor} when not is_nil(value) ->
             values
             |> where(^after_row(state, cursor))

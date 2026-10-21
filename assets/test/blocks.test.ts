@@ -51,3 +51,20 @@ test("evict() forgets the blocks farthest from the center", () => {
   cache.clear();
   assert.equal(cache.blockCount, 0);
 });
+
+test("is busy while a block asked for has not come, for ten seconds at most", () => {
+  const cache = new BlockCache(10);
+  assert.equal(cache.busy(0), false);
+  cache.ask(3, 1_000);
+  assert.equal(cache.busy(1_000), true);
+  assert.equal(cache.busy(10_999), true);
+  assert.equal(cache.busy(11_000), false);
+  cache.store(30, rows(30, 10));
+  assert.equal(cache.busy(1_000), false);
+  cache.ask(4, 1_000);
+  cache.failed(4);
+  assert.equal(cache.busy(1_000), false);
+  cache.ask(5, 1_000);
+  cache.clear();
+  assert.equal(cache.busy(1_000), false);
+});

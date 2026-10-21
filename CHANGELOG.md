@@ -7,7 +7,19 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A `read` of your own gets `seek` with the block: for a jump, `seek.()`
+  gives the sort values of the row before the block, as `after` does,
+  from one query of the sort values only. `after_row || seek.()` reads a
+  jump by key too (#53).
+
 ### Changed
+
+- The browser asks for no rows while rows it asked for have not come
+  (for ten seconds at most), and then for the rows on the screen: a drag
+  of the scrollbar no longer reads the rows of each place it paused at
+  (#53).
 
 - A jump of an Ecto source (the scrollbar dragged to rows the grid did
   not read) counts its `OFFSET` over the sort values of the rows, not
