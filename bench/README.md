@@ -31,9 +31,14 @@ machine.
 * `Masu.Source.List` with 10,000, 100,000 and 1,000,000 rows: the mount,
   a sort, a search, a block of 100 rows; the memory of the rows.
 * `Masu.Source.Ecto` on PostgreSQL with 100,000, 1,000,000 and
-  10,000,000 rows: the first block, a block in the middle by key and by
-  `OFFSET`, the same in the order of a column with an index, a search,
-  the count.
+  10,000,000 rows: the first block, a block in the middle by key, the
+  same in the order of a column with an index, a search, the count.
+* The jumps of `Masu.Source.Ecto` (the scrollbar dragged to a place the
+  grid did not read), in the order of the primary key and of the column
+  with an index: a first jump to a tenth, the middle and nine tenths of
+  the rows, and a jump of 1,000 rows and of a tenth of the rows on from
+  a block the grid read. PostgreSQL stops each query after
+  `MASU_BENCH_JUMP_TIMEOUT` seconds (30).
 
 **The browser** (`e2e/bench/grid.bench.ts`, with Playwright, against
 the `/bench` page of the development server):
