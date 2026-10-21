@@ -4562,13 +4562,15 @@ export class Grid {
     }
     if (!this.followEl) {
       this.followEl = document.createElement("div");
-      this.followEl.className = "masu-following";
+      // Issho's look of following (its classes and properties), the same on every block of the page.
+      this.followEl.className = "masu-following issho-following";
       this.followEl.setAttribute("role", "status");
       this.uiEl.appendChild(this.followEl);
     }
     const name = person.name ?? person.id;
     const words = this.message(kind, { label: name });
     this.followEl.style.setProperty("--masu-follow-color", person.color);
+    this.followEl.style.setProperty("--issho-color", person.color);
     // Drawn again only when it says something new: a button replaced
     // under the pointer loses its click.
     if (this.followEl.dataset.kind === kind && this.followEl.firstChild?.textContent === words) return;
@@ -4577,7 +4579,7 @@ export class Grid {
     text.textContent = words;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "masu-following-stop";
+    button.className = "masu-following-stop issho-following-stop";
     button.dataset.isshoFollowControl = "";
     if (kind === "their_view") {
       button.textContent = this.message("back_to_view", {});

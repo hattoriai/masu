@@ -47,9 +47,10 @@ On Issho 0.3: following and agents' motion are the room's.
 - `follow={false}`: a grid that takes no part in following, though its
   room's other blocks do (its avatars are not buttons, and its view stays
   its person's).
-- The following banner and ring are restyled with
-  `--masu-following-background`, `--masu-following-text` and
-  `--masu-following-ring`.
+- The following banner and ring are in Issho's look of following, the
+  same on every block of the page, restyled with Issho's
+  `--issho-following-background`, `--issho-following-text` and
+  `--issho-following-ring`.
 
 ## [0.4.0] - 2026-10-21
 

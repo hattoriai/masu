@@ -817,10 +817,14 @@
 
 /* Following a person: their cell stays in view, the grid has a ring in
    their color (--masu-follow-color), and a banner says whom, with Stop.
-   Set --masu-following-background, --masu-following-text and
-   --masu-following-ring (none for no ring) to restyle them. */
+   The look is Issho's, the same on every block of a page (the banner
+   carries its classes too): --issho-following-background,
+   --issho-following-text and --issho-following-ring (none for no ring)
+   restyle them. These rules are its look on a page without Issho's
+   stylesheet; the banner is centred with `translate`, which Issho's
+   entrance (a transform) leaves alone. */
 .masu[data-following] > .masu-grid {
-  box-shadow: var(--masu-following-ring, 0 0 0 2px var(--masu-follow-color, var(--masu-accent)));
+  box-shadow: var(--issho-following-ring, 0 0 0 2px var(--masu-follow-color, var(--masu-accent)));
 }
 
 .masu-following {
@@ -833,12 +837,12 @@
   gap: 0.5rem;
   padding: 0.125rem 0.25rem 0.125rem 0.625rem;
   border-radius: 999px;
-  background: var(--masu-following-background, var(--masu-follow-color, var(--masu-accent)));
-  color: var(--masu-following-text, #fff);
+  background: var(--issho-following-background, var(--masu-follow-color, var(--masu-accent)));
+  color: var(--issho-following-text, #fff);
   font-size: 0.75rem;
   line-height: 1.25rem;
   white-space: nowrap;
-  transform: translate(-50%, -50%);
+  translate: -50% -50%;
 }
 
 .masu .masu-following-stop {
