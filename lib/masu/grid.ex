@@ -1285,7 +1285,7 @@ defmodule Masu.Grid do
   def handle_event("masu:select", params, socket) when is_map(params) do
     %{selection: selection} = socket.assigns
 
-    selection = change_selection(selection, params)
+    selection = change_selection(selection, params, socket.assigns.source)
 
     socket = assign(socket, selection: selection)
     summary = selection_summary(socket.assigns)
@@ -1567,12 +1567,14 @@ defmodule Masu.Grid do
   end
 
   # How many rows are selected, and whether they are every row of the query.
-  defp change_selection(_selection, %{"all" => all}) when is_boolean(all),
+  defp change_selection(_selection, %{"all" => all}, _source) when is_boolean(all),
     do: %{all: all, ids: MapSet.new(), except: MapSet.new()}
 
-  defp change_selection(selection, %{"ids" => ids, "on" => on})
+  # An id that cannot be of a row is not selected: an action's `{:ids,
+  # ids}` and the query of every row but some have only ids of rows.
+  defp change_selection(selection, %{"ids" => ids, "on" => on}, source)
        when is_list(ids) and is_boolean(on) do
-    ids = Enum.take(ids, 10_000)
+    ids = ids |> Enum.take(10_000) |> Enum.filter(&Source.id?(source, &1))
 
     case {selection.all, on} do
       {true, true} ->
@@ -1589,7 +1591,7 @@ defmodule Masu.Grid do
     end
   end
 
-  defp change_selection(selection, _params), do: selection
+  defp change_selection(selection, _params, _source), do: selection
 
   defp selection_summary(%{selection: %{all: true, except: except}, total: total}),
     do: %{all: true, count: max(total - MapSet.size(except), 0)}

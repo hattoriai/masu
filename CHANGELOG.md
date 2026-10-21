@@ -36,6 +36,17 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An id from the browser that the source could not read crashed the
+  LiveView: an integer key sent `"abc"` raised `Ecto.Query.CastError`,
+  and a text or UUID key with a NUL reached PostgreSQL, which rejects it.
+  Every id an event names (an edit, paste, fill or undo, a delete, a
+  selection, a row's action, detail, history or editor, a locate) is now
+  checked before a source reads it: a number, or a text of at most 1,000
+  bytes without a NUL; an Ecto source also casts it with its primary
+  key's type and dumps it as its repo's adapter does (a `:binary_id` on
+  PostgreSQL is a UUID). An id that does not check is a row not found. A
+  source of your own may check its ids with the new optional callback
+  `id?/2` of `Masu.Source`.
 - A text with a NUL character crashed the LiveView: PostgreSQL rejects
   `\u0000` in the jsonb of the last view the grid keeps (`views`), and the
   grid matched on `:ok`. A NUL is now refused in the texts the browser
