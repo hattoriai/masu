@@ -186,8 +186,16 @@ came from:
 The keys of columns are matched against the grid's own columns, so a
 layout never holds text from the browser.
 
-The ids of rows, and of a selection, are not checked here: an id the
-source cannot read fails as any malformed event does.
+The id of a row that an event names (an edit, a delete, a selection, a
+row's action, detail, history or editor, where another person is) is
+checked before any source reads it: a number, or a text of at most 1,000
+bytes without a NUL. An Ecto source also casts it with its primary key's
+type and dumps it as its repo's adapter does, so an integer key refuses
+`"abc"`, and a `:binary_id` on PostgreSQL refuses a text that is not a
+UUID. An id that does not check is a row that is not there: the edit or
+delete of it is refused, it is never selected, and no query gets it. A
+source of your own checks its ids with the optional `id?/2` (see
+`Masu.Source`).
 
 ## A primary key of several fields
 

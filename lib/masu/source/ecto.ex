@@ -812,6 +812,27 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     def fetch(_state, _ids, _row_id), do: []
 
+    # An id that the primary key's type casts, and that the repo's
+    # adapter dumps: an adapter checks what the type does not (a
+    # `:binary_id` casts from any text, and PostgreSQL's adapter dumps it
+    # as a UUID). `Ecto.Type.adapter_dump/3` is how Ecto's own queries
+    # dump a value. A type's function that raises refuses the id.
+    @impl true
+    def id?(%{primary_key: [key], base: %{from: %{source: {_table, schema}}}} = state, id) do
+      type = schema.__schema__(:type, key)
+
+      with {:ok, value} <- Ecto.Type.cast(type, id),
+           {:ok, _dumped} <- Ecto.Type.adapter_dump(state.repo.__adapter__(), type, value) do
+        true
+      else
+        _error -> false
+      end
+    rescue
+      _error -> false
+    end
+
+    def id?(_state, _id), do: true
+
     # The place of a row in the grid's order: its row_number() in a window
     # of the same order, which PostgreSQL, MySQL 8 and SQLite 3.25 have; in
     # a tree, its place among the rows that show.

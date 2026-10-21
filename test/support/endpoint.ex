@@ -30,6 +30,7 @@ defmodule MasuTest.Router do
     live("/presence", MasuTest.PresenceLive)
     live("/views", MasuTest.ViewsLive)
     live("/input", MasuTest.InputLive)
+    live("/bad_ids", MasuTest.BadIdsLive)
     live("/tree", MasuTest.TreeLive)
     live("/details", MasuTest.DetailsLive)
     live("/groups", MasuTest.GroupsLive)

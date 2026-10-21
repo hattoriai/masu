@@ -129,6 +129,15 @@ defmodule Masu.Source do
   @callback fetch(state(), ids :: [term()], (term() -> term())) :: [term()]
 
   @doc """
+  Whether an id from the browser can be one of the source's rows' ids:
+  the browser's events name rows by their ids, and any person can craft
+  one. An id that cannot is of no row: `fetch/3` does not get it, and
+  `locate/3` does not look for it. Without this callback, an id is any
+  number, or a text of at most 1,000 bytes without a NUL.
+  """
+  @callback id?(state(), id :: term()) :: boolean()
+
+  @doc """
   The place (from 0) of the row with an id in the rows of the query, in
   their order, or `nil` when the query does not have it: where another
   person's cell is in this person's order (`Masu.Presence`).
@@ -174,6 +183,7 @@ defmodule Masu.Source do
                       change: 3,
                       values: 5,
                       fetch: 3,
+                      id?: 2,
                       locate: 3,
                       nodes: 3,
                       siblings: 2
@@ -308,16 +318,30 @@ defmodule Masu.Source do
 
   @doc false
   @spec fetch(t(), [term()], (term() -> term())) :: [term()]
-  def fetch(%__MODULE__{module: module, state: state}, ids, row_id) do
-    if function_exported?(module, :fetch, 3),
-      do: module.fetch(state, ids, row_id),
-      else: []
+  def fetch(%__MODULE__{module: module, state: state} = source, ids, row_id) do
+    case Enum.filter(ids, &id?(source, &1)) do
+      [] ->
+        []
+
+      ids ->
+        if function_exported?(module, :fetch, 3), do: module.fetch(state, ids, row_id), else: []
+    end
+  end
+
+  @doc false
+  # Whether an id from the browser can be of a row (`c:id?/2`). Every id
+  # a source gets from the grid passes here first, so that an id the
+  # source cannot read is a row not found, never an error of its query.
+  @spec id?(t(), term()) :: boolean()
+  def id?(%__MODULE__{module: module, state: state}, id) do
+    Masu.Input.id?(id) and (not function_exported?(module, :id?, 2) or module.id?(state, id))
   end
 
   @doc false
   @spec locate(t(), term(), (term() -> term())) :: non_neg_integer() | nil
-  def locate(%__MODULE__{module: module, state: state}, id, row_id) do
-    if function_exported?(module, :locate, 3), do: module.locate(state, id, row_id)
+  def locate(%__MODULE__{module: module, state: state} = source, id, row_id) do
+    if function_exported?(module, :locate, 3) and id?(source, id),
+      do: module.locate(state, id, row_id)
   end
 
   @doc false

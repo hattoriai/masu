@@ -15,6 +15,8 @@ defmodule Masu.Input do
   # writes. PostgreSQL counts characters in it, never bytes, so a limit
   # of 255 bytes is never over it.
   @name 255
+  # A row's id: a key of text (a UUID is 36 bytes) or a number.
+  @id 1_000
 
   @list_ops [:in, :all_of, :none_of]
 
@@ -25,6 +27,16 @@ defmodule Masu.Input do
   def nul?(map) when is_map(map) and not is_struct(map), do: Enum.any?(map, &nul?/1)
   def nul?({key, value}), do: nul?(key) or nul?(value)
   def nul?(_other), do: false
+
+  @doc """
+  Whether a row's id from the browser may be one: a number, or a text
+  within its bound and without a NUL. A grid sends its rows' ids as one
+  or the other (`Masu.Value.to_wire/1`).
+  """
+  @spec id?(term()) :: boolean()
+  def id?(id) when is_number(id), do: true
+  def id?(id) when is_binary(id), do: byte_size(id) <= @id and not nul?(id)
+  def id?(_other), do: false
 
   @doc "Checks a text. What is not a text is not checked."
   @spec text(term(), String.t(), pos_integer()) :: :ok | {:error, String.t()}
