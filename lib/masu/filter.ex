@@ -23,7 +23,7 @@ defmodule Masu.Filter do
   `12.5`.
   """
 
-  alias Masu.{Column, Value}
+  alias Masu.{Column, Input, Value}
 
   @ops [
     :eq,
@@ -123,12 +123,15 @@ defmodule Masu.Filter do
   Checks a filter against the grid's columns and reads its value for the
   column's type. Returns the filter with the value read, or an error that
   says why: no such column, a column that does not filter, an operator
-  that is not for its type, or a value it cannot read.
+  that is not for its type, or a value it cannot read. A value is an
+  error too when a text of it is over 1,000 bytes or has a NUL
+  character, or a list filter has more than 10,000 values.
   """
   @spec cast(t(), [Column.t()]) :: {:ok, t()} | {:error, String.t()}
   def cast(%__MODULE__{key: key, op: op, value: value} = filter, columns) do
     with {:ok, column} <- column(columns, key),
          :ok <- check_op(column, op),
+         :ok <- Input.filter_value(op, value),
          {:ok, value} <- cast_value(column.type, op, value) do
       {:ok, %{filter | value: value}}
     end

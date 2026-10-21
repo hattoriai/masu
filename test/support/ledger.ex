@@ -74,6 +74,34 @@ defmodule MasuTest.OtherHistory do
   use Masu.History.Ecto, repo: MasuTest.HistoryRepo
 end
 
+defmodule MasuTest.StrictHistory do
+  @moduledoc "The memory history, which raises on a NUL in any text, as PostgreSQL does."
+  @behaviour Masu.History
+
+  alias Masu.History.Memory
+
+  @impl true
+  def record(entries), do: Memory.record(entries)
+  @impl true
+  def for_cell(grid, row_id, key, opts),
+    do: Memory.for_cell(strict(grid), row_id, strict(key), opts)
+
+  @impl true
+  def for_row(grid, row_id, opts), do: Memory.for_row(strict(grid), row_id, opts)
+  @impl true
+  def recent(grid, opts), do: Memory.recent(strict(grid), opts)
+  @impl true
+  def batch(grid, batch), do: Memory.batch(strict(grid), strict(batch))
+  @impl true
+  def entry(grid, id), do: Memory.entry(strict(grid), id)
+  @impl true
+  def repo, do: nil
+
+  defp strict(text) do
+    if String.contains?(text, <<0>>), do: raise("invalid byte sequence: 0x00"), else: text
+  end
+end
+
 defmodule MasuTest.BrokenHistory do
   @moduledoc "A history in the rows' repo that cannot record: the change does not save either."
   @behaviour Masu.History
@@ -109,7 +137,8 @@ defmodule MasuTest.LedgerLive do
     "same" => MasuTest.SameHistory,
     "other" => MasuTest.OtherHistory,
     "memory" => Masu.History.Memory,
-    "broken" => MasuTest.BrokenHistory
+    "broken" => MasuTest.BrokenHistory,
+    "strict" => MasuTest.StrictHistory
   }
 
   @impl true
