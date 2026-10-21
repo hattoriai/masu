@@ -61,7 +61,7 @@ defmodule Masu.FilterOpsTest do
       assert %{"error" => error} =
                query(view, [%{"key" => "city", "op" => "in", "value" => ["London"]}])
 
-      assert error =~ ~s(the source of the column "city" does not filter by in)
+      assert error =~ ~s(The source of the column "city" does not filter by in.)
 
       assert %{"error" => _not_filtered} =
                query(view, [%{"key" => "code", "op" => "eq", "value" => "P1"}])

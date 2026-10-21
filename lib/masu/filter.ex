@@ -139,25 +139,36 @@ defmodule Masu.Filter do
 
   defp column(columns, key) do
     case Column.find(columns, key) do
-      nil -> {:error, "no column #{inspect(key)}"}
-      %Column{filterable: false} -> {:error, "the column #{inspect(key)} does not filter"}
-      column -> {:ok, column}
+      nil ->
+        {:error, Input.sentence("there is no column #{inspect(key)}")}
+
+      %Column{filterable: false} ->
+        {:error, Input.sentence("the column #{inspect(key)} does not filter")}
+
+      column ->
+        {:ok, column}
     end
   end
 
   defp check_op(%Column{many: true, key: key}, op) when op not in @many_ops,
-    do: {:error, "#{op} is not for the column #{inspect(key)} of many values"}
+    do:
+      {:error,
+       Input.sentence("the filter #{op} is not for the column #{inspect(key)} of many values")}
 
   defp check_op(%Column{many: many, key: key}, op) when op in @many_only and many != true,
-    do: {:error, "#{op} is for a column of many values, not #{inspect(key)}"}
+    do:
+      {:error,
+       Input.sentence("the filter #{op} is for a column of many values, not #{inspect(key)}")}
 
   defp check_op(%Column{type: type}, op) when op in @text_ops and type not in [:text, :enum],
-    do: {:error, "#{op} is for text, not #{type}"}
+    do: {:error, Input.sentence("the filter #{op} is for text, not #{type}")}
 
   defp check_op(%Column{filter_ops: ops, key: key}, op) when is_list(ops) do
     if op in ops,
       do: :ok,
-      else: {:error, "the source of the column #{inspect(key)} does not filter by #{op}"}
+      else:
+        {:error,
+         Input.sentence("the source of the column #{inspect(key)} does not filter by #{op}")}
   end
 
   defp check_op(_column, _op), do: :ok
@@ -172,7 +183,9 @@ defmodule Masu.Filter do
   end
 
   defp cast_value(_type, :between, value),
-    do: {:error, "between takes a list of two values, got: #{inspect(value)}"}
+    do:
+      {:error,
+       Input.sentence("the filter between takes a list of two values, got: #{inspect(value)}")}
 
   defp cast_value(type, op, values) when op in [:in | @many_only] and is_list(values) do
     Enum.reduce_while(values, {:ok, []}, fn value, {:ok, acc} ->
@@ -188,15 +201,16 @@ defmodule Masu.Filter do
   end
 
   defp cast_value(_type, op, value) when op in [:in | @many_only],
-    do: {:error, "#{op} takes a list of values, got: #{inspect(value)}"}
+    do:
+      {:error, Input.sentence("the filter #{op} takes a list of values, got: #{inspect(value)}")}
 
-  defp cast_value(_type, op, nil), do: {:error, "#{op} needs a value"}
+  defp cast_value(_type, op, nil), do: {:error, Input.sentence("the filter #{op} needs a value")}
   defp cast_value(type, _op, value), do: cast_one(type, value)
 
   defp cast_one(type, value) do
     case Value.cast(type, value) do
       {:ok, value} -> {:ok, value}
-      :error -> {:error, "#{inspect(value)} is not a #{type}"}
+      :error -> {:error, Input.sentence("the value #{inspect(value)} is not of the type #{type}")}
     end
   end
 

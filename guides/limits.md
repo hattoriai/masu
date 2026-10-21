@@ -170,7 +170,7 @@ What the grid does past a bound, or with a NUL, depends on where the text
 came from:
 
 - **An event of the grid** (a query, a name for a view) is answered with
-  an error: "the search is longer than 1,000 bytes". The grid keeps the
+  an error: "The search is longer than 1,000 bytes." The grid keeps the
   query it had. A filter that does not check is an error in the grid's
   own `filters` too.
 - **The search of a column's values** (the filter menu) gets no values,

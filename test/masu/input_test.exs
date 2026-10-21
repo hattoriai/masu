@@ -55,11 +55,11 @@ defmodule Masu.InputTest do
       assert {:ok, %Query{search: search}} = wire(%{"search" => String.duplicate("a", 1_000)})
       assert byte_size(search) == 1_000
 
-      assert {:error, "the search is longer than 1,000 bytes"} =
+      assert {:error, "The search is longer than 1,000 bytes."} =
                wire(%{"search" => String.duplicate("a", 1_001)})
 
       # 600 characters, 1,200 bytes.
-      assert {:error, "the search is longer than 1,000 bytes"} =
+      assert {:error, "The search is longer than 1,000 bytes."} =
                wire(%{"search" => String.duplicate("é", 600)})
     end
 
@@ -68,31 +68,31 @@ defmodule Masu.InputTest do
     end
 
     test "a NUL is refused in a search" do
-      assert {:error, "the search has a NUL character"} = wire(%{"search" => "a" <> @nul <> "b"})
+      assert {:error, "The search has a NUL character."} = wire(%{"search" => "a" <> @nul <> "b"})
     end
 
     test "the text of a filter value is at most 1,000 bytes, and has no NUL" do
       assert {:ok, _} = wire(%{"filters" => [condition(String.duplicate("a", 1_000))]})
 
-      assert {:error, "a filter value is longer than 1,000 bytes"} =
+      assert {:error, "A filter value is longer than 1,000 bytes."} =
                wire(%{"filters" => [condition(String.duplicate("a", 1_001), "contains")]})
 
-      assert {:error, "a filter value has a NUL character"} =
+      assert {:error, "A filter value has a NUL character."} =
                wire(%{"filters" => [condition("a" <> @nul, "starts_with")]})
 
       # A column that is not text reads its value from the text, so the text is checked too.
-      assert {:error, "a filter value is longer than 1,000 bytes"} =
+      assert {:error, "A filter value is longer than 1,000 bytes."} =
                wire(%{"filters" => [condition(String.duplicate("1", 1_001), "eq", "age")]})
     end
 
     test "each value of a list filter, and of between, is checked" do
-      assert {:error, "a filter value has a NUL character"} =
+      assert {:error, "A filter value has a NUL character."} =
                wire(%{"filters" => [condition(["a", "b" <> @nul], "in")]})
 
-      assert {:error, "a filter value is longer than 1,000 bytes"} =
+      assert {:error, "A filter value is longer than 1,000 bytes."} =
                wire(%{"filters" => [condition(["a", String.duplicate("b", 1_001)], "in")]})
 
-      assert {:error, "a filter value has a NUL character"} =
+      assert {:error, "A filter value has a NUL character."} =
                wire(%{"filters" => [condition(["1", "2" <> @nul], "between", "age")]})
     end
 
@@ -100,36 +100,38 @@ defmodule Masu.InputTest do
       values = Enum.map(1..10_000, &Integer.to_string/1)
       assert {:ok, _} = wire(%{"filters" => [condition(values, "in")]})
 
-      assert {:error, "more than 10,000 values"} =
+      assert {:error, "A filter has more than 10,000 values."} =
                wire(%{"filters" => [condition(["0" | values], "in")]})
     end
 
     test "a query has at most 100 filters, 100 sorts and 100 groups, counted as sent" do
       filters = List.duplicate(condition("a"), 100)
       assert {:ok, _} = wire(%{"filters" => filters})
-      assert {:error, "more than 100 filters"} = wire(%{"filters" => [condition("a") | filters]})
+
+      assert {:error, "A query has more than 100 filters."} =
+               wire(%{"filters" => [condition("a") | filters]})
 
       sorts = List.duplicate(%{"key" => "name", "dir" => "asc"}, 100)
       assert {:ok, %Query{sorts: [_]}} = wire(%{"sorts" => sorts})
 
-      assert {:error, "more than 100 sorts"} =
+      assert {:error, "A query has more than 100 sorts."} =
                wire(%{"sorts" => [%{"key" => "age", "dir" => "asc"} | sorts]})
 
       groups = List.duplicate("name", 100)
       assert {:ok, %Query{groups: ["name"]}} = wire(%{"groups" => groups})
-      assert {:error, "more than 100 groups"} = wire(%{"groups" => ["age" | groups]})
+      assert {:error, "A query has more than 100 groups."} = wire(%{"groups" => ["age" | groups]})
     end
   end
 
   describe "Filter.cast/2" do
     test "refuses a value past a bound, or with a NUL, whoever made the filter" do
-      assert {:error, "a filter value has a NUL character"} =
+      assert {:error, "A filter value has a NUL character."} =
                "name" |> Filter.new(:eq, "a" <> @nul) |> Filter.cast(@columns)
 
-      assert {:error, "a filter value is longer than 1,000 bytes"} =
+      assert {:error, "A filter value is longer than 1,000 bytes."} =
                "name" |> Filter.new(:eq, String.duplicate("a", 1_001)) |> Filter.cast(@columns)
 
-      assert {:error, "more than 10,000 values"} =
+      assert {:error, "A filter has more than 10,000 values."} =
                "age"
                |> Filter.new(:in, Enum.to_list(0..10_000))
                |> Filter.cast(@columns)
@@ -211,7 +213,9 @@ defmodule Masu.InputTest do
       {:ok, view, _html} = live(build_conn(), "/input")
       query = view |> grid_query() |> Map.put("search", "a" <> @nul)
 
-      assert %{"error" => "the search has a NUL character"} = push(view, "g", "masu:query", query)
+      assert %{"error" => "The search has a NUL character."} =
+               push(view, "g", "masu:query", query)
+
       assert view(view, "g") == %{}
       assert Memory.last("g", %{id: "ada"}) in [nil, %{}]
     end
@@ -250,6 +254,11 @@ defmodule Masu.InputTest do
                save.(String.duplicate("é", 130))
 
       assert %{"error" => "A view's name has a NUL character."} = save.("a" <> @nul)
+
+      # The name is checked as it is saved: trimmed.
+      padding = String.duplicate(" ", 300)
+      assert %{"id" => _} = save.(padding <> "Mine" <> padding)
+      assert %{"error" => "A view needs a name."} = save.(padding)
     end
 
     test "refuses an edited cell with a NUL, and saves the others" do

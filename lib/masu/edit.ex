@@ -247,7 +247,7 @@ defmodule Masu.Edit do
   defp nul?(%{"value" => value}), do: Input.nul?(value)
   defp nul?(_edit), do: false
 
-  defp nul_message, do: Input.nul_message("The text of this cell") <> "."
+  defp nul_message, do: Input.nul_message("the text of this cell")
 
   defp editable?(%{"id" => _id, "key" => key, "value" => value} = edit, columns)
        when is_binary(key) do

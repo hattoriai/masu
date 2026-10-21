@@ -44,9 +44,14 @@ defmodule Masu.Input do
 
   def text(text, what, limit) when is_binary(text) do
     cond do
-      byte_size(text) > limit -> {:error, "#{what} is longer than #{number(limit)} bytes"}
-      nul?(text) -> {:error, nul_message(what)}
-      true -> :ok
+      byte_size(text) > limit ->
+        {:error, sentence("#{what} is longer than #{number(limit)} bytes")}
+
+      nul?(text) ->
+        {:error, nul_message(what)}
+
+      true ->
+        :ok
     end
   end
 
@@ -54,7 +59,14 @@ defmodule Masu.Input do
 
   @doc "The message of a text with a NUL character."
   @spec nul_message(String.t()) :: String.t()
-  def nul_message(what), do: "#{what} has a NUL character"
+  def nul_message(what), do: sentence("#{what} has a NUL character")
+
+  @doc """
+  A message for the person, as a sentence: a capital first, a full stop
+  last. Every error the grid shows a person is one.
+  """
+  @spec sentence(String.t()) :: String.t()
+  def sentence(<<first::utf8, rest::binary>>), do: String.upcase(<<first::utf8>>) <> rest <> "."
 
   @doc "Checks the search of a grid, or of a column's values."
   @spec search(term()) :: :ok | {:error, String.t()}
@@ -62,7 +74,7 @@ defmodule Masu.Input do
 
   @doc "Checks a view's name."
   @spec name(term()) :: :ok | {:error, String.t()}
-  def name(name), do: text(name, "A view's name", @name)
+  def name(name), do: text(name, "a view's name", @name)
 
   @doc """
   Checks the value of a filter: its text, or each text of a list, and the
@@ -85,10 +97,16 @@ defmodule Masu.Input do
   def count(items, kind) when is_list(items) or is_map(items) do
     limit = Map.fetch!(@counts, kind)
     size = if is_map(items), do: map_size(items), else: length(items)
-    if size > limit, do: {:error, "more than #{number(limit)} #{kind}"}, else: :ok
+
+    if size > limit,
+      do: {:error, sentence("#{of(kind)} has more than #{number(limit)} #{kind}")},
+      else: :ok
   end
 
   def count(_other, _kind), do: :ok
+
+  defp of(:values), do: "a filter"
+  defp of(_kind), do: "a query"
 
   # 10000 as "10,000".
   defp number(n) do

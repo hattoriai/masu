@@ -72,7 +72,11 @@ defmodule Masu.GridTest do
         "filters" => [%{"key" => "age", "op" => "contains", "value" => "1"}]
       })
 
-      assert_reply(view, %{"error" => "contains is for text, not integer", "revision" => 0})
+      assert_reply(view, %{
+        "error" => "The filter contains is for text, not integer.",
+        "revision" => 0
+      })
+
       assert total(view, "people") == 5
     end
 
