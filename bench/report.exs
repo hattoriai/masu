@@ -66,6 +66,7 @@ browser =
   |> Enum.map(&(&1 |> File.read!() |> JSON.decode!()))
 
 timing = fn
+  %{"timeout_s" => timeout} -> "> #{timeout} s (stopped)"
   %{"median_us" => median} -> Report.ms(median)
   %{"memory_bytes" => bytes} -> Report.mb(bytes)
 end
@@ -168,13 +169,20 @@ and the memory of the rows.
 ## Server: `Masu.Source.Ecto` on PostgreSQL
 
 The median time of each job. A block is 100 rows. "By key" is the
-block after a block that the grid read, as when the person scrolls;
-"by OFFSET" is the block after a jump, as when the person drags the
-scrollbar. The table has an index on `(signed_up, id)`. The `OFFSET`
-jobs do not run at ten million rows: one takes minutes, as it reads
-millions of rows from the disk.
+block after a block that the grid read, as when the person scrolls.
+The table has an index on `(signed_up, id)`.
 
 #{Report.jobs(results, "Source.Ecto", timing)}
+
+## Server: jumps of `Masu.Source.Ecto` on PostgreSQL
+
+A jump is a block of 100 rows at a place that the grid did not read, as
+when the person drags the scrollbar. A first jump has no block read
+before it. A jump "on from the middle" comes after the grid read the
+block in the middle. The median time of up to five runs (after one run
+to warm up) in ten seconds. PostgreSQL stops a query after a timeout.
+
+#{Report.jobs(results, "Source.Ecto, jumps", timing)}
 
 ## Browser: a Masu grid and two LiveView baselines
 

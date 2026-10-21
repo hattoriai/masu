@@ -56,8 +56,17 @@ are open at most.
 An Ecto source reads the block after a block it read by key (see
 [Export, selection and large tables](export.md)), but a jump into the
 middle of a table of millions of rows (the scrollbar dragged) is an
-`OFFSET`, which the database counts row by row. A grouped Ecto grid
-reads an open group's rows by `OFFSET`. Paging by key is tested on
+`OFFSET`, which the database counts row by row. It counts the sort
+values of the rows, not the rows, and from the nearest block before
+the jump that the grid read: with an index of the sort's columns, it
+reads only the index. Its time still grows with the place of the jump.
+On PostgreSQL (`bench/RESULTS.md`), a first jump to the middle of ten
+million rows takes 0.14 s in the order of the primary key, and 0.2 s
+sorted by a column with an index; to nine tenths of them, 0.3 s and
+0.4 s. Without an index of the sort's columns, the database reads the
+rows, and a jump can take seconds, or minutes from the disk. A filter
+or a search makes the rows fewer, and so the jumps faster. A grouped
+Ecto grid reads an open group's rows by `OFFSET`. Paging by key is tested on
 SQLite; the order of `NULL`s it assumes for PostgreSQL is PostgreSQL's
 default. With an adapter other than PostgreSQL, MySQL, SQLite and SQL
 Server, a sort other than the primary key's is read by `OFFSET`.

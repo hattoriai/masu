@@ -8,6 +8,11 @@
 # rows' search texts of a list, and the next), the count, and the count
 # up to a count_limit.
 #
+# The jumps of an Ecto source (the scrollbar dragged to a place the grid
+# did not read) can take minutes in a large table. They are not Benchee
+# jobs: each runs once to warm up, then a few times, under a statement
+# timeout.
+#
 # The results go to bench/results/server.json, for bench/report.exs.
 #
 # Environment:
@@ -18,11 +23,14 @@
 #   * MASU_BENCH_SIZES - "small" runs only the smallest size of each
 #     source, to try the script.
 #   * MASU_BENCH_TIME - the seconds of each job (2).
+#   * MASU_BENCH_JUMP_TIMEOUT - the seconds after which PostgreSQL stops
+#     a jump's query (30).
 
 Logger.configure(level: :warning)
 
 small? = System.get_env("MASU_BENCH_SIZES") == "small"
 time = "MASU_BENCH_TIME" |> System.get_env("2") |> String.to_integer()
+jump_timeout = "MASU_BENCH_JUMP_TIMEOUT" |> System.get_env("30") |> String.to_integer()
 list_sizes = if small?, do: [10_000], else: [10_000, 100_000, 1_000_000]
 ecto_sizes = if small?, do: [100_000], else: [100_000, 1_000_000, 10_000_000]
 block = 100
@@ -189,6 +197,75 @@ defmodule MasuBench.Run do
   end
 end
 
+defmodule MasuBench.Slow do
+  @moduledoc """
+  Runs jobs that can take minutes: each once to warm up, then up to five
+  times or for ten seconds, in a transaction with a statement timeout.
+  A job that PostgreSQL stops has no time, only its timeout.
+  """
+
+  @runs 5
+  @budget_us 10_000_000
+
+  def run(group, size, jobs, timeout) do
+    IO.puts("\n== #{group}, #{size} rows")
+
+    for {name, job} <- Enum.sort(jobs) do
+      result =
+        with {:ok, _warm} <- timed(job, timeout) do
+          times(job, timeout, [], 0)
+        end
+
+      line =
+        case result do
+          {:ok, times} -> "#{Float.round(median(times) / 1000, 2)} ms (#{length(times)} runs)"
+          :timeout -> "> #{timeout} s"
+        end
+
+      IO.puts("#{name}: #{line}")
+
+      case result do
+        {:ok, times} ->
+          %{group: group, size: size, job: name, median_us: median(times), runs: length(times)}
+
+        :timeout ->
+          %{group: group, size: size, job: name, timeout_s: timeout}
+      end
+    end
+  end
+
+  defp times(_job, _timeout, times, spent) when length(times) == @runs or spent > @budget_us,
+    do: {:ok, times}
+
+  defp times(job, timeout, times, spent) do
+    case timed(job, timeout) do
+      {:ok, us} -> times(job, timeout, [us | times], spent + us)
+      :timeout -> :timeout
+    end
+  end
+
+  defp timed(job, timeout) do
+    {:ok, us} =
+      MasuBench.Repo.transaction(fn ->
+        MasuBench.Repo.query!("SET LOCAL statement_timeout = '#{timeout}s'")
+        {us, _rows} = :timer.tc(job)
+        us
+      end)
+
+    {:ok, us}
+  rescue
+    error in Postgrex.Error ->
+      if error.postgres[:code] == :query_canceled,
+        do: :timeout,
+        else: reraise(error, __STACKTRACE__)
+  end
+
+  defp median(times) do
+    sorted = Enum.sort(times)
+    Enum.at(sorted, div(length(sorted), 2))
+  end
+end
+
 alias Masu.{Column, Query}
 alias Masu.Source
 
@@ -279,29 +356,29 @@ ecto_results =
     capped = Source.Ecto.init(source, repo: MasuBench.Repo, count_limit: 10_000)
     middle = div(n, 2)
 
-    # A state that read the row before the middle, so that the middle
-    # block is read by key; and one that did not, so that it is an
-    # OFFSET (the scrollbar dragged there). The row's sort values come
-    # from the index alone: its whole row by OFFSET reads half the table.
-    keyed = fn state ->
+    # A state that read the row before a place, so that the block there
+    # is read by key; a state that did not reads it by OFFSET (the
+    # scrollbar dragged there). The row's sort values come from the index
+    # alone: its whole row by OFFSET reads half the table.
+    keyed = fn state, at ->
       fields = Enum.map(state.order, fn {_direction, field} -> field end)
 
       row =
         from(c in source,
           select: map(c, ^fields),
           order_by: ^state.order,
-          offset: ^(middle - 1),
+          offset: ^(at - 1),
           limit: 1
         )
         |> MasuBench.Repo.one!()
 
-      Source.Ecto.seen(state, middle - 1, [row])
+      Source.Ecto.seen(state, at - 1, [row])
     end
 
     by_id = Source.Ecto.prepare(init, plain, columns)
     by_date_state = Source.Ecto.prepare(init, by_date, columns)
-    by_id_keyed = keyed.(by_id)
-    by_date_keyed = keyed.(by_date_state)
+    by_id_keyed = keyed.(by_id, middle)
+    by_date_keyed = keyed.(by_date_state, middle)
     searched = Source.Ecto.prepare(init, search, columns)
 
     jobs = %{
@@ -327,19 +404,27 @@ ecto_results =
       end
     }
 
-    # An OFFSET in the middle of ten million rows reads millions of rows
-    # from the disk, for minutes: the smaller tables show its cost.
-    offsets =
-      if n < 10_000_000,
-        do: %{
-          "middle block, by OFFSET" => fn -> Source.Ecto.rows(by_id, middle, block) end,
-          "sorted by date, middle block, by OFFSET" => fn ->
-            Source.Ecto.rows(by_date_state, middle, block)
-          end
-        },
-        else: %{}
+    benchee = MasuBench.Run.run("Source.Ecto", n, jobs, time)
 
-    MasuBench.Run.run("Source.Ecto", n, Map.merge(jobs, offsets), time)
+    # The jumps: to a place the grid did not read, with no block read
+    # before (a first jump), and a short and a long jump from the block
+    # in the middle that the grid read (the scrollbar dragged on).
+    places = [{"a tenth", div(n, 10)}, {"the middle", middle}, {"nine tenths", div(n * 9, 10)}]
+    orders = [{"", by_id, by_id_keyed}, {"sorted by date, ", by_date_state, by_date_keyed}]
+
+    jumps =
+      for {prefix, state, from_middle} <- orders,
+          {name, from, at} <-
+            Enum.map(places, fn {place, at} -> {"first jump to #{place}", state, at} end) ++
+              [
+                {"jump of 1,000 rows on from the middle", from_middle, middle + 1_000},
+                {"jump of a tenth of the rows on from the middle", from_middle,
+                 middle + div(n, 10)}
+              ],
+          into: %{},
+          do: {prefix <> name, fn -> Source.Ecto.rows(from, at, block) end}
+
+    benchee ++ MasuBench.Slow.run("Source.Ecto, jumps", n, jumps, jump_timeout)
   end
 
 {commit, 0} = System.cmd("git", ["rev-parse", "--short", "HEAD"])

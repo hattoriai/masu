@@ -2,7 +2,10 @@
 // one block at a time. A block may be partial (the server's first rows,
 // or the last block of the query); a row it lacks is missing. The cache
 // keeps at most `maxBlocks` blocks, and forgets those farthest from the
-// rows on the screen.
+// rows on the screen. While a block is asked for, the grid asks for no
+// other (`busy`): a drag of the scrollbar asks for the rows where it
+// pauses, and each read of rows the person passed by is a query the
+// database runs for nothing.
 
 import type { Row } from "./types";
 
@@ -10,7 +13,8 @@ export class BlockCache {
   readonly size: number;
   readonly maxBlocks: number;
   private blocks = new Map<number, (Row | undefined)[]>();
-  private pending = new Set<number>();
+  // The blocks asked for, and when.
+  private pending = new Map<number, number>();
 
   constructor(size = 100, maxBlocks = 60) {
     this.size = size;
@@ -48,8 +52,17 @@ export class BlockCache {
   }
 
   /** Marks a block as asked for, until `store` or `failed`. */
-  ask(block: number): void {
-    this.pending.add(block);
+  ask(block: number, now = Date.now()): void {
+    this.pending.set(block, now);
+  }
+
+  /**
+   * Whether a block asked for less than `wait` milliseconds ago has not
+   * come yet: one that never comes does not stop the grid for good.
+   */
+  busy(now = Date.now(), wait = 10_000): boolean {
+    for (const asked of this.pending.values()) if (now - asked < wait) return true;
+    return false;
   }
 
   failed(block: number): void {

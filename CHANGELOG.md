@@ -18,6 +18,10 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   puts them on `struct` before the changeset and on the changeset after
   it, so params cannot change them, and a column of one of these fields
   neither takes a value on a new row nor edits.
+- A `read` of your own gets `seek` with the block: for a jump, `seek.()`
+  gives the sort values of the row before the block, as `after` does,
+  from one query of the sort values only. `after_row || seek.()` reads a
+  jump by key too (#53).
 
 ### Changed
 
@@ -42,6 +46,19 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - A link or a saved view drops a part past a bound, whole, and says so
     ("Part of this view no longer applies: search"), as it does for a
     column that is gone.
+
+- The browser asks for no rows while rows it asked for have not come
+  (for ten seconds at most), and then for the rows on the screen: a drag
+  of the scrollbar no longer reads the rows of each place it paused at
+  (#53).
+
+- A jump of an Ecto source (the scrollbar dragged to rows the grid did
+  not read) counts its `OFFSET` over the sort values of the rows, not
+  the rows, from the nearest block before it that the grid read, and
+  reads the block by key. With an index of the sort's columns, the
+  database reads only the index: on PostgreSQL, a jump to the middle of
+  ten million rows sorted by a date takes 0.2 s, not 12 s (minutes from
+  the disk), and a jump of 1,000 rows on from a block 1 ms (#53).
 
 ### Fixed
 

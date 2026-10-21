@@ -136,9 +136,12 @@ a selection of every row follows the query as it changes.
 An Ecto source reads the block after a block it read by the sort values
 of that block's last row, as `WHERE (a, b, id) > (...)`, not by an
 `OFFSET`, which the database counts row by row: the last block of a
-table of millions of rows is as fast as the first. A jump into the
-middle (the scrollbar dragged) is an `OFFSET`; the blocks after it are
-read by key again, also in a grid that reads in tasks (`load={:async}`).
+table of millions of rows is as fast as the first. A jump (the
+scrollbar dragged) counts an `OFFSET` over the sort values of the rows,
+not the rows, from the nearest block before it that the grid read: with
+an index of the sort's columns, the database reads only the index. The
+block there and the blocks after it are read by key, also in a grid
+that reads in tasks (`load={:async}`).
 It works with descending orders and with `NULL`s (after every value in
 PostgreSQL, before them in MySQL, SQLite and SQL Server), and with the
 primary key as the last sort, which the grid always adds. With another

@@ -101,8 +101,9 @@ of a tenant's schema:
 <.data_grid id="orders" source={Order} repo={MyApp.Repo} repo_opts={[prefix: @tenant]}>
 ```
 
-A jump into the middle of a large table (the scrollbar dragged) is an
-`OFFSET`, which gets slower deep into it: the database still reads the
+A jump into the middle of a large table (the scrollbar dragged) counts
+an `OFFSET` over the sort values, which gets slower deep into it: the
+database still reads the
 rows before it. See [Known limits](limits.md).
 
 ### Fields of related rows
@@ -170,7 +171,7 @@ and reads each block your way:
 ```
 
 ```elixir
-def read(query, %{offset: offset, limit: limit, order: order, after: after_row}) do
+def read(query, %{offset: offset, limit: limit, order: order, after: after_row, seek: seek}) do
   query |> offset(^offset) |> limit(^limit) |> MyApp.Repo.all()
 end
 ```
@@ -181,8 +182,13 @@ order (`[desc: :placed_at, asc: :id]`, the primary key always last, or
 `nil` when it is the query's own `order_by`). `after` is the sort values
 of the last row of the block before (`[placed_at: ~U[...], id: 41]`), to
 read the block after it by key, or `nil`: the first block, or a jump
-(the scrollbar dragged). It gives what `c:Masu.Source.rows/3` gives: the
-rows, `{rows, count}`, or `{:error, reason}`.
+(the scrollbar dragged). For a jump, `seek.()` gives the sort values of
+the row before the block, as `after` gives them, or `nil` for the first
+block and past the last row: it reads only the sort values, from the
+nearest block the grid read before the jump, as Masu's own read does.
+With `after_row || seek.()`, a read by key reads a jump by key too. It
+gives what `c:Masu.Source.rows/3` gives: the rows, `{rows, count}`, or
+`{:error, reason}`.
 
 A sort by a field of a related row is a path in `order` and `after`
 (`[{:asc, [:customer, :name]}, {:asc, :id}]`), whose join is in the query

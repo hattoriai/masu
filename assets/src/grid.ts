@@ -2091,6 +2091,9 @@ export class Grid {
     }
     const ask = () => {
       this.requestTimer = null;
+      // One batch at a time: when it comes, the grid asks for the rows
+      // on the screen then, not for those it passed by.
+      if (this.cache.busy()) return;
       for (const block of this.cache.missing(from, to, this.span())) this.request(block);
     };
     if (this.urgent) {

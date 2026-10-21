@@ -55,10 +55,32 @@ defmodule Masu.Source.ReadTest do
     assert Enum.map(first ++ next, & &1.id) == expected |> Enum.take(80) |> Enum.map(& &1.id)
   end
 
-  test "a jump has no row before it" do
-    source = source(read(self()), %Query{sorts: [Sort.new("name", :asc)]})
+  test "a jump has no row before it, but a seek of its sort values" do
+    source =
+      source(read(self()), %Query{sorts: [Sort.new("score", :desc), Sort.new("name", :asc)]})
+
+    expected = Item |> order_by(desc: :score, asc: :name, asc: :id) |> Repo.all()
+
     Source.rows(source, 120, 30)
-    assert_received {:read, _ecto, %{offset: 120, after: nil}}
+    assert_received {:read, _ecto, %{offset: 120, after: nil, seek: seek}}
+    row = Enum.at(expected, 119)
+    assert seek.() == [score: row.score, name: row.name, id: row.id]
+
+    # After a block the grid read: from its last row.
+    source = Source.seen(source, 0, Source.rows(source, 0, 40))
+    Source.rows(source, 200, 30)
+    assert_received {:read, _ecto, %{offset: 200, after: nil, seek: seek}}
+    row = Enum.at(expected, 199)
+    assert seek.() == [score: row.score, name: row.name, id: row.id]
+
+    # The first block has nothing before it; past the last row, nothing.
+    Source.rows(source, 0, 30)
+    assert_received {:read, _ecto, %{offset: 0, seek: seek}}
+    assert seek.() == nil
+
+    Source.rows(source, 500, 30)
+    assert_received {:read, _ecto, %{offset: 500, seek: seek}}
+    assert seek.() == nil
   end
 
   test "gives what the read gives: a count with the rows, or an error" do
