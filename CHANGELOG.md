@@ -39,8 +39,8 @@ On Issho 0.3: following and agents' motion are the room's.
   (up to 400ms; `--masu-peer-glide` for a fixed time), and a range
   selected from a cell sweeps over its rows (`--masu-sweep`, 350ms); none
   of it with reduced motion.
-- With Issho 0.2.1, an agent's page pointer (`Issho.Components.pointers/1`)
-  goes to its cell or range: the grid says where they are on the page.
+- An agent's page pointer (`Issho.Components.pointers/1`) goes to its
+  cell or range: the grid says where they are on the page.
 
 ## [0.4.0] - 2026-10-21
 

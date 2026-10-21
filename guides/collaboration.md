@@ -203,7 +203,7 @@ An agent moves as a person does, so that the people follow it: it goes
 to each cell it edits and types in it a moment before the value lands,
 and selects a range as a drag does, from its first cell. Only where it
 goes is sent: each browser draws the way there, its mark gliding from cell
-to cell and a range sweeping over its rows. With Issho 0.2.1 and its page
+to cell and a range sweeping over its rows. With Issho's page
 pointers, the agent's pointer goes to its cell too. For changes that land
 at once:
 
