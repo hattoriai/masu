@@ -5,10 +5,36 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-10-21
+
+### Changed (breaking)
+
+- A grid's people are those of an Issho room: `issho` takes the place of
+  `presence`, which raises and says what to give instead, and
+  `Masu.Presence` is gone. Their cells, ranges, the cell each edits (a
+  lock of the room) and their views (for following) are in the room's
+  awareness, their colors Issho's; agents are among them. A grid without
+  people, and `live` rows, are unchanged. Why, and the steps: the
+  [Upgrading to 0.4](guides/upgrading.md) guide.
 
 ### Added
 
+- `Masu.Issho`: agents in a grid, in an Issho room. `Masu.Issho.tools/0`
+  reads a grid (in an order, filtered, searched), points at cells, edits
+  cells, adds and deletes rows, the grid's way (`Masu.Sheet`), under the
+  room's policy; the people see the agent's cell, and its rows flash in
+  its color. An agent leaves a cell that someone is editing. Issho is an
+  optional dependency.
+- `people={false}` hides the avatars above the grid, for a page that
+  lists its room's people itself.
+- `Masu.Sheet`: a grid outside the LiveView, for a job, a test or an
+  agent. Define a grid once as `data_grid`'s attributes
+  (`<.data_grid {MyApp.Grids.tasks(@current_scope)} />`), and
+  `Masu.Sheet.new/1` of the same reads its rows in an order, filtered and
+  searched, and edits, adds and deletes them the grid's way: its
+  changeset or `on_update`, its read-only rules, the compare of a cell
+  changed meanwhile, its history, and its `live` topic, so the people
+  who have the grid open see each change, in the color of who made it.
 - `views_scope`: whose views a grid's views are, such as the account's
   id. The store keeps each scope's views apart (under `"orders@42"`), so
   a view shared in one account is not offered in another. Without it,

@@ -47,7 +47,7 @@ const options: Options = {};
 
 /**
  * Options of every grid of the page: `peerLabel`, a function that draws
- * the label of another person on their cell (Masu.Presence).
+ * the label of another person on their cell (its Issho room).
  */
 export function configure(next: Options): void {
   Object.assign(options, next);
@@ -4135,7 +4135,7 @@ export class Grid {
     });
   }
 
-  // The other people who have the grid open (Masu.Presence): a line in
+  // The other people who have the grid open (its Issho room): a line in
   // their color on the cell they are on, where the row is on this
   // person's screen (their order and filters are their own), with their
   // name; a cell they edit opens no editor here.

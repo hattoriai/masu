@@ -1,7 +1,7 @@
 defmodule Masu.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.4.0"
   @source_url "https://github.com/hattoriai/masu"
 
   # MASU_OLDEST=1 resolves the oldest Phoenix and LiveView that Masu
@@ -60,6 +60,8 @@ defmodule Masu.MixProject do
       {:ecto, "~> 3.13", optional: true},
       {:ecto_sqlite3, "~> 0.22", only: :test},
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
+      # Collaboration with Issho (Masu.Issho): optional.
+      {:issho, "~> 0.2", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:lazy_html, "~> 0.1", only: :test},
       {:phoenix, if(@oldest, do: "~> 1.7.14", else: "~> 1.7.14 or ~> 1.8")},
@@ -118,6 +120,7 @@ defmodule Masu.MixProject do
         "guides/koyomi.md",
         "guides/live.md",
         "guides/collaboration.md",
+        "guides/upgrading.md",
         "guides/history.md",
         "guides/views.md",
         "guides/trees.md",
@@ -144,6 +147,7 @@ defmodule Masu.MixProject do
           "guides/koyomi.md",
           "guides/live.md",
           "guides/collaboration.md",
+          "guides/upgrading.md",
           "guides/history.md",
           "guides/views.md",
           "guides/trees.md",
@@ -173,7 +177,8 @@ defmodule Masu.MixProject do
           Masu.Action,
           Masu.Messages
         ],
-        Writes: [Masu.Write, Masu.Write.Change, Masu.Wire],
+        Writes: [Masu.Write, Masu.Write.Change, Masu.Wire, Masu.Sheet],
+        Collaboration: [Masu.Issho],
         History: [Masu.History, Masu.History.Entry, Masu.History.Ecto, Masu.History.Memory],
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],

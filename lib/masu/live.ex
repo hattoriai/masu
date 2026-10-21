@@ -204,18 +204,21 @@ defmodule Masu.Live do
       )
 
   @doc false
-  # Subscribes the LiveView to the people of a topic it follows, once.
-  @spec follow_presence(atom(), String.t()) :: :ok
-  def follow_presence(pubsub, topic) do
-    key = {__MODULE__, :presence, topic}
+  # Who saved a row, for the flash of the others' grids: `%{name, color}`,
+  # their color a plain CSS color (theirs, Issho's in a room), or nil.
+  @spec by(map() | nil) :: map() | nil
+  def by(nil), do: nil
 
-    unless Process.get(key) do
-      :ok = Phoenix.PubSub.subscribe(pubsub, Masu.Presence.topic(topic))
-      Process.put(key, true)
-    end
+  def by(user) when is_map(user),
+    do: %{name: Map.get(user, :name), color: plain_color(Map.get(user, :color))}
 
-    :ok
-  end
+  @plain_color ~r/^(#[0-9a-fA-F]{3,8}|[a-z]{3,20}|(rgb|rgba|hsl|hsla|oklch|oklab)\([0-9a-z.,%\s\/+-]{1,64}\)|var\(--issho-person-[1-8], currentColor\))$/
+
+  # A color goes to other people's browsers: only a plain CSS color.
+  defp plain_color(color) when is_binary(color) and byte_size(color) <= 80,
+    do: if(Regex.match?(@plain_color, color), do: color)
+
+  defp plain_color(_color), do: nil
 
   @doc false
   # The grids of this LiveView that follow `topic` (a grid calls it when it
@@ -279,19 +282,6 @@ defmodule Masu.Live do
       # after every message already in the mailbox, so the changes that
       # come together are taken together.
       if pending == [], do: Phoenix.LiveView.send_update(Masu.Grid, id: grid, masu_changes: true)
-    end
-
-    {:halt, socket}
-  end
-
-  # The people of a grid's topic changed (Masu.Presence): the grids of the
-  # topic draw them again.
-  def __handle_info__(
-        %Phoenix.Socket.Broadcast{event: "presence_diff", topic: "masu:presence:" <> topic},
-        socket
-      ) do
-    for grid <- Map.get(Process.get(__MODULE__, %{}), topic, []) do
-      Phoenix.LiveView.send_update(Masu.Grid, id: grid, masu_presence: true)
     end
 
     {:halt, socket}

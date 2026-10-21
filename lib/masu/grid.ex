@@ -34,6 +34,9 @@ defmodule Masu.Grid do
 
   use Phoenix.LiveComponent
 
+  # Issho is optional: a grid with `issho` needs it.
+  @compile {:no_warn_undefined, [Masu.Issho.Live]}
+
   alias Masu.{Action, Column, Filter, Group, Input, Layout, Query, Source, Tree, Value, View}
   alias Masu.Export.{Download, Ticket}
   alias Masu.Source.Ecto, as: EctoSource
@@ -63,8 +66,10 @@ defmodule Masu.Grid do
        followed: nil,
        changed: [],
        changed_by: %{},
-       tracked: nil,
        people: [],
+       issho: nil,
+       issho_config: nil,
+       show_people: true,
        saved_by: %{},
        all_columns: [],
        layout: nil,
@@ -109,7 +114,14 @@ defmodule Masu.Grid do
   end
 
   @impl true
-  def update(%{masu_presence: true}, socket), do: {:ok, refresh_people(socket)}
+  # The room's people moved, came or went (Masu.Issho.Live).
+  def update(%{issho: {event, _room, _payload}}, socket) when event in ["aware", "presence_diff"],
+    do: {:ok, refresh_people(socket)}
+
+  def update(%{issho: {"bye", _room, _reason}}, socket),
+    do: {:ok, socket |> assign(issho: nil) |> put_people([])}
+
+  def update(%{issho: _event}, socket), do: {:ok, socket}
 
   # A read in a task (`load={:async}`) that took longer than `timeout`.
   def update(%{masu_timeout: name}, %{assigns: %{running: name}} = socket) do
@@ -198,37 +210,49 @@ defmodule Masu.Grid do
     {:ok, follow(socket)}
   end
 
-  # The topic of `live`, followed in the connected LiveView only.
-  defp follow(%{assigns: %{live: live, followed: live}} = socket), do: socket
-
+  # The topic of `live`, followed in the connected LiveView only, and the
+  # people of the grid's room or topic.
   defp follow(socket) do
-    if connected?(socket) do
-      :ok = Masu.Live.follow(socket.assigns.id, socket.assigns.followed, socket.assigns.live)
-      socket |> assign(followed: socket.assigns.live) |> track()
-    else
+    cond do
+      not connected?(socket) ->
+        socket
+
+      socket.assigns.live == socket.assigns.followed ->
+        join_room(socket)
+
+      true ->
+        :ok = Masu.Live.follow(socket.assigns.id, socket.assigns.followed, socket.assigns.live)
+        socket |> assign(followed: socket.assigns.live) |> join_room()
+    end
+  end
+
+  # The grid's people in an Issho room (`issho`): its LiveView joins the
+  # room once, and the grid puts its person's place there.
+  defp join_room(%{assigns: %{issho_config: nil}} = socket), do: socket
+
+  defp join_room(%{assigns: %{issho_config: given, user: user}} = socket) do
+    config = Masu.Issho.Live.config(given, user)
+
+    if socket.assigns.issho && socket.assigns.issho.room == config.room do
       socket
+    else
+      case Masu.Issho.Live.join(config, socket.assigns.id, shared_view(socket.assigns)) do
+        :ok -> socket |> assign(issho: config) |> refresh_people()
+        {:error, _reason} -> socket
+      end
     end
   end
 
-  # The people of the grid's topic (Masu.Presence): this LiveView's user
-  # is tracked once, and the grid draws the others.
-  defp track(%{assigns: %{presence: nil}} = socket), do: socket
-  defp track(%{assigns: %{live: nil}} = socket), do: socket
+  defp refresh_people(%{assigns: %{issho: issho}} = socket) when issho != nil,
+    do: put_people(socket, Masu.Issho.Live.people(issho, socket.assigns.id))
 
-  defp track(%{assigns: %{presence: presence, live: {pubsub, topic}, user: user}} = socket) do
-    if socket.assigns.tracked != topic do
-      if socket.assigns.tracked, do: Masu.Presence.untrack(presence, socket.assigns.tracked, user)
-      :ok = Masu.Live.follow_presence(pubsub, topic)
-      :ok = Masu.Presence.track(presence, topic, user, shared_view(socket.assigns))
-    end
+  defp refresh_people(socket), do: socket
 
-    socket |> assign(tracked: topic) |> refresh_people()
-  end
+  # The people to the browser, when they changed: a room's awareness
+  # comes often, and most of it is elsewhere.
+  defp put_people(%{assigns: %{people: people}} = socket, people), do: socket
 
-  defp refresh_people(%{assigns: %{presence: presence, tracked: topic, user: user}} = socket)
-       when is_binary(topic) do
-    people = Masu.Presence.people(presence, topic, user)
-
+  defp put_people(socket, people) do
     socket
     |> assign(people: people)
     |> push_event("masu:people", %{
@@ -240,8 +264,6 @@ defmodule Masu.Grid do
         )
     })
   end
-
-  defp refresh_people(socket), do: socket
 
   # The person's view (order, filters, search) goes to the others, who
   # see it when they follow them; `share_view={false}` keeps it.
@@ -764,7 +786,7 @@ defmodule Masu.Grid do
   defp notice(keys, id), do: [id, Enum.join(keys, ", ")]
 
   # The view changed: into the URL (`url`), the store (`views`), and to
-  # the people who may follow this person (Masu.Presence).
+  # the people who may follow this person (Masu.Issho.Live).
   defp view_changed(socket, opts \\ []) do
     %{query: query, layout: layout, default_view: default, page: page} = socket.assigns
     params = View.to_params(%View{query: query, layout: layout, page: page}, default)
@@ -798,6 +820,16 @@ defmodule Masu.Grid do
       nil -> key
       scope -> "#{key}@#{scope}"
     end
+  end
+
+  @doc false
+  # A grid's source and columns, of its attributes, outside a LiveView
+  # (Masu.Sheet): as the grid starts them, with no slots.
+  @spec setup(map()) :: {Source.t(), [Column.t()]}
+  def setup(assigns) do
+    source = new_source(assigns, assigns.input)
+    {columns, _types} = columns_for(assigns, [], source, %{})
+    {source, supported(source, columns, assigns)}
   end
 
   defp source_opts(assigns) do
@@ -1200,17 +1232,16 @@ defmodule Masu.Grid do
   end
 
   # The place of a row in this person's order: where to scroll to follow
-  # another person (Masu.Presence).
+  # another person (Masu.Issho.Live).
   def handle_event("masu:locate", %{"id" => id}, socket) do
     index = Source.locate(socket.assigns.source, id, row_id(socket.assigns))
     {:reply, %{"index" => index, "revision" => socket.assigns.revision}, socket}
   end
 
-  # Where this LiveView's user is in the grid, for the others (Masu.Presence).
+  # Where this LiveView's user is in the grid, for the others in its
+  # Issho room (Masu.Issho.Live).
   def handle_event("masu:cursor", %{"cell" => cell, "editing" => editing} = params, socket)
       when (is_nil(cell) or (is_list(cell) and length(cell) == 2)) and is_boolean(editing) do
-    %{presence: presence, tracked: topic, user: user} = socket.assigns
-
     place = %{
       cell: cell,
       range: range(params["range"]),
@@ -1218,7 +1249,8 @@ defmodule Masu.Grid do
       top: top(params["top"])
     }
 
-    if presence && topic, do: :ok = Masu.Presence.update(presence, topic, user, place)
+    if socket.assigns.issho,
+      do: _ = Masu.Issho.Live.put(socket.assigns.issho, socket.assigns.id, place)
 
     {:noreply, socket}
   end
@@ -1795,7 +1827,7 @@ defmodule Masu.Grid do
   defp fetch_row(_assigns, nil, _row_id), do: []
   defp fetch_row(assigns, id, row_id), do: Source.fetch(assigns.source, [id], row_id)
 
-  # The people whose editor is open on a cell of the row (Masu.Presence).
+  # The people whose editor is open on a cell of the row (Masu.Issho.Live).
   defp editors(assigns, id) do
     for %{editing: true, cell: [^id | _]} = person <- assigns.people,
         do: Map.take(person, [:id, :name, :color])
@@ -1963,13 +1995,8 @@ defmodule Masu.Grid do
   defp top(id) when is_binary(id) or is_integer(id), do: id
   defp top(_other), do: nil
 
-  defp share_view(%{assigns: %{presence: presence, tracked: topic} = assigns} = socket)
-       when presence != nil and is_binary(topic) do
-    case shared_view(assigns) do
-      nil -> :ok
-      view -> :ok = Masu.Presence.update(presence, topic, assigns.user, %{view: view})
-    end
-
+  defp share_view(%{assigns: %{issho: issho} = assigns} = socket) when issho != nil do
+    _ = Masu.Issho.Live.put(issho, assigns.id, %{view: shared_view(assigns)})
     socket
   end
 
@@ -2216,7 +2243,7 @@ defmodule Masu.Grid do
     source = source |> Source.change(changes, row_id) |> Source.prepare(query, columns)
     saved = for {:upsert, row} <- upserts, do: row
 
-    broadcast(socket.assigns.live, saved, socket.assigns.user)
+    broadcast(socket.assigns.live, saved, saver(socket.assigns))
     broadcast_deleted(socket.assigns.live, deleted)
 
     socket
@@ -2311,10 +2338,17 @@ defmodule Masu.Grid do
     :ok
   end
 
+  # Who saves, as the others' grids flash the rows: in an Issho room, in
+  # their color of the room.
+  defp saver(%{issho: issho, user: user}) when issho != nil and user != nil,
+    do: Map.put(user, :color, Masu.Issho.Live.color_of(issho))
+
+  defp saver(assigns), do: assigns.user
+
   defp broadcast(nil, _rows, _user), do: :ok
 
   defp broadcast({pubsub, topic}, rows, user) do
-    by = if user, do: %{name: Map.get(user, :name), color: Masu.Presence.color(user)}
+    by = Masu.Live.by(user)
     for row <- rows, do: Masu.Live.broadcast_upsert_from(self(), pubsub, topic, row, by)
     :ok
   end
@@ -2353,7 +2387,7 @@ defmodule Masu.Grid do
       row_action: assigns[:row_action] not in [nil, []],
       selectable: assigns[:selectable] == true,
       live: assigns[:live] != nil,
-      presence: assigns[:presence] != nil,
+      presence: assigns[:issho] != nil,
       detail: assigns[:detail] not in [nil, []],
       tree: assigns[:tree] != nil
     ]
@@ -2419,12 +2453,16 @@ defmodule Masu.Grid do
       class={["masu", @density != :normal && "masu-density-#{@density}", @class]}
       phx-hook="Masu"
       phx-target={@myself}
+      data-issho-doc={@issho && Masu.Issho.Live.doc(@issho, @id)}
       data-masu={config(assigns)}
       data-masu-messages={JSON.encode!(@messages)}
       style={"height: #{@height}"}
       {@rest}
     >
-      <div :if={@presence} class="masu-people" role="group" aria-label={@messages["people"]}>
+      <div
+        :if={@issho_config && @show_people}
+        class="masu-people"
+        role="group" aria-label={@messages["people"]}>
         <button
           :for={person <- Enum.take(@people, 5)}
           type="button"
@@ -2709,7 +2747,7 @@ defmodule Masu.Grid do
       "changed" => assigns.changed,
       "changedBy" => assigns.changed_by,
       "locks" => locks?(assigns),
-      "presence" => assigns.presence != nil,
+      "presence" => assigns.issho_config != nil,
       "catalog" => Enum.map(Layout.all(assigns.layout, assigns.all_columns), &catalog_entry/1),
       "columnsMenu" => assigns.columns_menu,
       "view" => assigns.view_params,

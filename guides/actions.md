@@ -87,7 +87,7 @@ the person runs the action.
 
 ### Other people on the row
 
-With `Masu.Presence`, the context's `editors` are the people whose
+In an Issho room (`issho`), the context's `editors` are the people whose
 editor is open on a cell of the row: an action may wait, or say so,
 rather than change the row under them.
 

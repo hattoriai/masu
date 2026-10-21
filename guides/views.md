@@ -133,7 +133,7 @@ view never fails a grid.
 
 ## Following someone
 
-When a person follows someone (`Masu.Presence`), the grid shows that
+When a person follows someone (see Collaboration), the grid shows that
 person's order, filters and search; the layout stays the follower's own.
 
 ## Testing

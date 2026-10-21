@@ -164,14 +164,25 @@ defmodule Masu.Components do
     doc:
       "`{pubsub, topic}`: shows the rows that change on the topic as they change, see `Masu.Live`"
 
-  attr :presence, :atom,
+  attr :presence, :any,
     default: nil,
     doc:
-      "your app's `Phoenix.Presence` module: shows the other people who have the grid open, see `Masu.Presence`"
+      "removed in 0.4: a grid's people are those of an Issho room, `issho`; see the Upgrading guide"
+
+  attr :issho, :any,
+    default: nil,
+    doc:
+      "the grid's people, in an Issho room: `[instance: MyApp.Issho, room: \"notebook:42\"]`, and `actor` (the person as the room knows them; `user` unless given), `can`, `claims` and `on_behalf_of`; agents in the room are among them; see the Collaboration guide"
+
+  attr :people, :boolean,
+    default: true,
+    doc:
+      "with `issho`: `false` hides the avatars above the grid (a page that lists its people itself); the cells still show where each person is"
 
   attr :user, :map,
     default: nil,
-    doc: "with `presence`: this person, `%{id: ..., name: ..., color: ..., avatar: ...}`"
+    doc:
+      "with `presence` or `issho`: this person, `%{id: ..., name: ..., color: ..., avatar: ...}`"
 
   attr :url, :boolean,
     default: false,
@@ -199,7 +210,7 @@ defmodule Masu.Components do
   attr :share_view, :boolean,
     default: true,
     doc:
-      "with `presence`: whether the person's order, filters and search go to the others, who see them when they follow the person"
+      "with `issho`: whether the person's order, filters and search go to the others, who see them when they follow the person"
 
   attr :selectable, :boolean,
     default: false,
@@ -419,7 +430,7 @@ defmodule Masu.Components do
 
   slot :person,
     doc:
-      "draws a person who has the grid open (`:let`), see `Masu.Presence`; initials in their color unless given"
+      "draws a person who has the grid open (`:let`), see the Collaboration guide; initials in their color unless given"
 
   def data_grid(assigns) do
     if is_nil(assigns.rows) and is_nil(assigns.source) do
@@ -432,14 +443,7 @@ defmodule Masu.Components do
 
     check_declared!(assigns)
 
-    if assigns.views && is_nil(assigns.user) do
-      raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with views needs user"
-    end
-
-    if assigns.presence && (is_nil(assigns.user) or is_nil(assigns.live)) do
-      raise ArgumentError,
-            "<.data_grid id=#{inspect(assigns.id)}> with presence needs live and user"
-    end
+    check_people!(assigns)
 
     ~H"""
     <.live_component
@@ -463,7 +467,8 @@ defmodule Masu.Components do
       row_editable={@row_editable}
       scope={@scope}
       history={@history}
-      presence={@presence}
+      issho_config={@issho}
+      show_people={@people}
       user={@user}
       share_view={@share_view}
       tree={@tree}
@@ -516,6 +521,25 @@ defmodule Masu.Components do
 
   # A block, and a page, are one read of the source: no larger than the
   # most rows of a read.
+  # Views and people need to know who the person is.
+  defp check_people!(assigns) do
+    if assigns.views && is_nil(assigns.user) do
+      raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with views needs user"
+    end
+
+    if assigns.issho && is_nil(assigns.user) do
+      raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with issho needs user"
+    end
+
+    if assigns.presence do
+      raise ArgumentError, """
+      <.data_grid id=#{inspect(assigns.id)}> has presence, which Masu 0.4 removed: \
+      a grid's people are those of an Issho room. Give it \
+      issho={[instance: MyApp.Issho, room: "orders"]} and user; see the Upgrading guide.\
+      """
+    end
+  end
+
   defp check_blocks!(%{id: id, block_size: block, max_block: max} = assigns) do
     unless is_integer(max) and max > 0 do
       raise ArgumentError, "<.data_grid id=#{inspect(id)}> max_block must be a positive integer"

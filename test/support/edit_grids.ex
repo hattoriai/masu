@@ -122,3 +122,59 @@ defmodule MasuTest.LockedLive do
   def handle_info({:saved, rows}, socket),
     do: {:noreply, update(socket, :saved, &(&1 ++ Enum.map(rows, fn row -> row.name end)))}
 end
+
+defmodule MasuTest.SheetLive do
+  @moduledoc "A grid of a definition that a Masu.Sheet shares: its attributes, given at once."
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  on_mount(Masu.Live)
+
+  def grid(topic) do
+    [
+      id: "people",
+      rows: MasuTest.People.all(),
+      changeset: &MasuTest.EditPeopleLive.changeset/2,
+      live: {MasuTest.PubSub, topic},
+      columns: [[field: :name], [field: :age, type: :integer], [field: :city, editable: false]]
+    ]
+  end
+
+  @impl true
+  def mount(%{"topic" => topic}, _session, socket), do: {:ok, assign(socket, grid: grid(topic))}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.data_grid {@grid} label="People" />
+    """
+  end
+end
+
+defmodule MasuTest.IsshoGridLive do
+  @moduledoc "A grid whose people are those of an Issho room, agents too."
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  on_mount(Masu.Live)
+  on_mount(Issho.Live)
+
+  @impl true
+  def mount(_params, session, socket) do
+    {:ok,
+     assign(socket,
+       grid: MasuTest.SheetLive.grid(session["topic"]),
+       issho: [instance: session["instance"], room: session["room"]],
+       user: %{id: session["user"], name: session["name"]}
+     )}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <.data_grid {@grid} issho={@issho} user={@user} />
+    """
+  end
+end

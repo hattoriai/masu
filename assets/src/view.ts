@@ -1,5 +1,5 @@
 // A person's view: their order, filters and search (the query's wire
-// form). Following someone shows their view (Masu.Presence).
+// form). Following someone shows their view (its Issho room).
 
 import type { QuerySpec } from "./types";
 

@@ -146,7 +146,7 @@ export interface Config {
   locks: boolean;
   /** The rows that changed by someone's edit, with their color. */
   changedBy: Record<string, string>;
-  /** The grid shows who else has it open (Masu.Presence). */
+  /** The grid shows who else has it open (its Issho room). */
   presence: boolean;
   messages: Record<string, string>;
   initial: { from: number; rows: Row[] } | null;
@@ -229,7 +229,7 @@ export interface Transport {
   exec?(js: string): void;
 }
 
-/** Another person who has the grid open (Masu.Presence). */
+/** Another person who has the grid open (its Issho room). */
 export interface Person {
   id: string;
   name: string | null;

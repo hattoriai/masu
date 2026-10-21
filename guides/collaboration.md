@@ -4,7 +4,17 @@ A grid that several people have open shows each of them the others, as a
 shared spreadsheet does: who is here (their avatars above the grid),
 where each of them is (a line in their color on their cell, with their
 name), what each of them is typing in (a cell no one else may edit
-meanwhile), and the rows they save, which flash in their color.
+meanwhile), and the rows they save, which flash in their color. Agents
+are among them: an agent edits cells as a person does, and the people
+see it on its cell (see [Agents](#agents)).
+
+Collaboration runs on [Issho](https://hex.pm/packages/issho), collaboration
+for Phoenix, as it does in Kotoba and Hakushi: Issho is the room's people,
+where each is, the cells they hold, the policy, and the agents. The rows
+stay the grid's: its source reads them, its writes save them, and `live`
+shows the changes of the others as they land. A page with a grid, a text
+and a canvas in one room has one list of people, one color for each
+person, and agents that work across all three.
 
 ```heex
 <.data_grid
@@ -13,34 +23,42 @@ meanwhile), and the rows they save, which flash in their color.
   repo={Repo}
   changeset={&Order.changeset/2}
   live={{MyApp.PubSub, "orders"}}
-  presence={MyAppWeb.Presence}
+  issho={[instance: MyApp.Issho, room: "orders"]}
   user={%{id: @current_user.id, name: @current_user.name}}
 >
 ```
 
 ## Setting up
 
-1. A `Phoenix.Presence` module on the PubSub of `live` (`mix
-   phx.gen.presence` makes one), started in your supervision tree after
-   the PubSub:
+1. Add Issho to your dependencies (`{:issho, "~> 0.2"}`) and start it in
+   your supervision tree, after the PubSub, with a policy that says who
+   may be in which room (see Issho's README):
 
    ```elixir
-   defmodule MyAppWeb.Presence do
-     use Phoenix.Presence, otp_app: :my_app, pubsub_server: MyApp.PubSub
-   end
+   {Issho, name: MyApp.Issho, pubsub: MyApp.PubSub, policy: MyApp.Collaboration}
    ```
 
-2. The `Masu.Live` hook in the LiveView (`on_mount Masu.Live`), and
-   `live` on the grid: the people of a grid are those of its topic. See
-   [Live rows](live.md).
+2. Issho's hook and Masu's in the LiveView (`on_mount Masu.Live` and
+   `on_mount Issho.Live`, or in its `live_session`), and `live` on the
+   grid for the rows (see [Live rows](live.md)).
 
-3. `presence` and `user` on the grid. `user` is a map with an `id`, and a
-   `name`, a `color` (a CSS color) and an `avatar` (an image's URL) if you
-   have them. A person with no color gets one of a palette of eight, by
-   their id, the same in every browser.
+3. `issho` and `user` on the grid. `issho` names the instance and the
+   room, and, if the room knows the person by another value than `user`,
+   `actor` (your user struct, with its `Issho.Actor`). `user` is a map
+   with an `id`, and a `name`, a `color` (a CSS color) and an `avatar` (an
+   image's URL) if you have them.
 
-The people a person sees are the other users: someone with the grid
-open in two tabs does not see themselves.
+The grid is a place of the room: `"orders/orders"`, the room and the
+grid's id. A person's cell and range go into the room's awareness, the
+cell they edit is a lock of the room, and their view goes with them, for
+following. The colors are Issho's: a person's own, else their color of
+the room's palette in Issho's theme (`issho.css`), as Issho's list of
+people and its pointers show them. The people a person sees are the
+others: someone with the grid open in two tabs does not see themselves.
+
+On a page that lists the room's people itself
+(`Issho.Components.people/1`), `people={false}` leaves out the avatars
+above the grid; the cells still show who is where.
 
 ## Places, not positions
 
@@ -93,9 +111,9 @@ and opens no editor for them: "Ada is editing this cell". This is an
 advisory lock, as a database's: it keeps two people from typing in one
 cell, but it is not what keeps data safe. The server's compare-and-swap
 is: an edit of a cell that changed since the person saw it is refused,
-with presence or without (see [Editing](editing.md)), and the refusal
-names who changed it: "Changed by Ada meanwhile." The grid knows from
-its `live` topic, so the name shows with presence or without.
+in a room or not (see [Editing](editing.md)), and the refusal names who
+changed it: "Changed by Ada meanwhile." The grid knows from its `live`
+topic, so the name shows in a room or not.
 
 ## The look
 
@@ -145,8 +163,32 @@ your view") are in the grid's `messages`: `peer_typing`, `peer_editing`,
 
 ## What travels
 
-A person's place (their cell, range and first row on the screen) goes to the server when it changes, at most every 150
-ms, and to the others through `Phoenix.Presence`, which also notices a
-person who leaves or whose connection drops. A person's name, color and
+A person's place (their cell, range and first row on the screen) goes to
+the server when it changes, at most every 150 ms, and to the others
+through the room's awareness; Issho's presence notices a person who
+leaves or whose connection drops. A person's name, color and
 avatar, and their view unless `share_view={false}`, go to everyone who
 has the grid open: give `user` only what they may see.
+
+## Agents
+
+An agent reads and changes a grid as a person does, in an
+[Issho](https://hex.pm/packages/issho) room: the people see where it is,
+the cells it edits, and the rows it saves flash in its color. Its writes
+go the grid's way (`Masu.Sheet`): the changeset, the read-only rules, the
+compare of a cell changed meanwhile, the history and the `live` topic.
+The rows, the scrolling and the queries stay the grid's own: Issho
+carries only who is there and where.
+
+Define the grid once, as `data_grid/1`'s attributes, and say which grid
+an agent may use (see `Masu.Issho`):
+
+    config :masu, Masu.Issho, grids: {MyApp.Grids, :for_agent}
+
+then give the agent Masu's tools, with Issho's:
+
+    tools = Issho.Tools.room() ++ Masu.Issho.tools()
+
+`read_grid` reads rows in an order, filtered and searched;
+`select_cells` points at a cell or a range; `edit_cells`, `add_rows`
+and `delete_rows` write. An agent leaves a cell that someone is editing.

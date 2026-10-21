@@ -68,7 +68,7 @@ defmodule Masu.Action do
       every row of an Ecto source's query: an action on a million rows
       is one `Repo.update_all/3`), and `count`;
     * for a row: `id`, `row`, the row as the source reads it now, and
-      `editors`, the people (`Masu.Presence`) whose editor is open on a
+      `editors`, the people (of the grid's Issho room) whose editor is open on a
       cell of the row;
     * for a header or a cell: `column`, the key of the column;
     * for a cell: `id`, `row`, `value`, the cell's value; read on the

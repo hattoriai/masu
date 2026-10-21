@@ -140,7 +140,7 @@ defmodule Masu.Source do
   @doc """
   The place (from 0) of the row with an id in the rows of the query, in
   their order, or `nil` when the query does not have it: where another
-  person's cell is in this person's order (`Masu.Presence`).
+  person's cell is in this person's order (in an Issho room, see the Collaboration guide).
   """
   @callback locate(state(), id :: term(), (term() -> term())) :: non_neg_integer() | nil
 
