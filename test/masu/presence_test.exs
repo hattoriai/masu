@@ -100,6 +100,17 @@ defmodule Masu.PresenceTest do
     assert_push_event(ada, "masu:people", %{"people" => [%{top: 3}]}, 1000)
   end
 
+  test "a grid with follow={false} shows its people, and follows no one", %{room: room} do
+    ada = open(room, "ada", "&follow=0")
+    _alan = open(room, "alan")
+    assert_eventually(fn -> people(ada) == ["Alan"] end)
+
+    html = render(ada)
+    refute html =~ ~s(aria-label="Follow Alan")
+    refute html =~ "data-issho-follow-control"
+    assert html =~ ~s(&quot;follow&quot;:false)
+  end
+
   test "a grid with share_view={false} keeps its view from the others", %{room: room} do
     ada = open(room, "ada")
     alan = open(room, "alan", "&share=0")

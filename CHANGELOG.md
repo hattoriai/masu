@@ -41,6 +41,12 @@ On Issho 0.3: following and agents' motion are the room's.
   of it with reduced motion.
 - An agent's page pointer (`Issho.Components.pointers/1`) goes to its
   cell or range: the grid says where they are on the page.
+- `follow={false}`: a grid that takes no part in following, though its
+  room's other blocks do (its avatars are not buttons, and its view stays
+  its person's).
+- The following banner and ring are restyled with
+  `--masu-following-background`, `--masu-following-text` and
+  `--masu-following-ring`.
 
 ## [0.4.0] - 2026-10-21
 

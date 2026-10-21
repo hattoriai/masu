@@ -148,6 +148,8 @@ export interface Config {
   changedBy: Record<string, string>;
   /** The grid shows who else has it open (its Issho room). */
   presence: boolean;
+  /** Whether the grid takes part in following, the room's (false: it follows no one, and shows no one followed). */
+  follow?: boolean;
   messages: Record<string, string>;
   initial: { from: number; rows: Row[] } | null;
   /** Every column, in the layout's order, hidden ones too. */

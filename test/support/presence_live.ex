@@ -34,7 +34,8 @@ defmodule MasuTest.PresenceLive do
        issho: issho,
        topic: "presence-" <> (params["room"] || "people"),
        slot: params["slot"] == "1",
-       share: params["share"] != "0"
+       share: params["share"] != "0",
+       follow: params["follow"] != "0"
      )}
   end
 
@@ -50,7 +51,8 @@ defmodule MasuTest.PresenceLive do
     <% else %>
       <.data_grid id="people" rows={MasuTest.People.all()} changeset={&MasuTest.EditPeopleLive.changeset/2}
         live={{MasuTest.PubSub, @topic}} issho={@issho} user={@user}
-        share_view={@share}>
+        share_view={@share}
+        follow={@follow}>
         <:col field={:name} />
       </.data_grid>
     <% end %>

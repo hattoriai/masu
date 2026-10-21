@@ -179,6 +179,11 @@ defmodule Masu.Components do
     doc:
       "with `issho`: `false` hides the avatars above the grid (a page that lists its people itself); the cells still show where each person is"
 
+  attr :follow, :boolean,
+    default: true,
+    doc:
+      "with `issho`: `false` for a grid that takes no part in following, though its room's other blocks do: its avatars follow no one, it shows no one followed, and its view does not move when the room follows someone"
+
   attr :user, :map,
     default: nil,
     doc:
@@ -469,6 +474,7 @@ defmodule Masu.Components do
       history={@history}
       issho_config={@issho}
       show_people={@people}
+      follow={@follow}
       user={@user}
       share_view={@share_view}
       tree={@tree}

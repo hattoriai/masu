@@ -95,6 +95,25 @@ filters, search, scroll position and selection) is kept aside:
 
 When the views already match, following only scrolls.
 
+The banner is `.masu-following` (its button `.masu-following-stop`), and
+the grid carries `data-following` while it follows. These properties, on
+`.masu` or the page, change their look:
+
+    .masu {
+      --masu-following-background: #111827;  /* the person's color */
+      --masu-following-text: #fff;
+      --masu-following-ring: none;            /* 2px of the person's color */
+    }
+
+`--masu-follow-color` is the followed person's color, for your own rules.
+
+A grid that should take no part in following, though the other blocks of
+its room do, says so: `follow={false}`. Its avatars are not buttons, it
+shows no one followed, and its view stays its person's when the room
+follows someone.
+
+    <.data_grid id="orders" rows={@orders} issho={@issho} follow={false} />
+
 ### Keeping a view to oneself
 
 Someone's order, filters and search go to the others who have the grid

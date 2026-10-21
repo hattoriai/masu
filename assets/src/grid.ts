@@ -2251,7 +2251,7 @@ export class Grid {
     // people list, or any block of the room.
     const onFollowing = (event: Event): void => {
       const detail = (event as CustomEvent<{ room?: string; key?: string | null }>).detail;
-      if (!this.room() || detail?.room !== this.room()) return;
+      if (!this.followRoom() || detail?.room !== this.followRoom()) return;
       if (detail.key) this.startFollowing(detail.key);
       else this.stopFollowing(false);
     };
@@ -4168,7 +4168,7 @@ export class Grid {
   setPeople(people: Person[]): void {
     this.people = people;
     this.drawPeople();
-    const room = this.room();
+    const room = this.followRoom();
     const wanted = room ? followingIn(room) : null;
     if (wanted && this.following !== wanted && people.some((person) => person.id === wanted)) this.startFollowing(wanted);
     else if (this.following) this.follow();
@@ -4318,6 +4318,11 @@ export class Grid {
   }
 
   /** The Issho room of the grid: the part of its document before the "/". */
+  /** The room the grid follows in: none for a grid that takes no part in following (`follow={false}`). */
+  private followRoom(): string | null {
+    return this.config.follow === false ? null : this.room();
+  }
+
   private room(): string | null {
     const doc = this.el.dataset.isshoDoc;
     return doc ? doc.slice(0, doc.indexOf("/") > 0 ? doc.indexOf("/") : doc.length) : null;
@@ -4329,7 +4334,7 @@ export class Grid {
    * brings this person's own view back.
    */
   toggleFollow(id: string): void {
-    const room = this.room();
+    const room = this.followRoom();
     if (!room) return;
     if (this.following === id) {
       this.stopFollowing(true);
@@ -4343,7 +4348,7 @@ export class Grid {
   private goOwnWay(): void {
     if (!this.following) return;
     this.stopFollowing(false);
-    const room = this.room();
+    const room = this.followRoom();
     if (room) followIn(room, null);
   }
 
@@ -4390,7 +4395,7 @@ export class Grid {
 
   /** The person made a view of their own: nothing to go back to. */
   private dropFollow(): void {
-    const room = this.room();
+    const room = this.followRoom();
     if (this.following && room) followIn(room, null);
     this.following = null;
     this.ownView = null;
@@ -4560,7 +4565,7 @@ export class Grid {
       button.textContent = this.message("stop_following", {});
       button.addEventListener("click", () => {
         this.stopFollowing(true);
-        const room = this.room();
+        const room = this.followRoom();
         if (room) followIn(room, null);
       });
     }
