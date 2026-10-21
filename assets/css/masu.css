@@ -816,9 +816,11 @@
 }
 
 /* Following a person: their cell stays in view, the grid has a ring in
-   their color (--masu-follow-color), and a banner says whom, with Stop. */
+   their color (--masu-follow-color), and a banner says whom, with Stop.
+   Set --masu-following-background, --masu-following-text and
+   --masu-following-ring (none for no ring) to restyle them. */
 .masu[data-following] > .masu-grid {
-  box-shadow: 0 0 0 2px var(--masu-follow-color, var(--masu-accent));
+  box-shadow: var(--masu-following-ring, 0 0 0 2px var(--masu-follow-color, var(--masu-accent)));
 }
 
 .masu-following {
@@ -831,8 +833,8 @@
   gap: 0.5rem;
   padding: 0.125rem 0.25rem 0.125rem 0.625rem;
   border-radius: 999px;
-  background: var(--masu-follow-color, var(--masu-accent));
-  color: #fff;
+  background: var(--masu-following-background, var(--masu-follow-color, var(--masu-accent)));
+  color: var(--masu-following-text, #fff);
   font-size: 0.75rem;
   line-height: 1.25rem;
   white-space: nowrap;

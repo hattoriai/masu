@@ -70,6 +70,7 @@ defmodule Masu.Grid do
        issho: nil,
        issho_config: nil,
        show_people: true,
+       follow: true,
        saved_by: %{},
        all_columns: [],
        layout: nil,
@@ -2463,15 +2464,16 @@ defmodule Masu.Grid do
         :if={@issho_config && @show_people}
         class="masu-people"
         role="group" aria-label={@messages["people"]}>
-        <button
+        <.dynamic_tag
           :for={person <- Enum.take(@people, 5)}
-          type="button"
+          tag_name={if @follow, do: "button", else: "span"}
+          {if @follow, do: %{type: "button"}, else: %{}}
           class="masu-person"
           style={"--masu-peer-color: #{person.color}"}
           title={person.name}
-          aria-label={String.replace(@messages["follow"], "{label}", person.name || person.id)}
-          data-person={person.id}
-          data-issho-follow-control
+          aria-label={@follow && String.replace(@messages["follow"], "{label}", person.name || person.id)}
+          data-person={@follow && person.id}
+          data-issho-follow-control={@follow}
         >
           <%= if @person != [] do %>
             {render_slot(@person, person)}
@@ -2481,7 +2483,7 @@ defmodule Masu.Grid do
               {person.initials}
             </span>
           <% end %>
-        </button>
+        </.dynamic_tag>
         <span :if={length(@people) > 5} class="masu-person masu-people-more">
           +{length(@people) - 5}
         </span>
@@ -2749,6 +2751,7 @@ defmodule Masu.Grid do
       "changedBy" => assigns.changed_by,
       "locks" => locks?(assigns),
       "presence" => assigns.issho_config != nil,
+      "follow" => assigns.follow,
       "catalog" => Enum.map(Layout.all(assigns.layout, assigns.all_columns), &catalog_entry/1),
       "columnsMenu" => assigns.columns_menu,
       "view" => assigns.view_params,
