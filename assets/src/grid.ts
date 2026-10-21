@@ -210,6 +210,12 @@ export class Grid {
   /** The other people who have the grid open, and their marks. */
   private people: Person[] = [];
   private peerEls: HTMLElement[] = [];
+  // Each person's mark on their cell, kept from one drawing to the next so
+  // that it glides to their next cell; and when a range they selected from
+  // a cell began to sweep over its rows.
+  private peerMarks = new Map<string, HTMLElement>();
+  private peerHadRange = new Map<string, boolean>();
+  private peerSweeps = new Map<string, number>();
   private sentCursor = "null";
   /** The person this person follows (Figma's follow): the grid shows their view, and their place in it. */
   private following: string | null = null;
@@ -242,6 +248,14 @@ export class Grid {
   constructor(el: HTMLElement, transport: Transport) {
     this.el = el;
     this.id = el.id;
+    // Issho's pointer of an agent at work in the grid goes to its cell
+    // (Issho's `locate`, through the symbol it reads, with no import of it).
+    const locator = (at: unknown) => this.locate(at);
+    (el as unknown as Record<symbol, unknown>)[Symbol.for("issho.locator")] = locator;
+    this.cleanups.push(() => {
+      const element = el as unknown as Record<symbol, unknown>;
+      if (element[Symbol.for("issho.locator")] === locator) delete element[Symbol.for("issho.locator")];
+    });
     this.transport = transport;
     this.config = readConfig(el);
     this.columns = this.config.columns;
@@ -2228,10 +2242,21 @@ export class Grid {
       const person = (event.target as HTMLElement).closest<HTMLElement>(".masu-person[data-person]");
       if (person && person.closest(".masu") === this.el) this.toggleFollow(person.dataset.person!);
     });
-    // The person's own scrolling, clicking or typing ends a follow.
+    // The person's own scrolling, clicking or typing ends a follow, in the
+    // whole room (Issho's): the grid keeps the view it shows.
     for (const type of ["wheel", "touchstart", "mousedown", "keydown"] as const) {
-      this.on(this.gridEl, type, () => this.stopFollowing(false), { passive: true });
+      this.on(this.gridEl, type, () => this.goOwnWay(), { passive: true });
     }
+    // Whom the room is followed in: from this grid's people, the page's
+    // people list, or any block of the room.
+    const onFollowing = (event: Event): void => {
+      const detail = (event as CustomEvent<{ room?: string; key?: string | null }>).detail;
+      if (!this.room() || detail?.room !== this.room()) return;
+      if (detail.key) this.startFollowing(detail.key);
+      else this.stopFollowing(false);
+    };
+    document.addEventListener("issho:following", onFollowing);
+    this.cleanups.push(() => document.removeEventListener("issho:following", onFollowing));
     this.on(this.gridEl, "focus", () => this.schedule());
     // Focus that leaves the grid (not for its editor or its questions)
     // saves the new row it was on.
@@ -4143,13 +4168,21 @@ export class Grid {
   setPeople(people: Person[]): void {
     this.people = people;
     this.drawPeople();
-    if (this.following) this.follow();
+    const room = this.room();
+    const wanted = room ? followingIn(room) : null;
+    if (wanted && this.following !== wanted && people.some((person) => person.id === wanted)) this.startFollowing(wanted);
+    else if (this.following) this.follow();
     else this.markFollowed();
   }
 
   private drawPeople(): void {
     for (const el of this.peerEls) el.remove();
     this.peerEls = [];
+    for (const [id, mark] of this.peerMarks) {
+      if (this.people.some((person) => person.id === id && person.cell)) continue;
+      mark.remove();
+      this.peerMarks.delete(id);
+    }
     if (this.people.length === 0) return;
 
     const rowsById = new Map<string, number>();
@@ -4160,7 +4193,12 @@ export class Grid {
 
     // Their selected ranges: a wash in their color on the cells of their
     // rows, wherever this person's order puts them.
+    // A range selected from a cell (an agent's drag) sweeps over its rows,
+    // from the first; a drawing during the sweep goes on with it.
+    const now = performance.now();
     for (const person of this.people) {
+      if (person.range && this.peerHadRange.get(person.id) === false) this.peerSweeps.set(person.id, now);
+      this.peerHadRange.set(person.id, !!person.range);
       if (!person.range) continue;
       const cols = person.range.keys.map((key) => this.columns.findIndex((column) => column.key === key)).filter((col) => col >= 0);
       if (cols.length === 0) continue;
@@ -4168,11 +4206,21 @@ export class Grid {
       const last = Math.max(...cols);
       const left = this.colLeft(first);
       const width = this.colLeft(last) + this.widths[last] - left;
-      for (const id of person.range.rows) {
+      const began = this.peerSweeps.get(person.id);
+      const elapsed = began === undefined ? Infinity : now - began;
+      if (elapsed > 2_000) this.peerSweeps.delete(person.id);
+      const rows = person.range.rows.length;
+      for (const [line, id] of person.range.rows.entries()) {
         const index = rowsById.get(JSON.stringify(id));
         if (index === undefined) continue;
         const el = document.createElement("div");
         el.className = "masu-peer-range";
+        if (elapsed <= 2_000 && !reducedMotion()) {
+          el.dataset.sweep = "";
+          el.style.setProperty("--masu-sweep-line", `${line / rows}`);
+          el.style.setProperty("--masu-sweep-lines", `${rows}`);
+          el.style.setProperty("--masu-sweep-elapsed", `${Math.round(elapsed)}ms`);
+        }
         el.style.setProperty("--masu-peer-color", person.color);
         el.style.transform = `translateY(${this.rowY(index)}px)`;
         el.style.insetInlineStart = `${left}px`;
@@ -4184,33 +4232,73 @@ export class Grid {
       }
     }
 
+    const drawn = new Set<string>();
     for (const person of this.people) {
       if (!person.cell) continue;
       const index = rowsById.get(JSON.stringify(person.cell[0]));
       const col = this.columns.findIndex((column) => column.key === person.cell![1]);
       if (index === undefined || col < 0) continue;
+      drawn.add(person.id);
 
-      const el = document.createElement("div");
+      // The same mark as before, so that it glides there: longer the farther it goes.
+      const known = this.peerMarks.get(person.id);
+      const el = known ?? document.createElement("div");
+      const y = this.rowY(index);
+      const x = this.colLeft(col);
+      if (known) {
+        const far = Math.hypot(y - (Number(known.dataset.y) || 0), x - (Number(known.dataset.x) || 0));
+        el.style.setProperty("--masu-peer-travel", `${Math.round(Math.min(400, Math.max(80, far * 0.8)))}ms`);
+      }
+      el.dataset.x = String(x);
+      el.dataset.y = String(y);
       el.className = `masu-peer${person.editing ? " masu-peer-editing" : ""}${index === 0 ? " masu-peer-top" : ""}`;
       el.style.setProperty("--masu-peer-color", person.color);
-      el.style.transform = `translateY(${this.rowY(index)}px)`;
-      el.style.insetInlineStart = `${this.colLeft(col)}px`;
+      el.style.transform = `translateY(${y}px)`;
+      el.style.insetInlineStart = `${x}px`;
       if (this.columns[col].pinned) el.classList.add("masu-peer-pinned");
       el.style.width = `${this.widths[col]}px`;
       el.style.height = `${this.config.rowHeight}px`;
       el.dataset.person = person.id;
       el.setAttribute("aria-hidden", "true");
 
-      const label = document.createElement("span");
+      const label = (el.querySelector(":scope > .masu-peer-label") as HTMLElement | null) ?? document.createElement("span");
       label.className = "masu-peer-label";
       const custom = options.peerLabel?.(person);
-      if (custom instanceof HTMLElement) label.appendChild(custom);
+      if (custom instanceof HTMLElement) label.replaceChildren(custom);
       else label.textContent = custom ?? (person.editing ? this.message("peer_typing", { label: person.name ?? "" }) : (person.name ?? ""));
-      el.appendChild(label);
+      if (!label.parentNode) el.appendChild(label);
 
-      this.body.appendChild(el);
-      this.peerEls.push(el);
+      if (el.parentNode !== this.body) this.body.appendChild(el);
+      this.peerMarks.set(person.id, el);
     }
+    for (const [id, mark] of this.peerMarks) {
+      if (drawn.has(id)) continue;
+      mark.remove();
+      this.peerMarks.delete(id);
+    }
+  }
+
+  /**
+   * Where a place of the grid is in the viewport, for Issho's pointers: a
+   * cell (`cell`: a row's id and a column's key), or a range, while its rows
+   * are on this person's screen.
+   */
+  private locate(at: unknown): DOMRect | null {
+    const place = at as { cell?: [unknown, string]; range?: { rows: unknown[]; keys: string[] } } | null;
+    const cells: [unknown, string][] = place?.cell ? [place.cell] : place?.range ? place.range.rows.flatMap((id) => place.range!.keys.map((key) => [id, key] as [unknown, string])) : [];
+    const body = this.body.getBoundingClientRect();
+    let box: { left: number; top: number; right: number; bottom: number } | null = null;
+    for (const [id, key] of cells) {
+      let index: number | undefined;
+      for (const [i, rowEl] of this.rows) if (rowEl.masuRow && JSON.stringify(rowEl.masuRow[0]) === JSON.stringify(id)) index = i;
+      const col = this.columns.findIndex((column) => column.key === key);
+      if (index === undefined || col < 0) continue;
+      const left = body.left + this.colLeft(col);
+      const top = body.top + this.rowY(index);
+      const cell = { left, top, right: left + this.widths[col], bottom: top + this.config.rowHeight };
+      box = box ? { left: Math.min(box.left, cell.left), top: Math.min(box.top, cell.top), right: Math.max(box.right, cell.right), bottom: Math.max(box.bottom, cell.bottom) } : cell;
+    }
+    return box ? new DOMRect(box.left, box.top, box.right - box.left, box.bottom - box.top) : null;
   }
 
   /**
@@ -4229,17 +4317,45 @@ export class Grid {
     return { rows, keys: this.columns.slice(range.left, range.right + 1).map((column) => column.key) };
   }
 
+  /** The Issho room of the grid: the part of its document before the "/". */
+  private room(): string | null {
+    const doc = this.el.dataset.isshoDoc;
+    return doc ? doc.slice(0, doc.indexOf("/") > 0 ? doc.indexOf("/") : doc.length) : null;
+  }
+
   /**
-   * Follows a person, or stops following them. The grid shows their view
-   * (their order, filters and search, when their grid shares them) and
-   * keeps their place in it on the screen; the person's own view is kept
-   * aside, and comes back on Stop.
+   * Follows a person, or stops following them, in the grid's room: following
+   * is Issho's, so every block of the room follows them with the grid. Stop
+   * brings this person's own view back.
    */
   toggleFollow(id: string): void {
+    const room = this.room();
+    if (!room) return;
     if (this.following === id) {
       this.stopFollowing(true);
+      followIn(room, null);
       return;
     }
+    followIn(room, id);
+  }
+
+  /** The person went their own way in the grid: no one is followed in the room. */
+  private goOwnWay(): void {
+    if (!this.following) return;
+    this.stopFollowing(false);
+    const room = this.room();
+    if (room) followIn(room, null);
+  }
+
+  /**
+   * Shows the followed person's view (their order, filters and search, when
+   * their grid shares them) and keeps their place in it on the screen; the
+   * person's own view is kept aside, and comes back on Stop.
+   */
+  private startFollowing(id: string): void {
+    // Followed in the room, but not in this grid (in another block): it
+    // follows them when they come.
+    if (this.following === id || !this.people.some((person) => person.id === id)) return;
     this.ownView ??= {
       query: this.query,
       scrollTop: this.contentTop(),
@@ -4274,6 +4390,8 @@ export class Grid {
 
   /** The person made a view of their own: nothing to go back to. */
   private dropFollow(): void {
+    const room = this.room();
+    if (this.following && room) followIn(room, null);
     this.following = null;
     this.ownView = null;
     delete this.el.dataset.following;
@@ -4302,7 +4420,8 @@ export class Grid {
   private follow(): void {
     const person = this.people.find((p) => p.id === this.following);
     if (!person) {
-      // They left: the grid keeps what it shows.
+      // They left the grid (they may be in another block of the room): the
+      // grid keeps what it shows, and follows them again when they come back.
       this.stopFollowing(false);
       return;
     }
@@ -4410,6 +4529,11 @@ export class Grid {
    * with "Back to your view".
    */
   private showBanner(person: Person, kind: "following" | "follow_hidden" | "their_view"): void {
+    // "Following Ada" is the people list's to say: this grid's, when it lists its people.
+    if (kind === "following" && !this.el.querySelector(":scope > .masu-people")) {
+      this.removeBanner();
+      return;
+    }
     if (!this.followEl) {
       this.followEl = document.createElement("div");
       this.followEl.className = "masu-following";
@@ -4428,12 +4552,17 @@ export class Grid {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "masu-following-stop";
+    button.dataset.isshoFollowControl = "";
     if (kind === "their_view") {
       button.textContent = this.message("back_to_view", {});
       button.addEventListener("click", () => this.backToOwnView());
     } else {
       button.textContent = this.message("stop_following", {});
-      button.addEventListener("click", () => this.stopFollowing(true));
+      button.addEventListener("click", () => {
+        this.stopFollowing(true);
+        const room = this.room();
+        if (room) followIn(room, null);
+      });
     }
     this.followEl.replaceChildren(text, button);
   }
@@ -4986,4 +5115,38 @@ function textWidth(cell: HTMLElement): number {
   const style = getComputedStyle(cell);
   context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
   return context.measureText(cell.textContent ?? "").width;
+}
+
+// The person's motion: the app's word for it (Issho's data-issho-motion), else the browser's setting.
+function reducedMotion(): boolean {
+  const said = document.documentElement.dataset.isshoMotion;
+  if (said === "reduced" || said === "full") return said === "reduced";
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Following is Issho's, a room's, kept by the page (Issho's contract, with
+// no import of it): the root element's `data-issho-following`, a JSON object
+// of room to the key of the one followed, and the `issho:following` event.
+function followingIn(room: string): string | null {
+  try {
+    const all = JSON.parse(document.documentElement.dataset.isshoFollowing ?? "{}") as Record<string, string>;
+    return all[room] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function followIn(room: string, key: string | null): void {
+  if (followingIn(room) === key) return;
+  let all: Record<string, string> = {};
+  try {
+    all = JSON.parse(document.documentElement.dataset.isshoFollowing ?? "{}") as Record<string, string>;
+  } catch {
+    all = {};
+  }
+  if (key) all[room] = key;
+  else delete all[room];
+  if (Object.keys(all).length > 0) document.documentElement.dataset.isshoFollowing = JSON.stringify(all);
+  else delete document.documentElement.dataset.isshoFollowing;
+  document.dispatchEvent(new CustomEvent("issho:following", { detail: { room, key } }));
 }

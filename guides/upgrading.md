@@ -1,4 +1,49 @@
-# Upgrading to Masu 0.4
+# Upgrading
+
+## To Masu 0.5
+
+Masu 0.5 hands what is the room's to [Issho](https://hex.pm/packages/issho)
+0.3, as Kotoba 0.7 and Hakushi 0.3 do: following someone, and how agents
+move. A grid without `issho` needs nothing.
+
+### Why
+
+- **Following is the room's, not the grid's.** In 0.4 a grid followed
+  someone on its own: on a page with a grid, a text and a canvas, following
+  Ada in the grid left the text and the canvas where they were. Following
+  is now Issho's: follow Ada from the page's people list or the grid's
+  avatars, and the grid shows her view, the canvas her viewport and the
+  text her caret, and the page scrolls to her. A grid alone on a page
+  follows within itself, as before.
+- **Agents move as people do, everywhere alike.** An agent goes to each
+  cell it edits and types in it before the value lands, selects a range as
+  a drag does, and its pointer goes from the text to the grid as one. Only
+  where it goes is sent; each browser draws the way; and it moves only for
+  someone who sees it (`Issho.Motion`).
+
+### What changes
+
+| 0.4 | 0.5 |
+| --- | --- |
+| a grid followed someone on its own | following is the room's (`data-issho-following`, the `issho:following` event): the grid's avatars, the page's people list and every block of the room agree |
+| scrolling or a key in the grid stopped following in the grid | it stops following in the room |
+| `config :masu, Masu.Issho, pace: 120`: the agent saved, then waited | the agent goes to the cell (`travel`, true), "types" for `pace`, then saves; `pace: 0, travel: false` for changes at once |
+| `{:issho, "~> 0.2"}` | `{:issho, "~> 0.3"}` |
+
+The grid's markup is the same: its avatars carry `data-issho-follow-control`,
+so that pressing one is not taken for the person going their own way.
+
+### Steps
+
+1. **Update** `{:masu, "~> 0.5"}` and `{:issho, "~> 0.3"}`.
+2. **Load Issho's script** on the page, if it is not there yet: following
+   across the page, and the pointers, are its (`Hooks` from `issho`, in
+   your LiveSocket). A grid follows within itself without it.
+3. **List the page's people once**: `Issho.Components.people/1`, and
+   `people={false}` on the grid, on a page with several blocks in the room.
+   A click on someone there follows them.
+
+## To Masu 0.4
 
 Masu 0.4 moves a grid's people onto [Issho](https://hex.pm/packages/issho),
 collaboration for Phoenix, as Kotoba 0.6 moves its shared editing there,
@@ -9,7 +54,7 @@ before: rows, sources, scrolling, queries, editing, history, views and
 This guide is for a grid with `presence`: the avatars above it, each
 person's cell, the cell someone types in, following someone.
 
-## Why
+### Why
 
 Masu 0.3 kept its people in `Phoenix.Presence`, on its own. That was
 enough for one grid on a page, and it was the only thing it could do:
@@ -42,7 +87,7 @@ Masu keeps what is Masu's: the rows. They come from your database, in
 blocks, as the person scrolls, and `live` brings the others' changes as
 they land, as before. Issho carries only who is there and where.
 
-## What changes
+### What changes
 
 | 0.3 | 0.4 |
 | --- | --- |
@@ -55,7 +100,7 @@ they land, as before. Issho carries only who is there and where.
 `.masu-peer` elements and their CSS, and the messages are as they were.
 A grid given `presence` raises, and says what to give it instead.
 
-## Steps
+### Steps
 
 1. **Add Issho** to your dependencies:
 
@@ -125,7 +170,7 @@ A grid given `presence` raises, and says what to give it instead.
 6. **Remove your `Phoenix.Presence` module**, if the grid was all it was
    for.
 
-## Then
+### Then
 
 - Give the grid's agents their tools: `Masu.Issho.tools/0`, with
   Issho's room tools, over MCP or to your own model (see

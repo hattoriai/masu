@@ -69,10 +69,15 @@ out (the avatar stays).
 
 ## Following someone
 
-A click on a person's avatar follows them, as in a design tool, and shows
-what they see: their order, filters and search, and their place in it
-(the first row on their screen, and their cell). As they scroll, sort or
-filter, the grid goes with them. Above the grid: "Following Ada", with
+Following is Issho's, and a room's: follow someone, from the grid's
+avatars or from the page's people list (`Issho.Components.people/1`), and
+every block of the room shows what they see, the grid in its own terms:
+their order, filters and search, and their place in it (the first row on
+their screen, and their cell). As they scroll, sort or filter, the grid
+goes with them. Someone followed who is not in the grid (in the editor
+beside it) is followed there when they open it; meanwhile the grid keeps
+what it shows. A grid alone in its room follows within itself, by the same
+means. Above the grid: "Following Ada", with
 Stop; the grid has a ring in their color, their filter chips take it
 too, and a screen reader hears "Showing Ada's view" with their filters.
 Their avatar is `aria-pressed`.
@@ -81,9 +86,10 @@ Following never costs the person their place. Their own view (order,
 filters, search, scroll position and selection) is kept aside:
 
 * **Stop**, or a second click on the avatar, brings it back.
-* **Scrolling, a click in the grid or a key** stops following but keeps
-  Ada's view (they followed her to see it); the banner says "Ada's view",
-  with "Back to your view".
+* **Scrolling, a click in the grid or a key** stops following, in the
+  whole room, but keeps Ada's view (they followed her to see it); the
+  banner says "Ada's view", with "Back to your view". So does a Stop from
+  the page's people list, or the person's own way elsewhere on the page.
 * **A view of their own** (a sort, a filter or a search) is theirs from
   then on: there is nothing to go back to.
 
@@ -192,3 +198,13 @@ then give the agent Masu's tools, with Issho's:
 `read_grid` reads rows in an order, filtered and searched;
 `select_cells` points at a cell or a range; `edit_cells`, `add_rows`
 and `delete_rows` write. An agent leaves a cell that someone is editing.
+
+An agent moves as a person does, so that the people follow it: it goes
+to each cell it edits and types in it a moment before the value lands,
+and selects a range as a drag does, from its first cell. Only where it
+goes is sent: each browser draws the way there, its mark gliding from cell
+to cell and a range sweeping over its rows. With Issho's page
+pointers, the agent's pointer goes to its cell too. For changes that land
+at once:
+
+    config :masu, Masu.Issho, pace: 0, travel: false

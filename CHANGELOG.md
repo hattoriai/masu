@@ -5,6 +5,43 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-10-21
+
+On Issho 0.3: following and agents' motion are the room's.
+
+### Changed (breaking)
+
+- Following is Issho's, a room's: the grid's avatars, the page's people
+  list (`Issho.Components.people/1`) and every block of the room follow
+  the same person; the grid shows their view, the canvas beside it their
+  viewport, the text their caret. Scrolling or a key in the grid stops
+  following in the room. A grid alone on a page follows within itself, as
+  before (Issho's contract: `data-issho-following` and the
+  `issho:following` event, with no import of Issho's script). See the
+  upgrade guide.
+- An agent goes to a cell and "types" there for `pace` before the value
+  lands (it saved, then waited). It moves with `Issho.Motion`: only when
+  someone of the room sees the grid, within a tool call's time budget;
+  Issho's `travel: false` turns it off for every component.
+- Marks glide and ranges sweep only for a person who wants motion, as the
+  app says it (Issho's `data-issho-motion`), else the browser's setting.
+- Requires `{:issho, "~> 0.3"}`.
+
+### Added
+
+- An agent moves as a person does: it goes to each cell it edits, types
+  in it (`pace`, the milliseconds it is there before the value lands),
+  and selects a range as a drag does, pressed on its first cell; it
+  selects rows a moment before it deletes them. Only where it goes is
+  sent, and each browser draws the way. `config :masu, Masu.Issho,
+  travel: false` for changes that land at once.
+- A person's mark glides from cell to cell, longer the farther it goes
+  (up to 400ms; `--masu-peer-glide` for a fixed time), and a range
+  selected from a cell sweeps over its rows (`--masu-sweep`, 350ms); none
+  of it with reduced motion.
+- An agent's page pointer (`Issho.Components.pointers/1`) goes to its
+  cell or range: the grid says where they are on the page.
+
 ## [0.4.0] - 2026-10-21
 
 ### Changed (breaking)

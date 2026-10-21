@@ -878,7 +878,34 @@
   z-index: 2;
   box-shadow: inset 0 0 0 2px var(--masu-peer-color);
   pointer-events: none;
-  transition: transform 80ms ease-out, inset-inline-start 80ms ease-out;
+  transition:
+    transform var(--masu-peer-glide, var(--masu-peer-travel, 80ms)) ease-out,
+    inset-inline-start var(--masu-peer-glide, var(--masu-peer-travel, 80ms)) ease-out,
+    width var(--masu-peer-glide, var(--masu-peer-travel, 80ms)) ease-out;
+}
+
+/* A range selected from a cell sweeps over its rows, from the first. */
+.masu-peer-range[data-sweep] {
+  animation: masu-sweep calc(var(--masu-sweep, 350ms) / var(--masu-sweep-lines, 1)) linear
+    calc(var(--masu-sweep, 350ms) * var(--masu-sweep-line, 0) - var(--masu-sweep-elapsed, 0ms)) both;
+}
+
+@keyframes masu-sweep {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .masu-peer { transition: none; }
+}
+
+/* The person's motion, as the app said it (Issho's data-issho-motion). */
+:root[data-issho-motion="reduced"] .masu-peer {
+  transition: none;
+}
+
+:root[data-issho-motion="reduced"] .masu-peer-range[data-sweep] {
+  animation: none;
 }
 
 .masu-peer-label {

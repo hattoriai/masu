@@ -98,6 +98,43 @@ defmodule Masu.Issho.ToolsTest do
              Map.values(states)
   end
 
+  # The agent's places in the grid that Ada was shown, in order, each once.
+  defp places(ada, grid, acc \\ []) do
+    receive do
+      {Participant, ^ada, "aware", %{"states" => states}} ->
+        at =
+          Enum.find_value(Map.values(states), fn
+            %{"state" => %{"place" => %{"doc" => ^grid, "at" => at}}} -> at
+            _ -> nil
+          end)
+
+        places(ada, grid, if(at && at != List.first(acc), do: [at | acc], else: acc))
+    after
+      100 -> Enum.reverse(acc)
+    end
+  end
+
+  test "selects a range as a drag does: only where it presses and lets go is sent",
+       %{grid: grid, ada: ada, ctx: ctx} do
+    range = %{"grid" => grid, "rows" => [1, 2], "keys" => ["name", "age"]}
+
+    {:ok, _} = call("select_cells", range, ctx)
+
+    assert places(ada, grid) == [
+             %{"cell" => [1, "name"]},
+             %{"range" => %{"rows" => [1, 2], "keys" => ["name", "age"]}}
+           ]
+
+    Application.put_env(
+      :masu,
+      Masu.Issho,
+      Keyword.put(Application.get_env(:masu, Masu.Issho), :travel, false)
+    )
+
+    {:ok, _} = call("select_cells", %{range | "keys" => ["name"]}, ctx)
+    assert places(ada, grid) == [%{"range" => %{"rows" => [1, 2], "keys" => ["name"]}}]
+  end
+
   test "edits cells: a grid open in a LiveView shows them, and the grid's rules hold",
        %{grid: grid, topic: topic, ctx: ctx} do
     {:ok, view, _html} = live(build_conn(), "/sheet/#{topic}")

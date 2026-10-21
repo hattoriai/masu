@@ -371,6 +371,13 @@ test.describe("presence", () => {
     await alan.locator("#together-r2-c1").click();
     await expect(ada.locator("#together .masu-peer .masu-peer-label")).toHaveText("Alan");
 
+    // To the next cell, the same mark glides there, rather than one drawn anew.
+    const y = await ada.locator("#together .masu-peer").evaluate((el) => { (el as HTMLElement).dataset.seen = "1"; return Number((el as HTMLElement).dataset.y); });
+    await alan.keyboard.press("ArrowDown");
+    await expect.poll(() => ada.locator("#together .masu-peer").evaluate((el) => Number((el as HTMLElement).dataset.y))).toBeGreaterThan(y);
+    await expect(ada.locator('#together .masu-peer[data-seen="1"]')).toHaveCount(1);
+    await alan.keyboard.press("ArrowUp");
+
     await alan.keyboard.type("Al");
     await expect(ada.locator("#together .masu-peer-editing .masu-peer-label")).toHaveText("Alan is typing");
 
@@ -421,6 +428,9 @@ test.describe("presence", () => {
     await avatar.click();
     await expect(avatar).toHaveAttribute("aria-pressed", "true");
     await expect(ada.locator("#together .masu-following")).toContainText("Following Alan");
+    // Following is the room's (Issho's): the page says whom, for every block of the room.
+    const followed = () => ada.evaluate(() => Object.values(JSON.parse(document.documentElement.dataset.isshoFollowing ?? "{}")));
+    await expect.poll(followed).toHaveLength(1);
     await expect(header(ada, "together", "id")).toHaveAttribute("aria-sort", "descending");
     await expect.poll(async () => Math.abs((await scrollTop(ada)) - (await scrollTop(alan)))).toBeLessThan(40);
     await expect(ada.locator("#together .masu-peer .masu-peer-label")).toHaveText("Alan");
@@ -434,6 +444,7 @@ test.describe("presence", () => {
     await expect(header(ada, "together", "id")).toHaveAttribute("aria-sort", "none");
     await expect.poll(() => scrollTop(ada)).toBe(adaTop);
     await expect(avatar).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(followed).toHaveLength(0);
 
     await ada.context().close();
     await alan.context().close();

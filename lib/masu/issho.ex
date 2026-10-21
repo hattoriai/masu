@@ -36,8 +36,11 @@ if Code.ensure_loaded?(Issho.Tool) do
     with Issho's (`Issho.Tools.room/0`), over MCP (`Issho.MCP`) or your
     app's own model (`Issho.Tools`).
 
-    `config :masu, Masu.Issho, pace: 120`: the milliseconds an agent
-    stays on each cell it edits, so the people see it move (0 for none).
+    `config :masu, Masu.Issho, pace: 120, travel: true`: `pace`, the
+    milliseconds an agent stays on each cell it edits, typing, so the
+    people see it (0 for none); `travel`, whether it goes to each cell and
+    selects ranges as a drag does, as a person would (false: it is there at
+    once). Only where it goes is sent: each browser draws the way there.
     """
 
     alias Issho.Participant
@@ -122,5 +125,36 @@ if Code.ensure_loaded?(Issho.Tool) do
     @doc false
     @spec pace() :: non_neg_integer()
     def pace, do: Keyword.get(Application.get_env(:masu, __MODULE__, []), :pace, 120)
+
+    @doc false
+    @spec travel?() :: boolean()
+    def travel?, do: Keyword.get(Application.get_env(:masu, __MODULE__, []), :travel, true)
+
+    @doc false
+    # Goes to a cell, or selects a range as a drag does (pressed on its first
+    # cell, let go on its last), with Issho's motion (`Issho.Motion`): only
+    # where the agent goes is sent, each browser draws the way, and it moves
+    # only for someone who sees the grid.
+    @spec go(map(), {term(), String.t()} | {[term()], [String.t()]}) :: :ok
+    def go(grid, {[first | _] = ids, [key | _] = keys}) do
+      :ok =
+        Issho.Motion.drag(
+          grid.participant,
+          target(grid, {first, key}),
+          target(grid, {ids, keys}),
+          travel: travel?()
+        )
+    end
+
+    def go(grid, place),
+      do: :ok = Issho.Motion.go(grid.participant, target(grid, place), travel: travel?())
+
+    @doc false
+    # A moment on a place, when someone sees it: typing in a cell, before
+    # rows go.
+    @spec pause(map(), {term(), String.t()} | {[term()], [String.t()]}, non_neg_integer()) :: :ok
+    def pause(grid, place, ms), do: Issho.Motion.pause(grid.participant, target(grid, place), ms)
+
+    defp target(grid, place), do: place(grid.grid, place)
   end
 end

@@ -1,7 +1,7 @@
 defmodule Masu.MixProject do
   use Mix.Project
 
-  @version "0.4.0"
+  @version "0.5.0"
   @source_url "https://github.com/hattoriai/masu"
 
   # MASU_OLDEST=1 resolves the oldest Phoenix and LiveView that Masu
@@ -61,7 +61,7 @@ defmodule Masu.MixProject do
       {:ecto_sqlite3, "~> 0.22", only: :test},
       {:esbuild, "~> 0.10", only: :dev, runtime: false},
       # Collaboration with Issho (Masu.Issho): optional.
-      {:issho, "~> 0.2", optional: true},
+      {:issho, github: "hattoriai/issho", branch: "main", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:lazy_html, "~> 0.1", only: :test},
       {:phoenix, if(@oldest, do: "~> 1.7.14", else: "~> 1.7.14 or ~> 1.8")},
