@@ -41,7 +41,9 @@ defmodule Masu.RowsTest do
       {:ok, view, _html} = live(conn, "/rows/tasks")
 
       assert {:ok, [id]} = add_rows(view, "tasks", %{title: "Write", points: "3"})
-      assert [%{"title" => "Write", "status" => "todo", "points" => "3"}] = rows(view, "tasks")
+      assert [%{"title" => "Write", "status" => "todo", "points" => points}] = rows(view, "tasks")
+      # MySQL keeps the column's two decimals: 3.00.
+      assert Decimal.equal?(points, "3")
       assert ids(view, "tasks") == [id]
       assert %Task{title: "Write", status: :todo} = Repo.get!(Task, id)
       assert view |> element("#log") |> render() =~ "saved Write"

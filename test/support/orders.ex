@@ -1,10 +1,12 @@
 defmodule MasuTest.Repo do
-  @moduledoc "A SQLite repository for the tests of `Masu.Source.Ecto`."
-  use Ecto.Repo, otp_app: :masu, adapter: Ecto.Adapters.SQLite3
+  @moduledoc "The repository of the tests of `Masu.Source.Ecto`: SQLite, PostgreSQL or MySQL by MASU_DB."
+  use Ecto.Repo, otp_app: :masu, adapter: MasuTest.DB.adapter()
+
+  def __mix_recompile__?, do: MasuTest.DB.adapter() != __adapter__()
 end
 
 defmodule MasuTest.Order do
-  @moduledoc "An order, stored in SQLite."
+  @moduledoc "An order, stored in the test repo."
   use Ecto.Schema
 
   schema "orders" do
@@ -57,7 +59,7 @@ defmodule MasuTest.OrdersLive do
 end
 
 defmodule MasuTest.Orders do
-  @moduledoc "Starts the SQLite repo once, with six orders."
+  @moduledoc "Starts the test repo once, with its tables and six orders."
 
   alias MasuTest.{Order, Repo}
 
@@ -65,47 +67,18 @@ defmodule MasuTest.Orders do
     if Process.whereis(Repo) do
       :ok
     else
-      # A file of this run's own, deleted before and after it: an earlier
-      # run's file must not give its table to this one.
-      path = Path.join(System.tmp_dir!(), "masu-test-#{System.pid()}.db")
-      File.rm(path)
-      System.at_exit(fn _status -> File.rm(path) end)
-      {:ok, _pid} = Repo.start_link(database: path, pool_size: 1)
+      :ok = MasuTest.DB.start!(Repo)
+      :ok = Ecto.Migrator.up(Repo, 1, MasuTest.Tables, log: false)
 
-      Repo.query!("""
-      CREATE TABLE orders (
-        id INTEGER PRIMARY KEY, number TEXT, customer TEXT, status TEXT, total DECIMAL, placed_on TEXT
-      )
-      """)
-
-      # The table of Masu.Views.Ecto, as `mix masu.gen.views` makes it.
-      Repo.query!("""
-      CREATE TABLE masu_views (
-        id INTEGER PRIMARY KEY, grid TEXT NOT NULL, owner TEXT NOT NULL, name TEXT,
-        shared BOOLEAN NOT NULL DEFAULT FALSE, params TEXT NOT NULL,
-        inserted_at TEXT NOT NULL, updated_at TEXT NOT NULL
-      )
-      """)
+      # The table of Masu.Views.Ecto, by the migration of `mix masu.gen.views`.
+      :ok = MasuTest.DB.generated!(Repo, Mix.Tasks.Masu.Gen.Views, "masu_views", "20260101000001")
 
       :ok = MasuTest.Accounts.setup!(Repo)
 
-      # Tasks that a grid adds and deletes (Masu.Edit), of their own.
-      Repo.query!(
-        "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT, points DECIMAL)"
-      )
-
-      # A ledger whose changes the history keeps (Masu.History), of its own;
-      # the history's table in this repo and in a repo of its own, by the
+      # The history's table in this repo and in a repo of its own, by the
       # migration of `mix masu.gen.history`.
-      Repo.query!("CREATE TABLE ledger (id INTEGER PRIMARY KEY, item TEXT, amount INTEGER)")
       :ok = MasuTest.Ledger.migrate_history!(Repo)
       :ok = MasuTest.Ledger.start_history_repo!()
-
-      # Chores that the actions of a grid change (Masu.Action), of their own.
-      Repo.query!("CREATE TABLE chores (id INTEGER PRIMARY KEY, title TEXT, done BOOLEAN)")
-
-      # Items with empty values and repeated ones, for paging by key.
-      Repo.query!("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, score INTEGER)")
 
       for id <- 1..237, do: Repo.insert!(item(id))
 
@@ -129,6 +102,9 @@ defmodule MasuTest.Orders do
           placed_on: Date.new!(2026, 1, day)
         })
       end
+
+      for table <- ~w(orders items companies customers sales tags sale_lines),
+          do: MasuTest.DB.reset_ids!(Repo, table)
 
       :ok
     end
@@ -188,7 +164,7 @@ defmodule MasuTest.Chore do
       MasuTest.Repo.insert!(%__MODULE__{id: id, title: title, done: id == 1})
     end
 
-    :ok
+    MasuTest.DB.reset_ids!(MasuTest.Repo, "chores")
   end
 end
 

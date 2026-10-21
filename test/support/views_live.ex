@@ -1,12 +1,12 @@
 defmodule MasuTest.EctoViews do
-  @moduledoc "The views of the tests, in the SQLite repo."
+  @moduledoc "The views of the tests, in the test repo."
   use Masu.Views.Ecto, repo: MasuTest.Repo
 end
 
 defmodule MasuTest.ViewsLive do
   @moduledoc """
   A grid that keeps its view in the URL and in a store (in memory, or
-  the SQLite repo with `?store=ecto`); the user comes from the URL.
+  the test repo with `?store=ecto`); the user comes from the URL.
   """
   use Phoenix.LiveView
 

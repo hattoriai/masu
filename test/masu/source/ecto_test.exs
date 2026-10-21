@@ -1,5 +1,5 @@
 defmodule Masu.Source.EctoTest do
-  # The SQLite repo that test_helper.exs starts, shared with the grid tests.
+  # The repo that test_helper.exs starts (MasuTest.DB), shared with the grid tests.
   use ExUnit.Case, async: false
 
   import Ecto.Query
@@ -33,7 +33,13 @@ defmodule Masu.Source.EctoTest do
 
   test "sorts in the database, by several columns, with the primary key last" do
     assert numbers(Order, sort: [{:total, :desc}]) == ~w(A-5 A-2 A-4 A-6 A-1 A-3)
-    assert numbers(Order, sort: [:status, {:customer, :desc}]) == ~w(A-5 A-2 A-4 A-3 A-1 A-6)
+
+    # MySQL's collation sorts text without case: Cyd, acme corp, Acme.
+    assert numbers(Order, sort: [:status, {:customer, :desc}]) ==
+             if(MasuTest.DB.adapter() == Ecto.Adapters.MyXQL,
+               do: ~w(A-5 A-2 A-3 A-4 A-1 A-6),
+               else: ~w(A-5 A-2 A-4 A-3 A-1 A-6)
+             )
   end
 
   test "filters and searches in the database, keeping the query's own where" do

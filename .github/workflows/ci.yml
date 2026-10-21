@@ -6,8 +6,39 @@ on:
     branches: [main]
 
 jobs:
+  # The suite on each database (MASU_DB). The SQLite job keeps the name
+  # "test" and runs the checks that do not depend on the database.
   test:
+    name: ${{ matrix.db == 'sqlite' && 'test' || format('test ({0})', matrix.db) }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [sqlite, postgres, mysql]
+
+    env:
+      MASU_DB: ${{ matrix.db }}
+
+    # An empty image starts no container: each job has its own database.
+    services:
+      postgres:
+        image: ${{ matrix.db == 'postgres' && 'postgres:16' || '' }}
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+
+      mysql:
+        image: ${{ matrix.db == 'mysql' && 'mysql:8.0' || '' }}
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pmysql" --health-interval 5s
+          --health-timeout 5s --health-retries 20
 
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +60,7 @@ jobs:
             mix-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-
 
       - uses: actions/cache@v4
+        if: matrix.db == 'sqlite'
         with:
           path: priv/plts
           key: plt-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
@@ -48,16 +80,19 @@ jobs:
           touch priv/static/masu.esm.js priv/static/masu.cjs.js priv/static/masu.css priv/static/masu-sumi.css
 
       - run: mix format --check-formatted
+        if: matrix.db == 'sqlite'
 
       - run: mix compile --warnings-as-errors
         env:
           MIX_ENV: test
 
       - run: mix credo --strict
+        if: matrix.db == 'sqlite'
         env:
           MIX_ENV: test
 
       - run: mix docs
+        if: matrix.db == 'sqlite'
         env:
           MIX_ENV: dev
 
@@ -66,6 +101,7 @@ jobs:
           MIX_ENV: test
 
       - run: mix dialyzer
+        if: matrix.db == 'sqlite'
         env:
           MIX_ENV: dev
 

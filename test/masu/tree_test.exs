@@ -67,7 +67,12 @@ defmodule Masu.TreeTest do
 
         expand(view, "accounts", 3)
         assert shown(view) == [{1, 0}, {2, 1}, {3, 1}, {4, 2}, {5, 2}, {6, 0}, {8, 0}]
-        assert rows(view, "accounts") |> Enum.at(3) == %{"name" => "Checking", "balance" => "500"}
+
+        assert %{"name" => "Checking", "balance" => balance} =
+                 rows(view, "accounts") |> Enum.at(3)
+
+        # MySQL keeps the column's two decimals: 500.00.
+        assert Decimal.equal?(balance, "500")
 
         collapse(view, "accounts", 1)
         assert shown(view) == [{1, 0}, {6, 0}, {8, 0}]

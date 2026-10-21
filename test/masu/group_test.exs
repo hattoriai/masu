@@ -131,9 +131,10 @@ defmodule Masu.GroupTest do
         view = open(@source, "&group=status,customer")
         expand(view, "orders", ["masu-group", "status", "paid"])
 
-        # A list sorts text without case; SQLite by its collation.
+        # A list sorts text without case, as MySQL's collation does;
+        # SQLite and PostgreSQL by bytes.
         customers =
-          if @source == "list",
+          if @source == "list" or MasuTest.DB.adapter() == Ecto.Adapters.MyXQL,
             do: ["Acme", "acme corp", "Cyd"],
             else: ["Acme", "Cyd", "acme corp"]
 
