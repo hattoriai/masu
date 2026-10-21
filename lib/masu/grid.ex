@@ -2471,6 +2471,7 @@ defmodule Masu.Grid do
           title={person.name}
           aria-label={String.replace(@messages["follow"], "{label}", person.name || person.id)}
           data-person={person.id}
+          data-issho-follow-control
         >
           <%= if @person != [] do %>
             {render_slot(@person, person)}

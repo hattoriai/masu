@@ -5,7 +5,23 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.1] - 2026-10-21
+## [0.5.0] - 2026-10-21
+
+On Issho 0.3: following and agents' motion are the room's.
+
+### Changed (breaking)
+
+- Following is Issho's, a room's: the grid's avatars, the page's people
+  list (`Issho.Components.people/1`) and every block of the room follow
+  the same person; the grid shows their view, the canvas beside it their
+  viewport, the text their caret. Scrolling or a key in the grid stops
+  following in the room. A grid alone on a page follows within itself, as
+  before (Issho's contract: `data-issho-following` and the
+  `issho:following` event, with no import of Issho's script). See the
+  upgrade guide.
+- An agent goes to a cell and "types" there for `pace` before the value
+  lands (it saved, then waited).
+- Requires `{:issho, "~> 0.3"}`.
 
 ### Added
 

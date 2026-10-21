@@ -428,6 +428,9 @@ test.describe("presence", () => {
     await avatar.click();
     await expect(avatar).toHaveAttribute("aria-pressed", "true");
     await expect(ada.locator("#together .masu-following")).toContainText("Following Alan");
+    // Following is the room's (Issho's): the page says whom, for every block of the room.
+    const followed = () => ada.evaluate(() => Object.values(JSON.parse(document.documentElement.dataset.isshoFollowing ?? "{}")));
+    await expect.poll(followed).toHaveLength(1);
     await expect(header(ada, "together", "id")).toHaveAttribute("aria-sort", "descending");
     await expect.poll(async () => Math.abs((await scrollTop(ada)) - (await scrollTop(alan)))).toBeLessThan(40);
     await expect(ada.locator("#together .masu-peer .masu-peer-label")).toHaveText("Alan");
@@ -441,6 +444,7 @@ test.describe("presence", () => {
     await expect(header(ada, "together", "id")).toHaveAttribute("aria-sort", "none");
     await expect.poll(() => scrollTop(ada)).toBe(adaTop);
     await expect(avatar).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(followed).toHaveLength(0);
 
     await ada.context().close();
     await alan.context().close();
