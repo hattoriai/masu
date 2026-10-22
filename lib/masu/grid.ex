@@ -396,6 +396,7 @@ defmodule Masu.Grid do
     {view, dropped} =
       cond do
         params != nil -> View.from_params(params, all, default)
+        given = Map.get(assigns, :given_view) -> View.from_params(given, all, default)
         last = last_view(assigns) -> View.from_params(last, all, default)
         true -> {default, []}
       end
@@ -2457,7 +2458,7 @@ defmodule Masu.Grid do
       data-issho-doc={@issho && Masu.Issho.Live.doc(@issho, @id)}
       data-masu={config(assigns)}
       data-masu-messages={JSON.encode!(@messages)}
-      style={"height: #{@height}"}
+      style={if @height == "auto", do: "height: auto", else: "height: #{@height}"}
       {@rest}
     >
       <div
@@ -2566,7 +2567,7 @@ defmodule Masu.Grid do
         aria-rowcount={if @exact, do: @total + 1, else: -1}
         aria-colcount={length(@columns)}
         aria-multiselectable="true"
-        style={"--masu-row-height: #{@row_height}px"}
+        style={"--masu-row-height: #{@row_height}px" <> auto_height(assigns)}
       >
         <div
           id={"#{@id}-content"}
@@ -2717,6 +2718,15 @@ defmodule Masu.Grid do
     |> String.reverse()
   end
 
+  # A grid of the height of its rows (a grid in a document): its header and
+  # rows, at least three, up to `max_height`. The browser keeps it so.
+  defp auto_height(%{height: "auto"} = assigns) do
+    rows = min(max(body_rows(assigns) || 0, 3), 1_000)
+    "; height: min(#{assigns.max_height}, #{(rows + 1) * assigns.row_height + 2}px)"
+  end
+
+  defp auto_height(_assigns), do: ""
+
   # The rows the server renders of the first block it read.
   defp first_shown(rows), do: Enum.take(rows || [], @initial_rows)
 
@@ -2736,6 +2746,8 @@ defmodule Masu.Grid do
       "v" => 1,
       "columns" => Enum.map(assigns.columns, &column_config(&1, assigns)),
       "rowHeight" => assigns.row_height,
+      "autoHeight" => if(assigns.height == "auto", do: assigns.max_height),
+      "wheel" => assigns |> Map.get(:wheel, :grid) |> Atom.to_string(),
       "total" => assigns.total,
       "exact" => assigns.exact,
       "paging" => Atom.to_string(assigns.paging),

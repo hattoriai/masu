@@ -126,6 +126,10 @@ export interface Config {
   v: number;
   columns: ColumnConfig[];
   rowHeight: number;
+  /** A grid of the height of its rows (`height="auto"`): the most they take, as CSS; else null. */
+  autoHeight?: string | null;
+  /** "page": the wheel scrolls the page until the person is in the grid. */
+  wheel?: "grid" | "page";
   total: number;
   /** The total is the query's count; else the rows read, and maybe more. */
   exact?: boolean;

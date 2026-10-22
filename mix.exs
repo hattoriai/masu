@@ -123,6 +123,7 @@ defmodule Masu.MixProject do
         "guides/upgrading.md",
         "guides/history.md",
         "guides/views.md",
+        "guides/documents.md",
         "guides/trees.md",
         "guides/groups.md",
         "guides/export.md",
@@ -150,6 +151,7 @@ defmodule Masu.MixProject do
           "guides/upgrading.md",
           "guides/history.md",
           "guides/views.md",
+          "guides/documents.md",
           "guides/trees.md",
           "guides/groups.md",
           "guides/export.md",
@@ -183,7 +185,7 @@ defmodule Masu.MixProject do
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],
         Sources: [Masu.Source, Masu.Source.List, Masu.Source.Ecto],
-        Export: [Masu.Export, Masu.Router],
+        Export: [Masu.Export, Masu.Router, Masu.Snapshot],
         Testing: [Masu.Test]
       ]
     ]

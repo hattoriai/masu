@@ -537,6 +537,7 @@ export class Grid {
     const gaps = this.localGaps();
     this.contentHeight = totalHeight(count, rh, gaps);
     setStyle(this.body, "height", `${boxHeight(this.contentHeight)}px`);
+    this.fitHeight();
     if (!this.scaled()) this.content = this.gridEl.scrollTop;
     const y = this.contentTop();
     // Where the rows are drawn: their place in the content, less the
@@ -1010,8 +1011,32 @@ export class Grid {
     this.schedule();
   }
 
+  // A grid of the height of its rows (in a document): its header, its rows
+  // (three at least, for an empty grid's message), its edges and a
+  // scrollbar across, up to the most it takes; past it, the rows scroll.
+  private fitHeight(): void {
+    const most = this.config.autoHeight;
+    if (!most) return;
+    const rows = Math.max(this.contentHeight, 3 * this.config.rowHeight);
+    const edges = this.gridEl.offsetHeight - this.gridEl.clientHeight;
+    setStyle(this.gridEl, "height", `min(${most}, ${Math.ceil(this.head.offsetHeight + rows + edges)}px)`);
+  }
+
+  // A grid in a page that scrolls (`wheel={:page}`): the wheel is the
+  // page's until the person is in the grid (a click on it, the keyboard).
+  private wheelToPage(event: WheelEvent): boolean {
+    if (this.config.wheel !== "page" || event.ctrlKey || event.shiftKey) return false;
+    if (this.el.contains(document.activeElement)) return false;
+    const target = scrollParent(this.el);
+    const step = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? target.clientHeight : 1;
+    event.preventDefault();
+    target.scrollBy({ top: event.deltaY * step, left: 0 });
+    return true;
+  }
+
   /** A wheel moves a tall grid by its own pixels; at an end, it scrolls the page. */
   private onWheel(event: WheelEvent): void {
+    if (this.wheelToPage(event)) return;
     if (!this.scaled() || event.ctrlKey || event.shiftKey || event.deltaY === 0) return;
     const view = this.gridEl.clientHeight - this.head.offsetHeight;
     const { maxContent } = this.scrollRange();
@@ -5177,4 +5202,14 @@ function followIn(room: string, key: string | null): void {
   if (Object.keys(all).length > 0) document.documentElement.dataset.isshoFollowing = JSON.stringify(all);
   else delete document.documentElement.dataset.isshoFollowing;
   document.dispatchEvent(new CustomEvent("issho:following", { detail: { room, key } }));
+}
+
+// The element that scrolls a grid's page: its nearest ancestor that
+// scrolls, else the document's.
+function scrollParent(el: HTMLElement): Element {
+  for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY;
+    if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight) return node;
+  }
+  return document.scrollingElement ?? document.documentElement;
 }

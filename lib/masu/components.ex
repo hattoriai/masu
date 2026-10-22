@@ -342,7 +342,22 @@ defmodule Masu.Components do
   attr :height, :string,
     default: "32rem",
     doc:
-      "the height of the whole grid, as CSS (`100%` fills its container); the rows take what its toolbar leaves"
+      "the height of the whole grid, as CSS (`100%` fills its container); the rows take what its toolbar leaves; `\"auto\"`: the height of its rows, up to `max_height` (a grid in a document)"
+
+  attr :max_height, :string,
+    default: "32rem",
+    doc: "with `height=\"auto\"`: the most the rows take, as CSS; past it, they scroll"
+
+  attr :wheel, :atom,
+    default: :grid,
+    values: [:grid, :page],
+    doc:
+      "`:page` for a grid in a page that scrolls (a document): the wheel scrolls the page until the person is in the grid (a click, the keyboard), and the grid then"
+
+  attr :view, :map,
+    default: nil,
+    doc:
+      "the view the grid opens with: a view's params (`Masu.View`), such as a saved view's (`Masu.Views`); a link's view (`url`) wins over it, and it over the person's last view"
 
   attr :locale, :string,
     default: nil,
@@ -515,6 +530,9 @@ defmodule Masu.Components do
       row_height={@row_height || density_height(@density)}
       density={@density}
       height={@height}
+      max_height={@max_height}
+      wheel={@wheel}
+      given_view={@view}
       locale={@locale}
       messages={@messages}
       class={@class}
