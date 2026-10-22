@@ -29,6 +29,13 @@ On Issho 0.3: following and agents' motion are the room's.
 
 ### Added
 
+- A grid in a document (a Kotoba embed, see the "In a document" guide):
+  `height="auto"`, as tall as its rows up to `max_height`; `wheel={:page}`,
+  the wheel the page's until the person is in the grid; and `view`, the
+  view it opens with (a saved view's params).
+- `Masu.Snapshot`: a grid's rows as they are now, in a view, as a
+  Markdown or an HTML table, with how many more: a document exported with
+  a grid in it, an email of it.
 - An agent moves as a person does: it goes to each cell it edits, types
   in it (`pace`, the milliseconds it is there before the value lands),
   and selects a range as a drag does, pressed on its first cell; it
