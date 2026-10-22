@@ -55,6 +55,93 @@ defmodule Masu.PresenceTest do
     )
   end
 
+  describe "a grid in a document (an embed of it)" do
+    test "a grid of one name is one grid, whatever its id", %{room: room} do
+      ada = open(room, "ada", "&grid=people")
+      alan = open(room, "alan", "&grid=people&id=doc-embed-3")
+
+      assert_eventually(fn -> people(ada) == ["Alan"] end)
+      assert_eventually(fn -> people(alan) == ["Ada"] end)
+      assert render(alan) =~ ~s(data-issho-doc="#{room}/people")
+    end
+
+    test "a pointer over a cell goes to the others, a page's too", %{room: room} do
+      ada = open(room, "ada")
+      alan = open(room, "alan")
+      assert_eventually(fn -> people(ada) == ["Alan"] end)
+
+      render_hook(element(alan, "#people"), "masu:pointer", %{
+        "at" => %{"cell" => [3, "name"], "x" => 0.25, "y" => 2}
+      })
+
+      assert_push_event(
+        ada,
+        "masu:people",
+        %{
+          "people" => [%{name: "Alan", pointer: %{"cell" => [3, "name"], "x" => 0.25, "y" => 1}}]
+        },
+        1000
+      )
+
+      render_hook(element(alan, "#people"), "masu:pointer", %{"at" => nil})
+      assert_push_event(ada, "masu:people", %{"people" => [%{name: "Alan", pointer: nil}]}, 1000)
+
+      # Issho's pointers of a page of the room, a session of its own.
+      Issho.Awareness.put(MasuTest.Issho, room, "eve", %{
+        "pointer" => %{
+          "doc" => room <> "/people",
+          "at" => %{"cell" => [1, "name"], "x" => 0.5, "y" => 0.5}
+        }
+      })
+
+      assert_push_event(
+        ada,
+        "masu:people",
+        %{"people" => [%{id: "eve", pointer: %{"cell" => [1, "name"]}}, %{name: "Alan"}]},
+        1000
+      )
+    end
+
+    test "a grid that goes lets its room go", %{room: room} do
+      ada = open(room, "ada")
+      alan = open(room, "alan")
+      assert_eventually(fn -> people(ada) == ["Alan"] end)
+
+      render_hook(alan, "issho:release", %{"room" => room, "component" => "people"})
+      assert_eventually(fn -> people(ada) == [] end)
+      assert Process.alive?(alan.pid)
+    end
+
+    test "a grid that goes while another of the room stays takes its place with it",
+         %{room: room} do
+      ada = open(room, "ada")
+      alan = open(room, "alan", "&two=1")
+      assert_eventually(fn -> people(ada) == ["Alan"] end)
+
+      render_hook(element(alan, "#people"), "masu:cursor", %{
+        "cell" => [3, "name"],
+        "editing" => false
+      })
+
+      render_hook(alan, "issho:release", %{"room" => room, "component" => "people"})
+
+      # In the room still (the other grid), and no longer in this one.
+      assert_eventually(fn -> people(ada) == [] end)
+      assert Map.has_key?(Issho.Presence.list(Issho.Presence.topic(room)), "alan")
+    end
+
+    test "a reader is a viewer of the room", %{room: room} do
+      _ivy = open(room, "ivy", "&can=read")
+
+      assert_eventually(fn ->
+        match?(
+          %{"ivy" => %{metas: [%{"can" => "read"}]}},
+          Issho.Presence.list(Issho.Presence.topic(room))
+        )
+      end)
+    end
+  end
+
   test "a refusal names who changed the cell meanwhile", %{room: room} do
     ada = open(room, "ada")
     alan = open(room, "alan")

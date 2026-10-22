@@ -261,7 +261,7 @@ defmodule Masu.Grid do
       "people" =>
         Enum.map(
           people,
-          &Map.take(&1, [:id, :name, :color, :cell, :range, :editing, :view, :top])
+          &Map.take(&1, [:id, :name, :color, :cell, :range, :editing, :view, :top, :pointer])
         )
     })
   end
@@ -1257,6 +1257,15 @@ defmodule Masu.Grid do
     {:noreply, socket}
   end
 
+  # This person's pointer over a cell, which the grid shares when no
+  # Issho pointers of its room are on the page; `nil` when it leaves.
+  def handle_event("masu:pointer", %{"at" => at}, socket) do
+    if socket.assigns.issho,
+      do: _ = Masu.Issho.Live.pointer(socket.assigns.issho, socket.assigns.id, pointer_at(at))
+
+    {:noreply, socket}
+  end
+
   def handle_event("masu:query", params, socket) when is_map(params) do
     %{source: source, all_columns: columns, revision: revision} = socket.assigns
 
@@ -1985,6 +1994,14 @@ defmodule Masu.Grid do
     socket = apply_view(socket, view, dropped)
     {:reply, %{"revision" => socket.assigns.revision, "dropped" => dropped}, socket}
   end
+
+  # A pointer over a cell: its row's id, its column's key, and where in it.
+  defp pointer_at(%{"cell" => [id, key], "x" => x, "y" => y})
+       when is_binary(key) and is_number(x) and is_number(y) and
+              (is_binary(id) or is_integer(id)) and byte_size(key) <= 200,
+       do: %{"cell" => [id, key], "x" => min(max(x, 0), 1), "y" => min(max(y, 0), 1)}
+
+  defp pointer_at(_other), do: nil
 
   # A selected range goes to the others as its rows' ids (at most 500) and
   # its columns' keys: the rows are where each person's order puts them.

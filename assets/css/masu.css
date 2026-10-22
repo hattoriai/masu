@@ -890,6 +890,45 @@
     width var(--masu-peer-glide, var(--masu-peer-travel, 80ms)) ease-out;
 }
 
+/* Another person's pointer over a cell, which the grid draws when no
+   Issho pointers of its room are on the page (a grid in a document of
+   another room): an arrow in their colour, and their name. */
+.masu-pointer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  pointer-events: none;
+  transition: transform var(--masu-peer-glide, 80ms) linear;
+}
+
+.masu-pointer svg {
+  flex: none;
+  fill: var(--masu-peer-color);
+  stroke: var(--masu-background);
+  stroke-width: 1;
+}
+
+.masu-pointer-name {
+  margin-top: 12px;
+  padding: 0 0.375rem;
+  border-radius: 3px;
+  background: var(--masu-peer-color);
+  color: #fff;
+  font-size: 0.6875rem;
+  line-height: 1.125rem;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .masu-pointer {
+    transition: none;
+  }
+}
+
 /* A range selected from a cell sweeps over its rows, from the first. */
 .masu-peer-range[data-sweep] {
   animation: masu-sweep calc(var(--masu-sweep, 350ms) / var(--masu-sweep-lines, 1)) linear

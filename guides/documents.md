@@ -113,5 +113,18 @@ page or an email of the document.
 ## Collaboration
 
 A grid with `issho` is shared in its own room, whatever the document's:
-its people are that room's, wherever they are. See
-[Collaboration](collaboration.md).
+its people are that room's, wherever they are. Give it its name in the
+room, so that the embed and the grid's own page are one grid, and a
+reader's `can`:
+
+```heex
+<.data_grid
+  ...
+  issho={[instance: MyApp.Issho, room: "tasks:#{@account.id}", grid: "tasks", can: (embed.readonly && :read) || :write]}
+  user={@current_user}
+/>
+```
+
+Someone reading the document and someone on the grid's page see each
+other's cells and pointers. See
+[Collaboration](collaboration.md#in-a-document-and-pointers).

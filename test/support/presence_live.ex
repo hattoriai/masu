@@ -26,7 +26,12 @@ defmodule MasuTest.PresenceLive do
   def mount(params, _session, socket) do
     user = %{id: params["user"], name: String.capitalize(params["user"])}
     user = if params["color"], do: Map.put(user, :color, params["color"]), else: user
-    issho = [instance: MasuTest.Issho, room: params["room"] || "presence"]
+    # ?id= the grid's id (an embed's), ?grid= its name in the room,
+    # ?can=read a reader's, ?two=1 another grid of the room beside it.
+    issho =
+      [instance: MasuTest.Issho, room: params["room"] || "presence"] ++
+        if(params["grid"], do: [grid: params["grid"]], else: []) ++
+        if(params["can"] == "read", do: [can: :read], else: [])
 
     {:ok,
      assign(socket,
@@ -35,7 +40,9 @@ defmodule MasuTest.PresenceLive do
        topic: "presence-" <> (params["room"] || "people"),
        slot: params["slot"] == "1",
        share: params["share"] != "0",
-       follow: params["follow"] != "0"
+       follow: params["follow"] != "0",
+       id: params["id"] || "people",
+       two: params["two"] == "1"
      )}
   end
 
@@ -49,10 +56,14 @@ defmodule MasuTest.PresenceLive do
         <:person :let={person}><b class="mine">{person.name} ({person.initials})</b></:person>
       </.data_grid>
     <% else %>
-      <.data_grid id="people" rows={MasuTest.People.all()} changeset={&MasuTest.EditPeopleLive.changeset/2}
+      <.data_grid id={@id} rows={MasuTest.People.all()} changeset={&MasuTest.EditPeopleLive.changeset/2}
         live={{MasuTest.PubSub, @topic}} issho={@issho} user={@user}
         share_view={@share}
         follow={@follow}>
+        <:col field={:name} />
+      </.data_grid>
+      <.data_grid :if={@two} id="others" rows={MasuTest.People.all()}
+        issho={Keyword.put(@issho, :grid, "others")} user={@user}>
         <:col field={:name} />
       </.data_grid>
     <% end %>

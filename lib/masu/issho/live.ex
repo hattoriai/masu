@@ -14,7 +14,12 @@ if Code.ensure_loaded?(Issho.Live) do
     #   * "locks": the cell they are editing;
     #   * "masu": `%{"room/grid" => %{"view" => query, "top" => id}}`, the
     #     grids they have open, with their view (to follow them) and their
-    #     first row on the screen.
+    #     first row on the screen;
+    #   * "pointer": `%{"doc" => "room/grid", "at" => %{"cell" => [id, key],
+    #     "x" => x, "y" => y}}`, their pointer over a cell, which the grid
+    #     shares when no Issho pointers of its room are on the page (a grid
+    #     in a document of another room): Issho's pointers of the room draw
+    #     it as their own.
 
     @doc false
     # The grid's settings, of its `issho` attribute.
@@ -26,13 +31,16 @@ if Code.ensure_loaded?(Issho.Live) do
         instance: Map.fetch!(issho, :instance),
         room: Map.fetch!(issho, :room),
         actor: Map.get(issho, :actor) || user,
+        grid: issho |> Map.get(:grid) |> then(&(&1 && to_string(&1))),
         opts: issho |> Map.take([:can, :claims, :on_behalf_of]) |> Keyword.new()
       }
     end
 
     @doc false
     @spec doc(map(), String.t()) :: String.t()
-    def doc(%{room: room}, grid), do: room <> "/" <> grid
+    # The grid's document in the room: its name there (`grid`), else its
+    # id. A grid of one name is one grid, on its page and in a document.
+    def doc(%{room: room} = config, grid), do: room <> "/" <> (Map.get(config, :grid) || grid)
 
     @doc false
     # Joins the room for the grid (the LiveView's session there, if it has
@@ -41,7 +49,11 @@ if Code.ensure_loaded?(Issho.Live) do
     def join(config, grid, view) do
       with {:ok, _session} <-
              Issho.Live.join(config.instance, config.actor, config.room, config.opts) do
-        true = Issho.Live.subscribe(config.room, {Masu.Grid, grid})
+        true =
+          Issho.Live.subscribe(config.room, {Masu.Grid, grid},
+            on_release: fn -> forget(config, grid) end
+          )
+
         put(config, grid, %{view: view, top: nil})
       end
     end
@@ -64,6 +76,42 @@ if Code.ensure_loaded?(Issho.Live) do
         state
         |> Map.update("masu", %{doc => open}, &Map.put(&1, doc, open))
         |> place(doc, changes)
+
+      Issho.Live.aware(config.room, state)
+    end
+
+    @doc false
+    # The person's pointer over a cell of the grid (`at`), or none.
+    @spec pointer(map(), String.t(), map() | nil) :: :ok | {:error, term()}
+    def pointer(config, grid, at) do
+      doc = doc(config, grid)
+      state = Issho.Live.awareness(config.room)
+
+      pointer =
+        cond do
+          at != nil -> %{"doc" => doc, "at" => at}
+          match?(%{"doc" => ^doc}, state["pointer"]) -> nil
+          true -> state["pointer"]
+        end
+
+      Issho.Live.aware(config.room, Map.put(state, "pointer", pointer))
+    end
+
+    @doc false
+    # The grid went from the page (an embed deleted) while the LiveView
+    # stays in the room: what it said of its person goes.
+    @spec forget(map(), String.t()) :: :ok | {:error, term()}
+    def forget(config, grid) do
+      doc = doc(config, grid)
+      state = Issho.Live.awareness(config.room)
+      mine? = &match?(%{"doc" => ^doc}, &1)
+
+      state =
+        state
+        |> Map.update("masu", %{}, &Map.delete(&1, doc))
+        |> Map.update("locks", [], &Enum.reject(&1, mine?))
+        |> Map.update("place", nil, &if(mine?.(&1), do: nil, else: &1))
+        |> Map.update("pointer", nil, &if(mine?.(&1), do: nil, else: &1))
 
       Issho.Live.aware(config.room, state)
     end
@@ -120,7 +168,9 @@ if Code.ensure_loaded?(Issho.Live) do
       config.room
       |> Issho.Live.states()
       |> Map.values()
-      |> Enum.filter(fn %{"key" => key, "state" => state} -> key != own and here?(state, doc) end)
+      |> Enum.filter(fn %{"key" => key, "state" => state} ->
+        key != own and (here?(state, doc) or pointing?(state, doc))
+      end)
       |> Enum.group_by(& &1["key"], & &1["state"])
       |> Enum.map(fn {key, states} -> person(key, states, doc, metas) end)
       |> Enum.sort_by(&{&1.name || "", &1.id})
@@ -131,8 +181,15 @@ if Code.ensure_loaded?(Issho.Live) do
 
     defp here?(_state, _doc), do: false
 
+    # A session whose pointer is on the grid: the person's page (Issho's
+    # pointers of the room), or a grid that shares it.
+    defp pointing?(%{"pointer" => %{"doc" => doc}}, doc), do: true
+    defp pointing?(_state, _doc), do: false
+
     defp person(key, states, doc, metas) do
-      state = Enum.find(states, &cell(&1, doc)) || hd(states)
+      state =
+        Enum.find(states, &cell(&1, doc)) || Enum.find(states, &here?(&1, doc)) || hd(states)
+
       meta = person_meta(Map.get(metas, key))
       open = get_in(state, ["masu", doc]) || %{}
       cell = cell(state, doc)
@@ -149,7 +206,8 @@ if Code.ensure_loaded?(Issho.Live) do
         editing:
           cell != nil and %{"doc" => doc, "at" => %{"cell" => cell}} in (state["locks"] || []),
         view: open["view"],
-        top: open["top"]
+        top: open["top"],
+        pointer: Enum.find_value(states, &pointer_at(&1, doc))
       }
     end
 
@@ -162,6 +220,13 @@ if Code.ensure_loaded?(Issho.Live) do
       do: cell
 
     defp cell(_state, _doc), do: nil
+
+    # Where their pointer is on the grid: a page's (Issho's pointers of
+    # the room) or a grid's that shares it.
+    defp pointer_at(%{"pointer" => %{"doc" => doc, "at" => %{"cell" => [_, _]} = at}}, doc),
+      do: at
+
+    defp pointer_at(_state, _doc), do: nil
 
     defp range(
            %{"place" => %{"doc" => doc, "at" => %{"range" => %{"rows" => rows, "keys" => keys}}}},

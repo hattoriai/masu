@@ -249,6 +249,8 @@ export interface Person {
   view: QuerySpec | null;
   /** The id of the first row on their screen. */
   top: unknown;
+  /** Their pointer over a cell (its row's id and column's key, and where in it), or none. */
+  pointer?: { cell: [unknown, string]; x: number; y: number } | null;
 }
 
 export interface Options {

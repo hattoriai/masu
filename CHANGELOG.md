@@ -33,6 +33,14 @@ On Issho 0.3: following and agents' motion are the room's.
   `height="auto"`, as tall as its rows up to `max_height`; `wheel={:page}`,
   the wheel the page's until the person is in the grid; and `view`, the
   view it opens with (a saved view's params).
+- A grid in a document of another room (a Kotoba document): `issho`
+  takes `grid`, its name in the room, so that an embed and the grid's
+  own page are one grid; on a page without Issho's pointers of its room,
+  the grid shares its person's pointer over a cell and draws the
+  others'; the copy of a grid in use says where its person is when a
+  page has it twice; a grid that goes while its LiveView stays releases
+  its room and takes its place with it; following from its avatars
+  brings it into view. See the Collaboration guide.
 - `Masu.Snapshot`: a grid's rows as they are now, in a view, as a
   Markdown or an HTML table, with how many more: a document exported with
   a grid in it, an email of it.

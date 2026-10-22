@@ -172,7 +172,7 @@ defmodule Masu.Components do
   attr :issho, :any,
     default: nil,
     doc:
-      "the grid's people, in an Issho room: `[instance: MyApp.Issho, room: \"notebook:42\"]`, and `actor` (the person as the room knows them; `user` unless given), `can`, `claims` and `on_behalf_of`; agents in the room are among them; see the Collaboration guide"
+      "the grid's people, in an Issho room: `[instance: MyApp.Issho, room: \"notebook:42\"]`, and `grid` (its name in the room, the same wherever it is: its page, a document; its id unless given), `actor` (the person as the room knows them; `user` unless given), `can`, `claims` and `on_behalf_of`; agents in the room are among them; see the Collaboration guide"
 
   attr :people, :boolean,
     default: true,

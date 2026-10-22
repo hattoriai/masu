@@ -58,6 +58,16 @@ export const Masu = {
   },
 
   destroyed(this: MasuHook) {
+    // A grid of an Issho room that goes while its LiveView stays (an embed
+    // deleted from a document): its room lets it go (Issho.Live.release/2).
+    const doc = this.el.dataset.isshoDoc;
+    if (doc) {
+      try {
+        this.pushEvent("issho:release", { room: doc.slice(0, doc.indexOf("/")), component: this.el.id });
+      } catch {
+        // The LiveView went with it: so did its rooms.
+      }
+    }
     this.grid?.destroy();
     this.grid = undefined;
   },
