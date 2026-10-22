@@ -69,6 +69,8 @@ defmodule Masu.Grid do
        people: [],
        issho: nil,
        issho_config: nil,
+       by: nil,
+       issho_event: nil,
        show_people: true,
        follow: true,
        saved_by: %{},
@@ -238,8 +240,13 @@ defmodule Masu.Grid do
       socket
     else
       case Masu.Issho.Live.join(config, socket.assigns.id, shared_view(socket.assigns)) do
-        :ok -> socket |> assign(issho: config) |> refresh_people()
-        {:error, _reason} -> socket
+        :ok ->
+          socket
+          |> assign(issho: config, by: config.identity, issho_event: config)
+          |> refresh_people()
+
+        {:error, _reason} ->
+          socket
       end
     end
   end

@@ -182,6 +182,31 @@ defmodule Masu.Issho.ToolsTest do
     assert rest =~ ~s(now "Ada Lovelace")
   end
 
+  test "an agent's write is by the agent, for whom it acts, and the room hears of it",
+       %{instance: instance, room: room, grid: grid, ctx: ctx} do
+    :ok = Issho.Events.subscribe(instance, room)
+
+    assert {:ok, %{"saved" => 1}} =
+             call(
+               "edit_cells",
+               %{"grid" => grid, "edits" => [%{"row" => 2, "key" => "name", "value" => "Grace"}]},
+               ctx
+             )
+
+    assert_receive {Issho, :event,
+                    %Issho.Event{
+                      name: "document.changed",
+                      document: ^grid,
+                      by: %Issho.Identity{
+                        key: "assistant:ada",
+                        kind: :agent,
+                        on_behalf_of: behalf
+                      }
+                    }}
+
+    assert %Issho.Identity{key: "ada"} = behalf
+  end
+
   test "leaves a cell someone is editing", %{grid: grid, ada: ada, ctx: ctx} do
     :ok = Participant.lock(ada, [Masu.Issho.place(grid, {1, "name"})])
 

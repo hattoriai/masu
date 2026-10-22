@@ -23,14 +23,14 @@ person, and agents that work across all three.
   repo={Repo}
   changeset={&Order.changeset/2}
   live={{MyApp.PubSub, "orders"}}
-  issho={[instance: MyApp.Issho, room: "orders"]}
+  issho={[instance: MyApp.Issho, document: "orders"]}
   user={%{id: @current_user.id, name: @current_user.name}}
 >
 ```
 
 ## Setting up
 
-1. Add Issho to your dependencies (`{:issho, "~> 0.2"}`) and start it in
+1. Add Issho to your dependencies (`{:issho, "~> 0.3"}`) and start it in
    your supervision tree, after the PubSub, with a policy that says who
    may be in which room (see Issho's README):
 
@@ -42,16 +42,21 @@ person, and agents that work across all three.
    `on_mount Issho.Live`, or in its `live_session`), and `live` on the
    grid for the rows (see [Live rows](live.md)).
 
-3. `issho` and `user` on the grid. `issho` names the instance and the
-   room, and, if the room knows the person by another value than `user`,
-   `actor` (your user struct, with its `Issho.Actor`). `user` is a map
+3. `issho` and `user` on the grid. `issho` takes the keys of every
+   component of an Issho page (`Issho.Join`, the same for Kotoba's editor
+   and Hakushi's canvas): `:instance` and `:document` (required: the
+   grid's name, whose room is the part before the first `"/"`); `:can`,
+   `:read` for a reader; `:people` and `:follow` (below); `:on_behalf_of`
+   and `:claims`, for your policy. And Masu's own `:actor`, if the room
+   knows the person by another value than `user` (your user struct, with
+   its `Issho.Actor`). Any other key raises. `user` is a map
    with an `id`, and a `name`, a `color` (a CSS color) and an `avatar` (an
    image's URL) if you have them.
 
-The grid is a place of the room: `"orders/orders"`, the room and the
-grid's name there, its id unless `issho` says `grid` (`grid: "orders"`):
-the same grid in two places of the app (its page, an embed in a
-document, whose ids differ) is one grid, with one people. A person's cell and range go into the room's awareness, the
+The grid is a document of the room, by its name (`"orders"`, or
+`"notebook:42/tasks"` in the room `"notebook:42"`): the same grid in two
+places of the app (its page, an embed in a document, whose ids differ)
+is one grid, with one people. A person's cell and range go into the room's awareness, the
 cell they edit is a lock of the room, and their view goes with them, for
 following. The colors are Issho's: a person's own, else their color of
 the room's palette in Issho's theme (`issho.css`), as Issho's list of
@@ -59,8 +64,35 @@ people and its pointers show them. The people a person sees are the
 others: someone with the grid open in two tabs does not see themselves.
 
 On a page that lists the room's people itself
-(`Issho.Components.people/1`), `people={false}` leaves out the avatars
-above the grid; the cells still show who is where.
+(`Issho.Components.people/1`), `issho`'s `people: false` leaves out the
+avatars above the grid; the cells still show who is where.
+
+### A person's state, and a place in the grid
+
+What the grid says of its person in the room is in Issho's keys of their
+state: `place` (their cell or range), `locks` (the cell they edit) and
+`pointer`. Masu's own (that the grid is open, its view, its first row on
+the screen) are under the grid's document, in `"blocks"` (see
+`Issho.Awareness`), so the page's other blocks never collide with them.
+
+A place in the grid is in its own terms, rows by their ids and columns
+by their keys, never pixels, as each person has their own order and
+filters. Its format is part of Masu's API, and only grows
+(`Masu.Issho.Place`):
+
+```elixir
+%{"cell" => [row_id, key]}
+%{"range" => %{"rows" => [row_id, ...], "keys" => [key, ...]}}
+%{"cell" => [row_id, key], "x" => 0.5, "y" => 0.5}   # a pointer in a cell
+```
+
+### Who wrote, and the room hears of it
+
+A write's `by` (`Masu.Write`) is who made it, an `Issho.Identity` on a
+grid with `issho`: the person, or an agent and whom it acts for. Each
+saved write says so in the room, `"document.changed"` of the grid's
+document (`Issho.Events`), with `by` and `data: %{op: :update, count: n}`:
+a page, a job or an agent that waits for a change subscribes to it.
 
 ## In a document, and pointers
 
@@ -136,11 +168,11 @@ and Issho's properties, on the page, restyle all of them at once:
 `--masu-follow-color` is the followed person's color, for your own rules.
 
 A grid that should take no part in following, though the other blocks of
-its room do, says so: `follow={false}`. Its avatars are not buttons, it
+its room do, says so: `issho`'s `follow: false`. Its avatars are not buttons, it
 shows no one followed, and its view stays its person's when the room
 follows someone.
 
-    <.data_grid id="orders" rows={@orders} issho={@issho} follow={false} />
+    <.data_grid id="orders" rows={@orders} issho={[instance: MyApp.Issho, document: "orders", follow: false]} user={@user} />
 
 ### Keeping a view to oneself
 

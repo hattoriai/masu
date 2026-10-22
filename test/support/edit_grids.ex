@@ -166,7 +166,10 @@ defmodule MasuTest.IsshoGridLive do
     {:ok,
      assign(socket,
        grid: MasuTest.SheetLive.grid(session["topic"]),
-       issho: [instance: session["instance"], room: session["room"]],
+       issho: [
+         instance: session["instance"],
+         document: session["room"] <> "/" <> MasuTest.SheetLive.grid(session["topic"])[:id]
+       ],
        user: %{id: session["user"], name: session["name"]}
      )}
   end

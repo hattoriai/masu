@@ -57,6 +57,7 @@ defmodule Masu.Edit do
       grid: assigns.id,
       history: assigns[:history],
       user: assigns[:user],
+      issho: assigns[:issho_event],
       batch: nil
     }
   end
@@ -70,7 +71,7 @@ defmodule Masu.Edit do
       %Write{} = done ->
         case Write.open(done) do
           [] ->
-            Write.record_rest(done)
+            done |> Write.record_rest() |> tap(&changed/1)
 
           open ->
             raise ArgumentError,
@@ -85,6 +86,15 @@ defmodule Masu.Edit do
     end
   end
 
+  # A grid in an Issho room says so there: "document.changed".
+  # (Issho is optional: a grid without `issho` never calls it.)
+  defp changed(%Write{grid_config: %{issho: %{} = issho}} = write) do
+    live = Masu.Issho.Live
+    live.changed(issho, write)
+  end
+
+  defp changed(_write), do: :ok
+
   defp new_write(op, assigns, row_id, origin, changes) do
     {ref, token} = Masu.Ref.new(assigns.id)
 
@@ -93,6 +103,7 @@ defmodule Masu.Edit do
       op: op,
       origin: origin,
       scope: assigns[:scope],
+      by: assigns[:by] || assigns[:user],
       ref: ref,
       changes: changes,
       grid_config: %{config(assigns, row_id) | batch: token}

@@ -172,17 +172,10 @@ defmodule Masu.Components do
   attr :issho, :any,
     default: nil,
     doc:
-      "the grid's people, in an Issho room: `[instance: MyApp.Issho, room: \"notebook:42\"]`, and `grid` (its name in the room, the same wherever it is: its page, a document; its id unless given), `actor` (the person as the room knows them; `user` unless given), `can`, `claims` and `on_behalf_of`; agents in the room are among them; see the Collaboration guide"
+      "the grid's people, in an Issho room: `[instance: MyApp.Issho, document: \"notebook:42/tasks\"]`, with the keys of every component (`Issho.Join`): the grid's `document` (its name, the same wherever it is: its page, a document; its room is the part before the first `\"/\"`), `can`, `people` (`false` hides the avatars above the grid, on a page that lists its people itself), `follow` (`false` for a grid that takes no part in following), `claims` and `on_behalf_of`; and Masu's own `actor` (the person as the room knows them; `user` unless given). Agents in the room are among them; see the Collaboration guide"
 
-  attr :people, :boolean,
-    default: true,
-    doc:
-      "with `issho`: `false` hides the avatars above the grid (a page that lists its people itself); the cells still show where each person is"
-
-  attr :follow, :boolean,
-    default: true,
-    doc:
-      "with `issho`: `false` for a grid that takes no part in following, though its room's other blocks do: its avatars follow no one, it shows no one followed, and its view does not move when the room follows someone"
+  attr :people, :any, default: nil, doc: "removed in 0.5: `issho`'s `:people`"
+  attr :follow, :any, default: nil, doc: "removed in 0.5: `issho`'s `:follow`"
 
   attr :user, :map,
     default: nil,
@@ -464,6 +457,7 @@ defmodule Masu.Components do
     check_declared!(assigns)
 
     check_people!(assigns)
+    assigns = assign(assigns, :issho_join, issho_join(assigns.issho))
 
     ~H"""
     <.live_component
@@ -487,9 +481,9 @@ defmodule Masu.Components do
       row_editable={@row_editable}
       scope={@scope}
       history={@history}
-      issho_config={@issho}
-      show_people={@people}
-      follow={@follow}
+      issho_config={@issho_join}
+      show_people={@issho_join == nil or @issho_join.people}
+      follow={@issho_join == nil or @issho_join.follow}
       user={@user}
       share_view={@share_view}
       tree={@tree}
@@ -546,6 +540,22 @@ defmodule Masu.Components do
   # A block, and a page, are one read of the source: no larger than the
   # most rows of a read.
   # Views and people need to know who the person is.
+  # The grid's issho attribute, checked (Issho.Join, and Masu's `:actor`).
+  defp issho_join(nil), do: nil
+
+  defp issho_join(issho) do
+    live = Masu.Issho.Live
+
+    unless Code.ensure_loaded?(live),
+      do:
+        raise(
+          ArgumentError,
+          "<.data_grid issho={...}> needs {:issho, \"~> 0.3\"} in your dependencies"
+        )
+
+    live.join!(issho)
+  end
+
   defp check_people!(assigns) do
     if assigns.views && is_nil(assigns.user) do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with views needs user"
@@ -555,11 +565,18 @@ defmodule Masu.Components do
       raise ArgumentError, "<.data_grid id=#{inspect(assigns.id)}> with issho needs user"
     end
 
+    for attr <- [:people, :follow], assigns[attr] != nil do
+      raise ArgumentError, """
+      <.data_grid id=#{inspect(assigns.id)}> has #{attr}, which Masu 0.5 moved into issho: \
+      issho={[instance: MyApp.Issho, document: "notebook:42/tasks", #{attr}: false]}\
+      """
+    end
+
     if assigns.presence do
       raise ArgumentError, """
       <.data_grid id=#{inspect(assigns.id)}> has presence, which Masu 0.4 removed: \
       a grid's people are those of an Issho room. Give it \
-      issho={[instance: MyApp.Issho, room: "orders"]} and user; see the Upgrading guide.\
+      issho={[instance: MyApp.Issho, document: "orders"]} and user; see the Upgrading guide.\
       """
     end
   end

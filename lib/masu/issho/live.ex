@@ -12,9 +12,10 @@ if Code.ensure_loaded?(Issho.Live) do
     #   * "place": `%{"doc" => "room/grid", "at" => %{"cell" => [id, key],
     #     "range" => %{"rows" => ids, "keys" => keys}}}`, the person's cell;
     #   * "locks": the cell they are editing;
-    #   * "masu": `%{"room/grid" => %{"view" => query, "top" => id}}`, the
-    #     grids they have open, with their view (to follow them) and their
-    #     first row on the screen;
+    #   * "blocks": `%{"room/grid" => %{"open" => true, "view" => query,
+    #     "top" => id}}`, the grids they have open (Masu's own keys, under
+    #     the grid's document: Issho.Awareness), with their view (to follow
+    #     them) and their first row on the screen;
     #   * "pointer": `%{"doc" => "room/grid", "at" => %{"cell" => [id, key],
     #     "x" => x, "y" => y}}`, their pointer over a cell, which the grid
     #     shares when no Issho pointers of its room are on the page (a grid
@@ -22,25 +23,46 @@ if Code.ensure_loaded?(Issho.Live) do
     #     it as their own.
 
     @doc false
+    # The grid's `issho` attribute, checked (Issho.Join): the keys of every
+    # component, and Masu's own `:actor`.
+    @spec join!(term()) :: Issho.Join.t()
+    def join!(%Issho.Join{} = join), do: join
+
+    def join!(issho) when is_list(issho) or is_map(issho) do
+      if Enum.any?([:room, :grid], &Access.get(issho, &1)) do
+        raise ArgumentError, """
+        a grid's issho takes :document in Masu 0.5, not :room and :grid: \
+        issho={[instance: MyApp.Issho, document: "notebook:42/tasks"]}, whose room is \
+        the part before the first "/"; see the Upgrading guide\
+        """
+      end
+
+      Issho.Join.new!(issho, [:actor])
+    end
+
+    @doc false
     # The grid's settings, of its `issho` attribute.
     @spec config(term(), map() | nil) :: map()
-    def config(issho, user) when is_list(issho) or is_map(issho) do
-      issho = Map.new(issho)
+    def config(issho, user) do
+      join = join!(issho)
+      actor = Map.get(join.extra, :actor) || user
+      opts = Issho.Join.grant_opts(join)
 
       %{
-        instance: Map.fetch!(issho, :instance),
-        room: Map.fetch!(issho, :room),
-        actor: Map.get(issho, :actor) || user,
-        grid: issho |> Map.get(:grid) |> then(&(&1 && to_string(&1))),
-        opts: issho |> Map.take([:can, :claims, :on_behalf_of]) |> Keyword.new()
+        instance: join.instance,
+        room: join.room,
+        doc: join.document,
+        actor: actor,
+        identity: Issho.Identity.new(actor, Keyword.take(opts, [:claims, :on_behalf_of])),
+        opts: opts
       }
     end
 
     @doc false
     @spec doc(map(), String.t()) :: String.t()
-    # The grid's document in the room: its name there (`grid`), else its
-    # id. A grid of one name is one grid, on its page and in a document.
-    def doc(%{room: room} = config, grid), do: room <> "/" <> (Map.get(config, :grid) || grid)
+    # The grid's document: one name is one grid, on its page and in a
+    # document.
+    def doc(%{doc: doc}, _grid), do: doc
 
     @doc false
     # Joins the room for the grid (the LiveView's session there, if it has
@@ -65,19 +87,14 @@ if Code.ensure_loaded?(Issho.Live) do
     def put(config, grid, changes) do
       doc = doc(config, grid)
       state = Issho.Live.awareness(config.room)
-      open = get_in(state, ["masu", doc]) || %{}
 
       open =
-        open
+        %{"open" => true}
         |> put_key("view", changes, :view)
         |> put_key("top", changes, :top)
 
-      state =
-        state
-        |> Map.update("masu", %{doc => open}, &Map.put(&1, doc, open))
-        |> place(doc, changes)
-
-      Issho.Live.aware(config.room, state)
+      with :ok <- Issho.Live.aware(config.room, place(state, doc, changes)),
+           do: Issho.Live.merge_block(config.room, doc, open)
     end
 
     @doc false
@@ -108,12 +125,17 @@ if Code.ensure_loaded?(Issho.Live) do
 
       state =
         state
-        |> Map.update("masu", %{}, &Map.delete(&1, doc))
         |> Map.update("locks", [], &Enum.reject(&1, mine?))
         |> Map.update("place", nil, &if(mine?.(&1), do: nil, else: &1))
         |> Map.update("pointer", nil, &if(mine?.(&1), do: nil, else: &1))
 
-      Issho.Live.aware(config.room, state)
+      with :ok <- Issho.Live.aware(config.room, state),
+           do:
+             Issho.Live.merge_block(config.room, doc, %{
+               "open" => nil,
+               "view" => nil,
+               "top" => nil
+             })
     end
 
     defp put_key(map, name, changes, key) do
@@ -177,7 +199,7 @@ if Code.ensure_loaded?(Issho.Live) do
     end
 
     defp here?(state, doc) when is_map(state),
-      do: match?(%{"doc" => ^doc}, state["place"]) or is_map_key(state["masu"] || %{}, doc)
+      do: match?(%{"doc" => ^doc}, state["place"]) or Issho.Awareness.block(state, doc) != %{}
 
     defp here?(_state, _doc), do: false
 
@@ -191,7 +213,7 @@ if Code.ensure_loaded?(Issho.Live) do
         Enum.find(states, &cell(&1, doc)) || Enum.find(states, &here?(&1, doc)) || hd(states)
 
       meta = person_meta(Map.get(metas, key))
-      open = get_in(state, ["masu", doc]) || %{}
+      open = Issho.Awareness.block(state, doc)
       cell = cell(state, doc)
       name = meta["name"]
 
@@ -241,9 +263,29 @@ if Code.ensure_loaded?(Issho.Live) do
     # The color of the grid's own person in the room, for the flash of the
     # rows they save.
     @spec color_of(map()) :: String.t()
-    def color_of(config) do
-      identity = Issho.Identity.new(config.actor)
-      color(%{"color" => identity.color}, identity.key)
+    def color_of(config), do: color(%{"color" => config.identity.color}, config.identity.key)
+
+    @doc false
+    # Says in the room that the grid saved rows (`Issho.Events`): a
+    # "document.changed" of the grid's document, by whom, with what.
+    @spec changed(map() | nil, Masu.Write.t()) :: :ok
+    def changed(nil, _write), do: :ok
+
+    def changed(%{instance: instance, room: room, doc: doc}, %Masu.Write{} = write) do
+      case Masu.Write.saved(write) do
+        [] ->
+          :ok
+
+        saved ->
+          _ =
+            Issho.Events.emit(instance, room, "document.changed",
+              document: doc,
+              by: write.by,
+              data: %{op: write.op, count: length(saved)}
+            )
+
+          :ok
+      end
     end
 
     # Issho's colors: the person's own (Issho checks it), else the theme's

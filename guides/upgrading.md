@@ -29,6 +29,10 @@ move. A grid without `issho` needs nothing.
 | scrolling or a key in the grid stopped following in the grid | it stops following in the room |
 | `config :masu, Masu.Issho, pace: 120`: the agent saved, then waited | the agent goes to the cell (`travel`, true), "types" for `pace`, then saves; `pace: 0, travel: false` for changes at once |
 | `{:issho, "~> 0.2"}` | `{:issho, "~> 0.3"}` |
+| `issho={[instance: MyApp.Issho, room: "orders"]}` (the grid's place `"orders/<its id>"`) | `issho={[instance: MyApp.Issho, document: "orders"]}`: the keys of every component (`Issho.Join`); the grid's document is its name, whose room is the part before the first `"/"` |
+| `people={false}`, `follow={false}` | `issho={[..., people: false, follow: false]}` |
+| the grid's `"masu"` key at the top of a person's state | under the grid's document, in `"blocks"` |
+| a `Masu.Write` had no author | its `by`: an `Issho.Identity` on a grid with `issho`, else the grid's `user`; each saved write emits `"document.changed"` in the room |
 
 The grid's markup is the same: its avatars carry `data-issho-follow-control`,
 so that pressing one is not taken for the person going their own way.
@@ -39,9 +43,23 @@ so that pressing one is not taken for the person going their own way.
 2. **Load Issho's script** on the page, if it is not there yet: following
    across the page, and the pointers, are its (`Hooks` from `issho`, in
    your LiveSocket). A grid follows within itself without it.
-3. **List the page's people once**: `Issho.Components.people/1`, and
-   `people={false}` on the grid, on a page with several blocks in the room.
-   A click on someone there follows them.
+3. **Join with `document`.** `room:`, and the `people` and `follow`
+   attributes, raise with what to write instead:
+
+   ```diff
+   -<.data_grid id="orders" ... issho={[instance: MyApp.Issho, room: "orders"]} follow={false} user={@user} />
+   +<.data_grid id="orders" ... issho={[instance: MyApp.Issho, document: "orders", follow: false]} user={@user} />
+   ```
+
+   A grid's document is what its place in the room was: `"orders/orders"`
+   for a grid `orders` in the room `"orders"` before, so give it
+   `document: "orders/orders"` to keep its people's places, or a name of
+   your own (`"orders"`, a room of its own).
+4. **List the page's people once**: `Issho.Components.people/1`, and
+   `issho`'s `people: false` on the grid, on a page with several blocks in
+   the room. A click on someone there follows them.
+5. **Agents' tools** name a grid by its document already
+   (`"notebook:42/tasks"`): nothing changes.
 
 ## To Masu 0.4
 

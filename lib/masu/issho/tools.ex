@@ -311,7 +311,7 @@ if Code.ensure_loaded?(Issho.Tool) do
     end
 
     defp write(grid, edits, origin),
-      do: Sheet.update(grid.sheet, edits, scope: grid.scope, user: grid.user, origin: origin)
+      do: Sheet.update(grid.sheet, edits, Masu.Issho.write_opts(grid) ++ [origin: origin])
 
     defp result(0, [_ | _] = errors),
       do: {:error, "Nothing saved: " <> Enum.map_join(Grid.errors(errors), " ", &describe/1)}
@@ -351,7 +351,7 @@ if Code.ensure_loaded?(Issho.Tool) do
            :ok <- Participant.authorize(grid.participant, :write),
            true <- Sheet.can(grid.sheet).create || {:error, "This grid does not add rows."} do
         drafts = Enum.map(rows, &Map.new(&1, fn {key, value} -> {to_string(key), value} end))
-        results = Sheet.create(grid.sheet, drafts, scope: grid.scope, user: grid.user)
+        results = Sheet.create(grid.sheet, drafts, Masu.Issho.write_opts(grid))
 
         ids = for {:ok, row} <- results, do: Sheet.id(grid.sheet, row)
 
@@ -401,7 +401,7 @@ if Code.ensure_loaded?(Issho.Tool) do
         keys = Enum.map(Sheet.columns(grid.sheet), & &1.key)
         :ok = Masu.Issho.go(grid, {ids, keys})
         :ok = Masu.Issho.pause(grid, {ids, keys}, if(Masu.Issho.travel?(), do: 300, else: 0))
-        result = Sheet.delete(grid.sheet, ids, scope: grid.scope, user: grid.user)
+        result = Sheet.delete(grid.sheet, ids, Masu.Issho.write_opts(grid))
         _ = Participant.place(grid.participant, nil)
 
         case result do

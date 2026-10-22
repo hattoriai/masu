@@ -42,6 +42,10 @@ defmodule Masu.Write do
       `:undo` (rows back); `:test` from `Masu.Test`;
     * `scope` - the grid's `scope`: the current user, their
       organization, as your app has it (`@current_scope`);
+    * `by` - who makes it: on a grid in an Issho room (`issho`), and for
+      an agent's tools, an `Issho.Identity` (a person, an agent and whom
+      it acts for), the same as every component's callbacks get; else the
+      grid's `user`;
     * `grid` - the id of the grid;
     * `ref` - the write's reference, for `async/1` and `Masu.reply/2`.
 
@@ -154,6 +158,7 @@ defmodule Masu.Write do
           op: op(),
           origin: atom(),
           scope: term(),
+          by: term(),
           ref: String.t(),
           changes: [Change.t()],
           results: %{non_neg_integer() => result()},
@@ -166,6 +171,7 @@ defmodule Masu.Write do
     :grid,
     :op,
     :scope,
+    :by,
     :ref,
     origin: :edit,
     changes: [],
