@@ -214,6 +214,14 @@ export class Grid {
   // that it glides to their next cell; and when a range they selected from
   // a cell began to sweep over its rows.
   private peerMarks = new Map<string, HTMLElement>();
+  /** The others' pointers over cells, when the grid draws them (no Issho pointers of its room on the page). */
+  private peerPointers = new Map<string, HTMLElement>();
+  /** This person's pointer over a cell, to share, and the last one shared. */
+  private pointerAt: { cell: [unknown, string]; x: number; y: number } | null = null;
+  private pointerTimer: number | null = null;
+  private sentPointer = "null";
+  /** The person this grid scrolled into view for, following them. */
+  private shownFor: string | null = null;
   private peerHadRange = new Map<string, boolean>();
   private peerSweeps = new Map<string, number>();
   private sentCursor = "null";
@@ -2277,6 +2285,28 @@ export class Grid {
     for (const type of ["wheel", "touchstart", "mousedown", "keydown"] as const) {
       this.on(this.gridEl, type, () => this.goOwnWay(), { passive: true });
     }
+    // The copy of a grid the person uses (a grid twice on a page: a
+    // document with the same view twice) says where they are; the others
+    // say nothing.
+    for (const type of ["pointerenter", "pointerdown", "focusin"] as const) {
+      this.on(this.el, type, () => {
+        const doc = this.el.dataset.isshoDoc;
+        if (doc) activeIn.set(doc, this);
+      }, { passive: true });
+    }
+    this.cleanups.push(() => {
+      const doc = this.el.dataset.isshoDoc;
+      if (doc && activeIn.get(doc) === this) activeIn.delete(doc);
+    });
+    // The person's pointer over a cell, for the others, when no Issho
+    // pointers of the grid's room are on the page (a grid in a document of
+    // another room): Issho's would share it, and the grid takes their place.
+    this.on(this.el, "pointermove", (event) => {
+      const move = event as PointerEvent;
+      if (move.pointerType === "touch") return;
+      this.sharePointer(this.cellUnder(move.clientX, move.clientY));
+    }, { passive: true });
+    this.on(this.el, "pointerleave", () => this.sharePointer(null), { passive: true });
     // Whom the room is followed in: from this grid's people, the page's
     // people list, or any block of the room.
     const onFollowing = (event: Event): void => {
@@ -4306,6 +4336,44 @@ export class Grid {
       mark.remove();
       this.peerMarks.delete(id);
     }
+    this.drawPointers(rowsById);
+  }
+
+  // The others' pointers over its cells, which the grid draws when no
+  // Issho pointers of its room are on the page: an arrow and their name,
+  // at the same spot of the same cell for each person, whatever their
+  // order, filters and scroll.
+  private drawPointers(rowsById: Map<string, number>): void {
+    const drawn = new Set<string>();
+    if (!this.roomLayer()) {
+      for (const person of this.people) {
+        const at = person.pointer;
+        if (!at) continue;
+        const index = rowsById.get(JSON.stringify(at.cell[0]));
+        const col = this.columns.findIndex((column) => column.key === at.cell[1]);
+        if (index === undefined || col < 0) continue;
+        drawn.add(person.id);
+        let el = this.peerPointers.get(person.id);
+        if (!el) {
+          el = document.createElement("div");
+          el.className = "masu-pointer";
+          el.setAttribute("aria-hidden", "true");
+          el.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16"><path d="M1 1 L1 13 L4.5 9.5 L7 15 L9 14 L6.5 8.5 L11.5 8.5 Z"/></svg><span class="masu-pointer-name"></span>';
+          this.peerPointers.set(person.id, el);
+        }
+        el.querySelector(".masu-pointer-name")!.textContent = person.name ?? "";
+        el.style.setProperty("--masu-peer-color", person.color);
+        const x = this.colLeft(col) + at.x * this.widths[col];
+        const y = this.rowY(index) + at.y * this.config.rowHeight;
+        el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+        if (el.parentNode !== this.body) this.body.appendChild(el);
+      }
+    }
+    for (const [id, el] of this.peerPointers) {
+      if (drawn.has(id)) continue;
+      el.remove();
+      this.peerPointers.delete(id);
+    }
   }
 
   /**
@@ -4416,6 +4484,14 @@ export class Grid {
     };
     this.following = id;
     this.refusedView = null;
+    // A grid in a page (a document) comes into view once for the person it
+    // follows, when it is off the screen; the page then scrolls as this
+    // person likes.
+    if (this.shownFor !== id) {
+      this.shownFor = id;
+      const rect = this.el.getBoundingClientRect();
+      if (rect.bottom <= 0 || rect.top >= document.documentElement.clientHeight) this.el.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+    }
     this.follow();
   }
 
@@ -4635,7 +4711,7 @@ export class Grid {
 
   /** Tells the others where this person is, when it changes, at most every 150 ms. */
   private reportCursor(): void {
-    if (!this.config.presence || this.cursorTimer) return;
+    if (!this.config.presence || this.cursorTimer || !this.inUse()) return;
     this.cursorTimer = setTimeout(() => {
       this.cursorTimer = null;
       const data = this.active.row >= 0 ? this.dataAt(this.active.row) : undefined;
@@ -4651,6 +4727,33 @@ export class Grid {
       this.sentCursor = cursor;
       this.transport.push("masu:cursor", { cell, range, editing, top });
     }, CURSOR_DELAY);
+  }
+
+  /** Whether this copy of the grid is the one the person uses (there is one, or this is it). */
+  private inUse(): boolean {
+    const doc = this.el.dataset.isshoDoc;
+    const active = doc ? activeIn.get(doc) : undefined;
+    return !active || active === this || !active.el.isConnected;
+  }
+
+  /** Whether Issho's pointers of the grid's room are on the page: they share and draw the pointers. */
+  private roomLayer(): boolean {
+    const room = this.room();
+    return !!room && document.querySelector(`.issho-pointers[data-room="${CSS.escape(room)}"]`) !== null;
+  }
+
+  /** Shares this person's pointer over a cell (or none), at most every 60 ms. */
+  private sharePointer(at: { cell: [unknown, string]; x: number; y: number } | null): void {
+    if (!this.config.presence || this.roomLayer() || !this.inUse()) return;
+    this.pointerAt = at;
+    if (this.pointerTimer !== null) return;
+    this.pointerTimer = window.setTimeout(() => {
+      this.pointerTimer = null;
+      const json = JSON.stringify(this.pointerAt);
+      if (json === this.sentPointer) return;
+      this.sentPointer = json;
+      this.transport.push("masu:pointer", { at: this.pointerAt });
+    }, 60);
   }
 
   // Selection and copy.
@@ -5213,3 +5316,7 @@ function scrollParent(el: HTMLElement): Element {
   }
   return document.scrollingElement ?? document.documentElement;
 }
+
+// The copy of each grid's document the person uses last, when a page has
+// it twice: that one says where they are.
+const activeIn = new Map<string, Grid>();

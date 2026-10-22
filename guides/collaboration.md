@@ -49,7 +49,9 @@ person, and agents that work across all three.
    image's URL) if you have them.
 
 The grid is a place of the room: `"orders/orders"`, the room and the
-grid's id. A person's cell and range go into the room's awareness, the
+grid's name there, its id unless `issho` says `grid` (`grid: "orders"`):
+the same grid in two places of the app (its page, an embed in a
+document, whose ids differ) is one grid, with one people. A person's cell and range go into the room's awareness, the
 cell they edit is a lock of the room, and their view goes with them, for
 following. The colors are Issho's: a person's own, else their color of
 the room's palette in Issho's theme (`issho.css`), as Issho's list of
@@ -59,6 +61,30 @@ others: someone with the grid open in two tabs does not see themselves.
 On a page that lists the room's people itself
 (`Issho.Components.people/1`), `people={false}` leaves out the avatars
 above the grid; the cells still show who is where.
+
+## In a document, and pointers
+
+A grid embedded in a document (see [In a document](documents.md)) is in
+its own room, whatever the document's: everyone with the grid open, in a
+document or on its page, sees the others there, their cells and their
+pointers.
+
+* Give the grid its name in the room (`grid`), the same everywhere it is.
+* A pointer over a cell is that cell: Issho's pointers of the grid's room
+  (`Issho.Components.pointers/1`) share and draw it, the same spot of the
+  same cell on every screen. On a page without them (a document of
+  another room, whose pointers leave the grid to its room), the grid
+  shares its person's pointer itself, and draws the others'.
+* A reader of the document (`can: :read` in `issho`) is a viewer of the
+  grid's room.
+* The same grid twice on a page: the copy the person uses says where they
+  are, the others say nothing.
+* A grid that goes from the page while its LiveView stays (an embed
+  deleted from the document) lets its room go: the others see the person
+  leave it, or, when another grid of the room stays, leave this grid.
+* Following someone into the grid, from the document's people list,
+  follows them in the grid too; following from the grid's avatars brings
+  it into view, once, when it is off the screen.
 
 ## Places, not positions
 
@@ -191,7 +217,8 @@ your view") are in the grid's `messages`: `peer_typing`, `peer_editing`,
 ## What travels
 
 A person's place (their cell, range and first row on the screen) goes to
-the server when it changes, at most every 150 ms, and to the others
+the server when it changes, at most every 150 ms (their pointer over a
+cell, when the grid shares it, every 60 ms), and to the others
 through the room's awareness; Issho's presence notices a person who
 leaves or whose connection drops. A person's name, color and
 avatar, and their view unless `share_view={false}`, go to everyone who
