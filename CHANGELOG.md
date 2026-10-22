@@ -5,7 +5,7 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - 2026-10-21
+## [0.5.0] - 2026-10-22
 
 On Issho 0.3: following and agents' motion are the room's.
 
