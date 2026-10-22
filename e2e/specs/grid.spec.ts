@@ -319,6 +319,21 @@ test.describe("editing", () => {
 });
 
 test.describe("two people", () => {
+  // A shared grid lets its room go when it goes: on a navigation away its
+  // LiveView is gone too, which is no error of the page.
+  test("a shared grid that goes with its page, by a navigation, throws nothing", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    const room = `leave-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await openPage(page, `/together?as=Ada&room=${room}`);
+    await expect(page.locator("#together[data-issho-doc]")).toBeAttached();
+    await page.evaluate(() => (window as unknown as { liveSocket: { js(): { navigate(href: string): void } } }).liveSocket.js().navigate("/small"));
+    await expect(page).toHaveURL(/\/small$/);
+    await expect(page.locator("[data-phx-main].phx-connected")).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(errors).toEqual([]);
+  });
+
   // Without presence, nothing stops Ada from editing the cell Alan types
   // in: the server's compare-and-swap is what refuses his stale edit.
   test("an edit shows in the other browser, and an edit of a cell changed meanwhile is refused", async ({ browser }) => {

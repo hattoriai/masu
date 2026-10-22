@@ -62,8 +62,10 @@ export const Masu = {
     // deleted from a document): its room lets it go (Issho.Live.release/2).
     const doc = this.el.dataset.isshoDoc;
     if (doc) {
+      // A reply of no use: the LiveView may have gone with it (a navigation), and so did its rooms;
+      // without one, LiveView rejects a promise no one awaits.
       try {
-        this.pushEvent("issho:release", { room: doc.slice(0, doc.indexOf("/")), component: this.el.id });
+        this.pushEvent("issho:release", { room: doc.slice(0, doc.indexOf("/")), component: this.el.id }, () => {});
       } catch {
         // The LiveView went with it: so did its rooms.
       }

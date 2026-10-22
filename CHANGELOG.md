@@ -67,6 +67,12 @@ On Issho 0.3: following and agents' motion are the room's.
   `--issho-following-background`, `--issho-following-text` and
   `--issho-following-ring`.
 
+### Fixed
+
+- A shared grid that goes with its page (a navigation) throws no error:
+  it let its room go through a LiveView already gone, whose promise no
+  one awaited.
+
 ## [0.4.0] - 2026-10-21
 
 ### Changed (breaking)
