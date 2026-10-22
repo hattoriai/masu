@@ -254,6 +254,97 @@ defmodule Masu.PresenceTest do
     assert_eventually(fn -> render(ada) =~ ~s[<b class="mine">Alan (A)</b>] end)
   end
 
+  test "a grid's own keys of a person's state are under its document", %{room: room} do
+    {:ok, watcher} = Issho.join_as(MasuTest.Issho, %{id: "watcher"}, room)
+    alan = open(room, "alan")
+    doc = room <> "/people"
+
+    render_hook(element(alan, "#people"), "masu:cursor", %{
+      "cell" => [3, "name"],
+      "editing" => false,
+      "top" => 3
+    })
+
+    state = alan_state(watcher, &Map.has_key?(&1, "place"))
+
+    assert %{
+             "blocks" => %{^doc => %{"open" => true, "top" => 3}},
+             "place" => %{"doc" => ^doc, "at" => %{"cell" => [3, "name"]}}
+           } = state
+
+    refute Map.has_key?(state, "masu")
+  end
+
+  # Alan's state, as the room sends it, once it is as `ready?` says.
+  defp alan_state(watcher, ready?) do
+    assert_receive {Issho.Participant, ^watcher, "aware", %{"states" => states}}, 1000
+
+    found =
+      Enum.find_value(states, fn
+        {_session, %{"key" => "alan", "state" => state}} -> if ready?.(state), do: state
+        _other -> nil
+      end)
+
+    found || alan_state(watcher, ready?)
+  end
+
+  test "a saved write is by the person, and the room hears of it", %{room: room} do
+    :ok = Issho.Events.subscribe(MasuTest.Issho, room)
+    alan = open(room, "alan")
+    doc = room <> "/people"
+
+    assert :ok = edit(alan, "people", [{2, "name", "Alan"}])
+
+    assert_receive {Issho, :event,
+                    %Issho.Event{
+                      name: "document.changed",
+                      document: ^doc,
+                      by: %Issho.Identity{key: "alan", name: "Alan"},
+                      data: %{op: :update, count: 1}
+                    }}
+  end
+
+  test "a grid's issho takes the keys of every component, and says what replaced room and grid" do
+    grid = fn assigns ->
+      render_component(
+        &Masu.Components.data_grid/1,
+        [
+          id: "x",
+          rows: [],
+          user: %{id: 1},
+          col: [%{field: :name, __slot__: :col, inner_block: nil}]
+        ] ++
+          assigns
+      )
+    end
+
+    assert_raise ArgumentError, ~r/takes :document in Masu 0.5/, fn ->
+      grid.(issho: [instance: MasuTest.Issho, room: "r", grid: "g"])
+    end
+
+    assert_raise ArgumentError, ~r/not \[:rooms\]/, fn ->
+      grid.(issho: [instance: MasuTest.Issho, document: "r/g", rooms: 1])
+    end
+
+    assert_raise ArgumentError, ~r/moved into issho/, fn -> grid.(people: false) end
+    assert_raise ArgumentError, ~r/moved into issho/, fn -> grid.(follow: false) end
+  end
+
+  test "a place in a grid is a cell, a range, and a pointer in a cell" do
+    alias Masu.Issho.Place
+
+    for place <- [
+          nil,
+          %{"cell" => [1, "name"]},
+          %{"cell" => ["a", "name"], "range" => %{"rows" => [1, 2], "keys" => ["name"]}},
+          %{"cell" => [1, "name"], "x" => 0.5, "y" => 1}
+        ],
+        do: assert(:ok = Place.validate(place))
+
+    for place <- [%{}, %{"cell" => [1]}, %{"cell" => [1, 2]}, %{"x" => 2}, %{"row" => 1}],
+        do: assert({:error, _} = Place.validate(place))
+  end
+
   test "a grid with presence says it moved to issho" do
     assert_raise ArgumentError, ~r/presence, which Masu 0.4 removed/, fn ->
       render_component(&Masu.Components.data_grid/1,

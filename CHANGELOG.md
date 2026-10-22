@@ -26,15 +26,33 @@ On Issho 0.3: following and agents' motion are the room's.
 - Marks glide and ranges sweep only for a person who wants motion, as the
   app says it (Issho's `data-issho-motion`), else the browser's setting.
 - Requires `{:issho, "~> 0.3"}`.
+- A grid joins with `issho`'s keys of every component (`Issho.Join`:
+  `:instance`, `:document`, `:can`, `:people`, `:follow`, `:on_behalf_of`,
+  `:claims`) and Masu's `:actor`: `issho={[instance: MyApp.Issho,
+  document: "notebook:42/tasks"]}`. `:room` (and this version's `:grid`)
+  and the `people` and `follow` attributes are removed, and raise with
+  what to write instead; an unknown key raises.
+- Masu's own keys of a person's state are under the grid's document, in
+  `"blocks"`, not in a top-level `"masu"`; Issho owns the top-level keys.
 
 ### Added
+
+- A write's author: `Masu.Write`'s `by`, an `Issho.Identity` on a grid
+  with `issho` and for an agent's tools (the agent and whom it acts for),
+  else the grid's `user`. Every callback (`on_update`, `on_create`,
+  `on_delete`, `on_restore`) has it. `Masu.Sheet` takes `by`.
+- Each saved write of a grid with `issho`, or of an agent, emits
+  `"document.changed"` in the room (`Issho.Events`), with `by` and
+  `data: %{op:, count:}`.
+- A place in a grid has a documented format, part of the API
+  (`Masu.Issho.Place`: a cell, a range, a pointer in a cell).
 
 - A grid in a document (a Kotoba embed, see the "In a document" guide):
   `height="auto"`, as tall as its rows up to `max_height`; `wheel={:page}`,
   the wheel the page's until the person is in the grid; and `view`, the
   view it opens with (a saved view's params).
 - A grid in a document of another room (a Kotoba document): `issho`
-  takes `grid`, its name in the room, so that an embed and the grid's
+  takes its `document`, the same wherever it is, so that an embed and the grid's
   own page are one grid; on a page without Issho's pointers of its room,
   the grid shares its person's pointer over a cell and draws the
   others'; the copy of a grid in use says where its person is when a

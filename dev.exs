@@ -800,7 +800,10 @@ defmodule MasuDev.TogetherLive do
        topic: "together:" <> (params["room"] || "main"),
        issho:
          if(params["presence"] != "0",
-           do: [instance: MasuDev.Issho, room: "together:" <> (params["room"] || "main")]
+           do: [
+             instance: MasuDev.Issho,
+             document: "together:" <> (params["room"] || "main") <> "/together"
+           ]
          ),
        share_view: params["share"] != "0",
        locale: params["locale"] || "en-GB"

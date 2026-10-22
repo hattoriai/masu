@@ -5,8 +5,9 @@ if Code.ensure_loaded?(Issho.Tool) do
     read and change a grid as a person does, and the people who have it
     open see where they are and what they change.
 
-    A grid of a room is named as a document of it is, `"room/grid"`
-    (`"notebook:42/tasks"`): the room, and the grid's id. Its rows stay
+    A grid is named as a document is, `"room/grid"` (`"notebook:42/tasks"`):
+    its `issho` `:document`, whose room is the part before the first
+    `"/"`. A place in a grid is `Masu.Issho.Place`. Its rows stay
     the grid's own: its source reads them, and its writes save them, the
     grid's way (`Masu.Sheet`). Issho carries who is there and where.
 
@@ -85,7 +86,9 @@ if Code.ensure_loaded?(Issho.Tool) do
            participant: participant,
            sheet: Sheet.new(attrs),
            scope: attrs[:scope],
-           user: user(ctx)
+           user: user(ctx),
+           by: Issho.Identity.new(ctx.actor, Keyword.take(ctx.opts, [:claims, :on_behalf_of])),
+           issho: %{instance: ctx.instance, room: room, doc: grid}
          }}
       else
         {:error, reason} -> Context.error(reason)
@@ -110,6 +113,14 @@ if Code.ensure_loaded?(Issho.Tool) do
         nil -> {:error, "There is no grid #{grid}."}
       end
     end
+
+    @doc false
+    # The options of the agent's writes (Masu.Sheet): who, for the
+    # history, the rows' flash and the write's `by`; and the room, which
+    # hears of them ("document.changed").
+    @spec write_opts(map()) :: keyword()
+    def write_opts(grid),
+      do: [scope: grid.scope, user: grid.user, by: grid.by, issho: grid.issho]
 
     # Who writes, for the grid's history and the rows' flash.
     defp user(ctx) do

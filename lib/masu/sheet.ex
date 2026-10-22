@@ -172,7 +172,8 @@ defmodule Masu.Sheet do
   key, "value" => value}`, with `"before"`, the value seen, to refuse an
   edit of a cell someone changed since. Options: `scope` (in the
   `Masu.Write`), `user` (who, for the history and the people who see the
-  rows change: `%{id:, name:}`), and `origin` (`:edit`, `:paste`...).
+  rows change: `%{id:, name:}`), `by` (who, as the write's `by` says
+  them; `user` unless given), and `origin` (`:edit`, `:paste`...).
 
   Gives the rows saved, and the errors, each `[id, key, message]` or,
   for a cell changed meanwhile, `[id, key, message, value]`.
@@ -238,7 +239,9 @@ defmodule Masu.Sheet do
       all_columns: sheet.columns,
       columns: sheet.columns,
       scope: opts[:scope],
-      user: opts[:user]
+      user: opts[:user],
+      by: opts[:by],
+      issho_event: opts[:issho]
     })
   end
 
