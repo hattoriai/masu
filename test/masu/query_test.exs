@@ -95,6 +95,23 @@ defmodule Masu.QueryTest do
              Query.from_wire(%{"sorts" => [%{"key" => "age", "dir" => "up"}]}, @columns)
   end
 
+  test "fit/2 keeps the filters it cast: the rows of a controlled grid come again" do
+    {:ok, query} =
+      Query.new(
+        [
+          filters: [
+            {"age", :gt, "30"},
+            {"born", :lt, "1900-01-01"},
+            {"total", :gte, "120.50"},
+            {"total", :between, ["1", "2.5"]}
+          ]
+        ],
+        @columns
+      )
+
+    assert Query.fit(query, @columns) == {query, []}
+  end
+
   test "new/2 takes Elixir terms, and to_wire/1 gives them back" do
     assert {:ok, query} =
              Query.new(
