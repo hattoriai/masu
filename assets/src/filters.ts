@@ -101,6 +101,40 @@ export function inputType(type: ColumnType): string {
   }
 }
 
+const ZONED = /(Z|[+-]\d{2}:?\d{2})$/;
+
+/** Whether a datetime has a zone (`Z` or an offset): a `DateTime`'s, not a `NaiveDateTime`'s. */
+export function zoned(value: unknown): boolean {
+  return typeof value === "string" && ZONED.test(value);
+}
+
+/**
+ * A filter's value in a browser's input. A datetime-local input has no
+ * zone: a datetime with one shows in the browser's time, one without as
+ * it is written.
+ */
+export function inputValue(value: string, type: string): string {
+  if (type !== "datetime-local") return value;
+  if (!zoned(value)) return value.slice(0, 19);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+/**
+ * A browser's input as a filter's value. A datetime-local input gives the
+ * browser's local time: for a column of datetimes with a zone, it goes to
+ * the server with the browser's offset (in UTC); for one of datetimes
+ * without (`zoned` false), as it is written, as the cells show them.
+ */
+export function filterValue(value: string, type: string, zoned = true): string {
+  if (type !== "datetime-local" || value === "") return value;
+  if (!zoned) return value.length === 16 ? `${value}:00` : value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
 /**
  * The filter that a menu's inputs make, or `null` when they make none (an
  * empty value, or an empty list).

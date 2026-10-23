@@ -5,7 +5,7 @@
 // with a search box when there are many.
 
 import { floats, follow, lift, place as placeAt } from "./float";
-import { arity, inputType, makeFilter, opLabel, opsFor, type Op } from "./filters";
+import { arity, filterValue, inputType, inputValue, makeFilter, opLabel, opsFor, type Op } from "./filters";
 import type { ColumnConfig, FilterSpec } from "./types";
 
 const VALUE_SEARCH_FROM = 8;
@@ -16,6 +16,8 @@ export interface MenuHost {
   root: HTMLElement;
   column: ColumnConfig;
   current: FilterSpec | undefined;
+  /** Of datetimes: whether its values have a zone (false: `NaiveDateTime`s, filtered as written). */
+  zoned?: boolean;
   messages: Record<string, string>;
   format(value: unknown): string;
   fetchValues(search: string | null, done: (values: [unknown, number][]) => void): void;
@@ -217,7 +219,7 @@ export class FilterMenu {
         n === 2 ? (i === 0 ? (messages.from ?? "From") : (messages.to ?? "To")) : column.label,
       );
       const value = values[i];
-      if (value !== undefined && value !== null) input.value = toInputValue(String(value), input.type);
+      if (value !== undefined && value !== null) input.value = inputValue(String(value), input.type);
       this.fields.appendChild(input);
       if (n === 2 && i === 0) {
         const and = document.createElement("span");
@@ -297,7 +299,7 @@ export class FilterMenu {
       return makeFilter(column, this.op, values);
     }
     const inputs = [...this.fields.querySelectorAll<HTMLInputElement | HTMLSelectElement>(".masu-menu-input")];
-    return makeFilter(column, this.op, inputs.map((input) => fromInputValue(input.value, input.type)));
+    return makeFilter(column, this.op, inputs.map((input) => filterValue(input.value, input.type, this.host.zoned ?? true)));
   }
 }
 
@@ -307,23 +309,4 @@ function button(text: string, type: "button" | "submit", className: string): HTM
   el.className = `masu-menu-button ${className}`;
   el.textContent = text;
   return el;
-}
-
-// A datetime-local input has no zone: it shows and gives a value without
-// one. A value with a zone shows in the browser's time.
-function toInputValue(value: string, type: string): string {
-  if (type !== "datetime-local") return value;
-  const zoned = /(Z|[+-]\d{2}:?\d{2})$/.test(value);
-  if (!zoned) return value.slice(0, 19);
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-// The browser's local time, given to the server with the browser's offset.
-function fromInputValue(value: string, type: string): string {
-  if (type !== "datetime-local" || value === "") return value;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
