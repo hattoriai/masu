@@ -229,9 +229,6 @@ defmodule MasuDev.Layouts do
           .badge { display: inline-block; padding: 0 0.5rem; border-radius: 999px; font-size: 0.75rem; line-height: 1.5rem; background: color-mix(in oklab, var(--masu-text) 8%, transparent); color: var(--masu-text); }
           .badge.enterprise { background: color-mix(in oklab, var(--masu-accent) 16%, transparent); color: color-mix(in oklab, var(--masu-accent) 75%, var(--masu-text)); }
           .badge.free { background: transparent; box-shadow: inset 0 0 0 1px var(--masu-border); color: var(--masu-muted); }
-          /* Issho 0.4.0's marks of comments take display: grid, which shows a
-             mark it hides (its place off the screen) where it last was. */
-          .issho-comment-mark[hidden] { display: none; }
         </style>
         <script type="importmap">
           {
