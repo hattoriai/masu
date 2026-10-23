@@ -144,6 +144,7 @@ defmodule MasuTest.ControlledLive do
     >
       <:col field={:name} />
       <:col field={:age} type={:integer} />
+      <:col field={:balance} type={:decimal} />
     </.data_grid>
     """
   end

@@ -137,6 +137,17 @@ defmodule Masu.AsyncTest do
              ]
     end
 
+    test "the person's filters stay when the LiveView's rows come, a decimal's too" do
+      {:ok, view, _html} = live(build_conn(), "/controlled")
+      render_async(view)
+
+      filter(view, "people", [{"balance", :gte, "0"}, {"age", :lt, 80}])
+      render_async(view)
+
+      assert [%{"key" => "balance"}, %{"key" => "age"}] = config(view)["query"]["filters"]
+      assert total(view, "people") == 2
+    end
+
     test "no groups: the LiveView runs the query" do
       {:ok, view, html} = live(build_conn(), "/controlled")
       render_async(view)

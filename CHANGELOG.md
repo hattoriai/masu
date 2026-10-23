@@ -27,6 +27,13 @@ On Issho 0.4.
   say who and what to do, as Issho's tools do; `read_grid` still reads.
   An edit of many cells, one by one, stops at the cell it is on.
 
+### Fixed
+
+- A filter of a decimal column went when the grid's rows came again: a
+  controlled grid's (`on_query`) answer, or new rows of the LiveView. The
+  grid cast the filter's value again, and a decimal it had read was "not
+  of the type decimal". A decimal is now taken as it is.
+
 ## [0.5.0] - 2026-10-22
 
 On Issho 0.3: following and agents' motion are the room's.
