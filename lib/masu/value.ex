@@ -36,6 +36,8 @@ defmodule Masu.Value do
     end
   end
 
+  def cast(:decimal, %{__struct__: Decimal} = decimal), do: {:ok, decimal}
+
   def cast(:decimal, value) when is_number(value) or is_binary(value) do
     if decimal?() do
       case Decimal.cast(value) do

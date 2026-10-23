@@ -12,6 +12,7 @@ defmodule Masu.ValueTest do
     assert Value.cast(:number, "4.5") == {:ok, 4.5}
     assert Value.cast(:number, "4") == {:ok, 4}
     assert {:ok, %Decimal{}} = Value.cast(:decimal, "0.10")
+    assert Value.cast(:decimal, Decimal.new("0.10")) == {:ok, Decimal.new("0.10")}
     assert Value.cast(:date, "2026-10-17") == {:ok, ~D[2026-10-17]}
     assert Value.cast(:datetime, "2026-10-17T10:00:00Z") == {:ok, ~U[2026-10-17 10:00:00Z]}
     assert Value.cast(:datetime, "2026-10-17T10:00:00") == {:ok, ~N[2026-10-17 10:00:00]}
