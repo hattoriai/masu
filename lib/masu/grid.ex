@@ -423,7 +423,7 @@ defmodule Masu.Grid do
   defp restart(socket, input, slots) do
     socket = assign(socket, awaiting: false)
     source = new_source(socket.assigns, input)
-    {columns, types} = columns_for(socket.assigns, slots, source, %{})
+    {columns, types} = columns_for(socket.assigns, slots, source, %{}, socket.assigns.types)
     socket = assign(socket, types: types)
     all = supported(source, columns, socket.assigns)
     {query, dropped} = Query.fit(socket.assigns.query, all)
@@ -627,7 +627,9 @@ defmodule Masu.Grid do
   # source's (c:Masu.Source.columns/1). A column of `type={:auto}` takes
   # the type of its values, which `types` has, by key, when the grid
   # learned it before; else the grid reads a block of the source for it.
-  defp columns_for(assigns, slots, source, types) do
+  # A column whose block has no value keeps its type of `before` (new rows
+  # with none, as a filter that leaves out every row gives), not text.
+  defp columns_for(assigns, slots, source, types, before \\ %{}) do
     columns =
       if slots != [] do
         slots
@@ -643,7 +645,7 @@ defmodule Masu.Grid do
         specs |> Enum.with_index() |> Enum.map(fn {spec, place} -> spec_column(spec, place) end)
       end
 
-    learn_types(columns, source, types, assigns.block_size)
+    learn_types(columns, source, types, assigns.block_size, before)
   end
 
   # A column of `columns` (or a source's): a key, or a :col's attributes.
@@ -662,7 +664,7 @@ defmodule Masu.Grid do
       else: attrs |> Map.put(:field, place) |> Column.new()
   end
 
-  defp learn_types(columns, source, types, block_size) do
+  defp learn_types(columns, source, types, block_size, before) do
     missing = Enum.filter(columns, &(&1.type == :auto and not Map.has_key?(types, &1.key)))
 
     types =
@@ -673,11 +675,21 @@ defmodule Masu.Grid do
         rows = source |> Source.prepare(%Query{}, plain) |> Source.rows(0, block_size)
 
         Enum.reduce(missing, types, fn column, types ->
-          Map.put(types, column.key, Column.infer(Enum.map(rows, &Column.get(column, &1))))
+          Map.put(types, column.key, learned_type(column, rows, before))
         end)
       end
 
     {Enum.map(columns, &Column.typed(&1, Map.get(types, &1.key, :text))), types}
+  end
+
+  # The type of a column's values in a block, or its type of `before` when
+  # the block has none of them.
+  defp learned_type(column, rows, before) do
+    values = Enum.map(rows, &Column.get(column, &1))
+
+    if Enum.all?(values, &is_nil/1),
+      do: Map.get_lazy(before, column.key, fn -> Column.infer(values) end),
+      else: Column.infer(values)
   end
 
   # The columns again (the LiveView rendered the grid again): the person's
