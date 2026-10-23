@@ -5,6 +5,28 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+On Issho 0.4.
+
+### Changed
+
+- Requires `{:issho, "~> 0.4"}`, with Issho (it is optional). Nothing
+  changes in a grid's `issho`.
+
+### Added
+
+- Comments on a grid: Issho's comments (`Issho.Components.comments/1`)
+  go on a cell or a range, and their marks on its cells, in each
+  person's order. `Masu.Issho.label/2` says a grid's place in words
+  ("City of Acme", "Name to City of Acme", "City of 3 rows"), for the
+  panel's `:place` slot. The development app's `/comments` page. See the
+  Collaboration guide.
+- An agent that a person paused or stopped (`Issho.Work`) changes a grid
+  no more: `select_cells`, `edit_cells`, `add_rows` and `delete_rows`
+  say who and what to do, as Issho's tools do; `read_grid` still reads.
+  An edit of many cells, one by one, stops at the cell it is on.
+
 ## [0.5.0] - 2026-10-22
 
 On Issho 0.3: following and agents' motion are the room's.
