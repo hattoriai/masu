@@ -33,6 +33,11 @@ On Issho 0.4.
   controlled grid's (`on_query`) answer, or new rows of the LiveView. The
   grid cast the filter's value again, and a decimal it had read was "not
   of the type decimal". A decimal is now taken as it is.
+- A filter of a column of datetimes without a zone (`NaiveDateTime`s, a
+  `timestamp` column) took the time typed in its menu as the browser's
+  local time, and sent it in UTC: in Tokyo, 11:00 filtered on 02:00,
+  though the cells show the times as they are written. The menu now sends
+  them as typed for such a column; a column of `DateTime`s is unchanged.
 
 ## [0.5.0] - 2026-10-22
 

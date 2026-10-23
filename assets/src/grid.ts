@@ -10,7 +10,7 @@
 
 import { ActionMenu, type MenuItem } from "./actions";
 import { BlockCache } from "./blocks";
-import { allows, describe, replaceFilter } from "./filters";
+import { allows, describe, replaceFilter, zoned } from "./filters";
 import { fromTSV, inputText, invalid, matching, placePaste, sendValue, shownValue } from "./parse";
 import { FilterMenu } from "./menu";
 import { drop, floats, follow, lift, place as placeAt } from "./float";
@@ -1402,6 +1402,7 @@ export class Grid {
         root: this.uiEl,
         column,
         current: this.query.filters.find((filter) => filter.key === column.key),
+        zoned: column.type === "datetime" ? this.zonedValues(col) : undefined,
         messages: this.messages(),
         format: (value) => this.formatters[col](value as CellValue),
         fetchValues: (search, done) => {
@@ -1431,6 +1432,20 @@ export class Grid {
     );
     this.menu = { col, menu };
     anchor.querySelector(".masu-filter-button")?.setAttribute("aria-expanded", "true");
+  }
+
+  /**
+   * Whether a column's datetimes have a zone, from the first one of the
+   * rows the browser has around the screen: a `NaiveDateTime` comes
+   * without one. True when it has none of them yet.
+   */
+  private zonedValues(col: number): boolean {
+    const first = this.firstWholeRow();
+    for (let index = first, last = Math.min(this.span(), first + 200); index < last; index++) {
+      const value = this.cache.get(index)?.[col + 1];
+      if (value !== null && value !== undefined) return zoned(value);
+    }
+    return true;
   }
 
   private closeMenu(focus: boolean): void {

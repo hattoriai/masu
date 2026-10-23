@@ -1366,6 +1366,16 @@ defmodule MasuDev.ResultsLive do
     assign(socket, query: "plans", columns: ~w(plan customers revenue seats), rows: rows)
   end
 
+  # A `timestamp` column (no zone), as PostgreSQL's `timestamp` reads:
+  # NaiveDateTimes.
+  defp run(socket, "logins") do
+    rows =
+      for c <- Enum.take(MasuDev.Customers.all(), 50),
+          do: [c.id, c.name, DateTime.to_naive(c.last_seen)]
+
+    assign(socket, query: "logins", columns: ~w(id name logged_in_at), rows: rows)
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -1374,6 +1384,7 @@ defmodule MasuDev.ResultsLive do
       <select name="query" aria-label="Query">
         <option value="customers" selected={@query == "customers"}>SELECT * FROM customers</option>
         <option value="plans" selected={@query == "plans"}>SELECT plan, count(*), sum(revenue), avg(seats) …</option>
+        <option value="logins" selected={@query == "logins"}>SELECT id, name, logged_in_at FROM logins</option>
       </select>
     </form>
     <.data_grid id="results" rows={@rows} columns={@columns} row_id={:position} label_id="results-label" height="24rem" />

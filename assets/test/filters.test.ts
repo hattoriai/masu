@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allows, arity, describe, inputType, makeFilter, opsFor, replaceFilter } from "../src/filters";
+import { allows, arity, describe, filterValue, inputType, inputValue, makeFilter, opsFor, replaceFilter, zoned } from "../src/filters";
 import type { ColumnConfig } from "../src/types";
 
 const column = (key: string, type: ColumnConfig["type"], label = key): ColumnConfig => ({
@@ -102,4 +102,24 @@ test("a column of many values: has any of, all of, none of, none and some, in it
   assert.equal(describe({ key: "tags", op: "all_of", value: ["gift"] }, tags, show, words), "Tags has all of gift");
   assert.equal(describe({ key: "tags", op: "is_nil" }, tags, show, words), "Tags has none");
   assert.deepEqual(makeFilter(tags, "none_of", ["gift"]), { key: "tags", op: "none_of", value: ["gift"] });
+});
+
+test("a datetime without a zone is filtered as written, one with a zone in the browser's time", () => {
+  assert.equal(zoned("2026-01-01T11:00:00"), false);
+  assert.equal(zoned("2026-01-01T11:00:00Z"), true);
+  assert.equal(zoned("2026-01-01T11:00:00+09:00"), true);
+  assert.equal(zoned(null), false);
+
+  // A NaiveDateTime's column: what the person typed, as the cells show it.
+  assert.equal(filterValue("2026-01-01T11:00", "datetime-local", false), "2026-01-01T11:00:00");
+  assert.equal(filterValue("2026-01-01T11:00:30", "datetime-local", false), "2026-01-01T11:00:30");
+  assert.equal(inputValue("2026-01-01T11:00:00", "datetime-local"), "2026-01-01T11:00:00");
+
+  // A DateTime's column: the browser's local time, in UTC.
+  const local = "2026-01-01T11:00:00";
+  assert.equal(filterValue(local, "datetime-local"), new Date(local).toISOString());
+  assert.equal(inputValue(new Date(local).toISOString(), "datetime-local"), local);
+
+  assert.equal(filterValue("12", "number", false), "12");
+  assert.equal(filterValue("", "datetime-local", false), "");
 });
