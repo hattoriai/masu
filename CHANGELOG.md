@@ -11,7 +11,7 @@ On Issho 0.4.
 
 ### Changed
 
-- Requires `{:issho, "~> 0.4"}`, with Issho (it is optional). Nothing
+- Requires `{:issho, "~> 0.4.2"}`, with Issho (it is optional). Nothing
   changes in a grid's `issho`.
 
 ### Added

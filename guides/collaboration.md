@@ -30,7 +30,7 @@ person, and agents that work across all three.
 
 ## Setting up
 
-1. Add Issho to your dependencies (`{:issho, "~> 0.4"}`) and start it in
+1. Add Issho to your dependencies (`{:issho, "~> 0.4.2"}`) and start it in
    your supervision tree, after the PubSub, with a policy that says who
    may be in which room (see Issho's README):
 
@@ -159,13 +159,6 @@ The LiveView is in the room before the panel renders
 Issho's hooks (`Hooks` from `issho`) and its style sheet. An agent
 comments on a cell with Issho's `comment` tool, with the grid as its
 `document` and the cell as its `at`: `{"cell": [7, "city"]}`.
-
-Issho 0.4.0 shows a mark it hides where it last was (its `display`
-wins over `hidden`); until it does not, add:
-
-```css
-.issho-comment-mark[hidden] { display: none; }
-```
 
 ## Places, not positions
 
