@@ -65,6 +65,20 @@ defmodule Masu.ResultsTest do
         assert view |> rows("results") |> Enum.map(& &1["name"]) == ["Grace", "Alan"]
       end
 
+      test "rows that come empty keep the columns' types, and the filters theirs" do
+        {:ok, view, _html} = live(build_conn(), "/results?as=#{@as}")
+        filter(view, "results", [{"age", :gt, "40"}, {"balance", :gte, "10"}])
+
+        view |> element("#nobody") |> render_click()
+
+        assert %{"age" => "integer", "balance" => "decimal", "born" => "date"} = types(view)
+
+        assert [%{"key" => "age", "value" => 40}, %{"key" => "balance", "value" => "10"}] =
+                 config(view)["query"]["filters"]
+
+        assert config(view)["notice"] == nil
+      end
+
       test "another query, of other columns: the view keeps what is of the columns there still" do
         {:ok, view, _html} = live(build_conn(), "/results?as=#{@as}")
         view |> sort("results", {"age", :desc}) |> filter("results", [{"name", :contains, "a"}])

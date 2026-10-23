@@ -5,6 +5,17 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Rows that came empty made every column of learned type (`columns`, a
+  query tool's results) a text column: a filter that left out every row,
+  as a controlled grid's LiveView runs it, gave text columns. The filters
+  were cast again as text: a decimal's went, and a number's became a text
+  (`"200"`), which the next query sent as it was (PostgreSQL: "expected an
+  integer"). A column keeps the type it had when the rows give it no value.
+
 ## [0.5.1] - 2026-10-23
 
 On Issho 0.4.

@@ -35,7 +35,7 @@ defmodule MasuTest.ResultsLive do
   @moduledoc """
   Results of a query tool, two ways: rows as lists with `columns`
   (`?as=columns`), or a source that gives its columns (the default). A
-  button runs another query, of other columns.
+  button runs another query, of other columns; another gives no rows.
   """
   use Phoenix.LiveView
 
@@ -59,6 +59,10 @@ defmodule MasuTest.ResultsLive do
   @impl true
   def handle_event("cities", _params, socket), do: {:noreply, assign(socket, result: @cities)}
 
+  # The same query, filtered so that no row is left, as a query tool runs it.
+  def handle_event("nobody", _params, socket),
+    do: {:noreply, assign(socket, result: {elem(@people, 0), []})}
+
   @impl true
   def render(assigns) do
     {columns, rows} = assigns.result
@@ -66,6 +70,7 @@ defmodule MasuTest.ResultsLive do
 
     ~H"""
     <button id="cities" phx-click="cities">Cities</button>
+    <button id="nobody" phx-click="nobody">Nobody</button>
     <%= if @as == "columns" do %>
       <.data_grid id="results" rows={@rows} columns={@columns} row_id={:position} />
     <% else %>
