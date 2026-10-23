@@ -188,6 +188,7 @@ if Code.ensure_loaded?(Issho.Tool) do
     def call(args, ctx) do
       with {:ok, place} <- place(args),
            {:ok, grid} <- Masu.Issho.open(ctx, args.grid),
+           :ok <- Masu.Issho.at_work(grid),
            :ok <- Masu.Issho.go(grid, place) do
         {:ok, "Selected."}
       else
@@ -244,14 +245,11 @@ if Code.ensure_loaded?(Issho.Tool) do
     @impl true
     def call(args, ctx) do
       with {:ok, grid} <- Masu.Issho.open(ctx, args.grid),
-           :ok <- Participant.authorize(grid.participant, :write),
+           :ok <- Masu.Issho.may_write(grid),
            {:ok, edits} <- edits(grid, args) do
-        {saved, errors} =
-          if length(edits) <= @paced,
-            do: paced(grid, edits),
-            else: at_once(grid, edits)
-
-        result(saved, errors)
+        if length(edits) <= @paced,
+          do: paced(grid, edits),
+          else: at_once(grid, edits)
       else
         {:error, reason} -> Context.error(reason)
       end
@@ -273,14 +271,30 @@ if Code.ensure_loaded?(Issho.Tool) do
       |> then(&if Map.has_key?(edit, :before), do: Map.put(&1, "before", edit.before), else: &1)
     end
 
-    # Cell by cell: on it, holding it while it saves.
+    # Cell by cell: on it, holding it while it saves. A pause or a stop
+    # (Issho.Work) between two cells ends it there: the cells before stay.
     defp paced(grid, edits) do
       self_key = Context.key(grid.ctx)
 
-      Enum.reduce(edits, {0, []}, fn edit, {saved, errors} ->
-        {more, refused} = edit_cell(grid, self_key, edit)
-        {saved + more, errors ++ refused}
+      edits
+      |> Enum.reduce_while({0, []}, fn edit, {saved, errors} ->
+        case Masu.Issho.at_work(grid) do
+          :ok ->
+            {more, refused} = edit_cell(grid, self_key, edit)
+            {:cont, {saved + more, errors ++ refused}}
+
+          {:error, reason} ->
+            {:halt, {saved, errors, reason}}
+        end
       end)
+      |> case do
+        {saved, errors} ->
+          result(saved, errors)
+
+        {saved, _errors, reason} ->
+          {:error, message} = Context.error(reason)
+          {:error, "Saved #{saved} of #{length(edits)} cells. " <> message}
+      end
     end
 
     # To the cell, typing in it (the others see it, and edit it meanwhile
@@ -307,7 +321,7 @@ if Code.ensure_loaded?(Issho.Tool) do
       keys = edits |> Enum.map(& &1["key"]) |> Enum.uniq()
       :ok = Masu.Issho.go(grid, {ids, keys})
       result = write(grid, edits, :paste)
-      {length(result.saved), result.errors}
+      result(length(result.saved), result.errors)
     end
 
     defp write(grid, edits, origin),
@@ -339,7 +353,6 @@ if Code.ensure_loaded?(Issho.Tool) do
     arg :grid, :string, required: true
     arg :rows, {:array, :any}, required: true, description: "Each a map of column key to value"
 
-    alias Issho.Participant
     alias Issho.Tool.Context
     alias Masu.Sheet
 
@@ -348,7 +361,7 @@ if Code.ensure_loaded?(Issho.Tool) do
       with true <-
              Enum.all?(rows, &is_map/1) || {:error, "Each row is a map of column key to value."},
            {:ok, grid} <- Masu.Issho.open(ctx, args.grid),
-           :ok <- Participant.authorize(grid.participant, :write),
+           :ok <- Masu.Issho.may_write(grid),
            true <- Sheet.can(grid.sheet).create || {:error, "This grid does not add rows."} do
         drafts = Enum.map(rows, &Map.new(&1, fn {key, value} -> {to_string(key), value} end))
         results = Sheet.create(grid.sheet, drafts, Masu.Issho.write_opts(grid))
@@ -397,7 +410,7 @@ if Code.ensure_loaded?(Issho.Tool) do
     @impl true
     def call(%{rows: ids} = args, ctx) do
       with {:ok, grid} <- Masu.Issho.open(ctx, args.grid),
-           :ok <- Participant.authorize(grid.participant, :write) do
+           :ok <- Masu.Issho.may_write(grid) do
         keys = Enum.map(Sheet.columns(grid.sheet), & &1.key)
         :ok = Masu.Issho.go(grid, {ids, keys})
         :ok = Masu.Issho.pause(grid, {ids, keys}, if(Masu.Issho.travel?(), do: 300, else: 0))

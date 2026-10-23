@@ -30,7 +30,7 @@ person, and agents that work across all three.
 
 ## Setting up
 
-1. Add Issho to your dependencies (`{:issho, "~> 0.3"}`) and start it in
+1. Add Issho to your dependencies (`{:issho, "~> 0.4"}`) and start it in
    your supervision tree, after the PubSub, with a policy that says who
    may be in which room (see Issho's README):
 
@@ -92,7 +92,17 @@ A write's `by` (`Masu.Write`) is who made it, an `Issho.Identity` on a
 grid with `issho`: the person, or an agent and whom it acts for. Each
 saved write says so in the room, `"document.changed"` of the grid's
 document (`Issho.Events`), with `by` and `data: %{op: :update, count: n}`:
-a page, a job or an agent that waits for a change subscribes to it.
+a page, a job or an agent that waits for a change subscribes to it. A
+component of the page asks for it with `Issho.Live.subscribe/3`'s
+`:events` (`["document.changed"]`), and an agent waits for it with
+Issho's `wait_for_events` tool:
+
+```text
+wait_for_events {"room": "notebook:42", "names": ["document.changed"]}
+```
+
+The grid's rows are not an Issho document, so it has no spec of events
+of its own (a spec's `:events`): `"document.changed"` is what it says.
 
 ## In a document, and pointers
 
@@ -117,6 +127,45 @@ pointers.
 * Following someone into the grid, from the document's people list,
   follows them in the grid too; following from the grid's avatars brings
   it into view, once, when it is off the screen.
+
+## Comments
+
+Issho's comments (`Issho.Components.comments/1`, see Issho's Comments
+guide) go on a grid's cells as on any place of the page: a person
+selects a cell or a range, and comments on it. Each thread's mark is
+drawn on its cells, wherever each person's order puts the row, and not
+at all while the row is off their screen. Masu draws them with no code
+of yours: the grid says where its places are.
+
+A thread's place is the grid's (`Masu.Issho.Place`), so say it in words
+with `Masu.Issho.label/2`, in the panel's `:place` slot:
+
+```heex
+<.comments id="comments" room="orders:42">
+  <:place :let={%{place: place, default: default}}>
+    {Masu.Issho.label(place, grid: "orders:42/orders", columns: @labels, row: &order_name/1) ||
+      default}
+  </:place>
+</.comments>
+```
+
+`"City of Acme"` for a cell, `"Name to City of Acme"` for a range in a
+row, `"City of 3 rows"` for a range of rows; `columns` are the columns'
+labels by key, and `row` names a row by its id (`"row 7"` without it).
+A row's number would not do: each person has their own order.
+
+The LiveView is in the room before the panel renders
+(`Issho.Live.join/4` in `mount`, when connected), and the page has
+Issho's hooks (`Hooks` from `issho`) and its style sheet. An agent
+comments on a cell with Issho's `comment` tool, with the grid as its
+`document` and the cell as its `at`: `{"cell": [7, "city"]}`.
+
+Issho 0.4.0 shows a mark it hides where it last was (its `display`
+wins over `hidden`); until it does not, add:
+
+```css
+.issho-comment-mark[hidden] { display: none; }
+```
 
 ## Places, not positions
 
@@ -278,6 +327,11 @@ then give the agent Masu's tools, with Issho's:
 `read_grid` reads rows in an order, filtered and searched;
 `select_cells` points at a cell or a range; `edit_cells`, `add_rows`
 and `delete_rows` write. An agent leaves a cell that someone is editing.
+
+A person who pauses or stops the agent (Issho's agents bar,
+`Issho.Work`) stops it in the grid too: each of these tools but
+`read_grid` then says who paused it and what to do, as Issho's own tools
+do, and an edit of many cells, one by one, stops at the cell it is on.
 
 An agent moves as a person does, so that the people follow it: it goes
 to each cell it edits and types in it a moment before the value lands,

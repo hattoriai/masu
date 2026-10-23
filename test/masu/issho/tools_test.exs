@@ -233,6 +233,60 @@ defmodule Masu.Issho.ToolsTest do
              )
   end
 
+  test "a paused or stopped agent changes the grid no more, and reads it still",
+       %{instance: instance, room: room, grid: grid, ctx: ctx} do
+    assert {:ok, _} = call("read_grid", %{"grid" => grid}, ctx)
+    agent = Issho.Agents.participant(instance, "assistant:ada", room)
+    edit = %{"grid" => grid, "edits" => [%{"row" => 2, "key" => "name", "value" => "Grace"}]}
+
+    :ok =
+      Issho.Work.interrupt(instance, room, "assistant:ada", :pause, by: %{id: "ada", name: "Ada"})
+
+    wait_until(fn -> Participant.interrupted(agent) != nil end)
+
+    assert {:error, "Ada paused you." <> _} = call("edit_cells", edit, ctx)
+
+    assert {:error, "Ada paused you." <> _} =
+             call("select_cells", %{"grid" => grid, "row" => 2, "key" => "name"}, ctx)
+
+    assert {:error, "Ada paused you." <> _} =
+             call("add_rows", %{"grid" => grid, "rows" => [%{"name" => "Grace"}]}, ctx)
+
+    assert {:error, "Ada paused you." <> _} =
+             call("delete_rows", %{"grid" => grid, "rows" => [1]}, ctx)
+
+    assert {:ok, %{"rows" => [_ | _]}} = call("read_grid", %{"grid" => grid}, ctx)
+
+    :ok =
+      Issho.Work.interrupt(instance, room, "assistant:ada", :stop, by: %{id: "ada", name: "Ada"})
+
+    wait_until(fn -> match?(%{"action" => "stop"}, Participant.interrupted(agent)) end)
+    assert {:error, "Ada stopped you." <> _} = call("edit_cells", edit, ctx)
+
+    :ok =
+      Issho.Work.interrupt(instance, room, "assistant:ada", :resume,
+        by: %{id: "ada", name: "Ada"}
+      )
+
+    wait_until(fn -> Participant.interrupted(agent) == nil end)
+    assert {:ok, %{"saved" => 1}} = call("edit_cells", edit, ctx)
+  end
+
+  # An interrupt comes to the agent through the room, a moment later.
+  defp wait_until(fun, tries \\ 50) do
+    cond do
+      fun.() ->
+        :ok
+
+      tries == 0 ->
+        flunk("the agent did not hear it")
+
+      true ->
+        Process.sleep(10)
+        wait_until(fun, tries - 1)
+    end
+  end
+
   test "a grid that neither adds nor deletes says so", %{grid: grid, ctx: ctx} do
     assert {:error, "This grid does not add rows."} =
              call("add_rows", %{"grid" => grid, "rows" => [%{"name" => "Grace"}]}, ctx)

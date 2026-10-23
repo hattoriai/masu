@@ -173,12 +173,15 @@ defmodule MasuDev.Layouts do
     assigns =
       assign(assigns,
         sumi: conn.params["theme"] == "sumi",
+        # Issho's script and style sheet, for the page of its comments.
+        issho: conn.request_path == "/comments",
         current: current,
         links: [
           {"Customers", "/"},
           {"Small", "/small"},
           {"Live", "/live"},
           {"Together", "/together"},
+          {"Comments", "/comments"},
           {"Views", "/views"},
           {"Tree", "/tree"},
           {"Details", "/details"},
@@ -202,7 +205,7 @@ defmodule MasuDev.Layouts do
 
     ~H"""
     <!DOCTYPE html>
-    <html lang="en" data-theme={@conn.params["dark"] && "dark"}>
+    <html lang="en" data-theme={@conn.params["dark"] && "dark"} data-dev-issho={@issho && "true"}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -210,6 +213,8 @@ defmodule MasuDev.Layouts do
         <title>Masu development</title>
         <link rel="stylesheet" href="/assets/masu.css" />
         <link :if={@sumi} rel="stylesheet" href="/assets/masu-sumi.css" />
+        <link :if={@issho} rel="stylesheet" href="/vendor/issho/issho.css" />
+        <link :if={@issho and @sumi} rel="stylesheet" href="/vendor/issho/issho-sumi.css" />
         <style>
           body { font-family: system-ui, sans-serif; margin: 0; background: #fafaf9; color: #1c1917; }
           body.sumi { background: var(--masu-background); color: var(--masu-text); font-family: var(--masu-font); }
@@ -224,13 +229,17 @@ defmodule MasuDev.Layouts do
           .badge { display: inline-block; padding: 0 0.5rem; border-radius: 999px; font-size: 0.75rem; line-height: 1.5rem; background: color-mix(in oklab, var(--masu-text) 8%, transparent); color: var(--masu-text); }
           .badge.enterprise { background: color-mix(in oklab, var(--masu-accent) 16%, transparent); color: color-mix(in oklab, var(--masu-accent) 75%, var(--masu-text)); }
           .badge.free { background: transparent; box-shadow: inset 0 0 0 1px var(--masu-border); color: var(--masu-muted); }
+          /* Issho 0.4.0's marks of comments take display: grid, which shows a
+             mark it hides (its place off the screen) where it last was. */
+          .issho-comment-mark[hidden] { display: none; }
         </style>
         <script type="importmap">
           {
             "imports": {
               "phoenix": "/vendor/phoenix/phoenix.mjs",
               "phoenix_live_view": "/vendor/phoenix_live_view/phoenix_live_view.esm.js",
-              "masu": "/assets/masu.esm.js"
+              "masu": "/assets/masu.esm.js",
+              "issho": "/vendor/issho/issho.esm.js"
             }
           }
         </script>
@@ -238,6 +247,8 @@ defmodule MasuDev.Layouts do
           import { Socket } from "phoenix"
           import { LiveSocket } from "phoenix_live_view"
           import { Masu, configure } from "masu"
+          // Issho's hooks (the comments' panel and marks), on the pages that have them.
+          const issho = document.documentElement.dataset.devIssho ? await import("issho") : null
           // Editors of the browser's own, for the Editors page: a slider,
           // and the browser's color input.
           configure({
@@ -269,7 +280,7 @@ defmodule MasuDev.Layouts do
           })
           const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
           const liveSocket = new LiveSocket("/live", Socket, {
-            hooks: { Masu },
+            hooks: { Masu, ...issho?.Hooks },
             params: { _csrf_token: csrfToken }
           })
           liveSocket.connect()
@@ -846,6 +857,89 @@ defmodule MasuDev.TogetherLive do
     </.data_grid>
     """
   end
+end
+
+defmodule MasuDev.CommentsLive do
+  @moduledoc """
+  Twenty customers that everyone shares, with Issho's comments beside
+  them: select a cell or a range, then comment on it. A thread's mark is
+  on its cells, wherever each person's order puts them, and its place is
+  said in words (`Masu.Issho.label/2`). `?as=Ada` and `?room=`, as on
+  the Together page.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+  import Issho.Components, only: [comments: 1]
+
+  on_mount(Masu.Live)
+  on_mount(Issho.Live)
+
+  @labels %{
+    "id" => "ID",
+    "name" => "Name",
+    "city" => "City",
+    "plan" => "Plan",
+    "seats" => "Seats",
+    "revenue" => "Revenue"
+  }
+
+  @impl true
+  def mount(params, _session, socket) do
+    name = params["as"] || Enum.random(~w(Ada Alan Grace Edsger Barbara Donald Margaret Ken))
+    user = %{id: "#{name}-#{System.unique_integer([:positive])}", name: name}
+    room = "comments:" <> (params["room"] || "main")
+
+    # The LiveView is in the room before its components render: the
+    # comments open there, and the grid joins the same session.
+    if connected?(socket), do: {:ok, _session} = Issho.Live.join(MasuDev.Issho, user, room)
+
+    {:ok,
+     assign(socket,
+       rows: Enum.take(MasuDev.Customers.all(), 20),
+       user: user,
+       room: room,
+       doc: room <> "/customers",
+       topic: room,
+       labels: @labels,
+       locale: params["locale"] || "en-GB"
+     )}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="comments-label">Comments</h1>
+    <p>You are {@user.name}. Select a cell, then comment on it.</p>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: 1.5rem; align-items: start;">
+      <.data_grid
+        id="customers"
+        rows={@rows}
+        changeset={&MasuDev.Customers.changeset/2}
+        live={{MasuDev.PubSub, @topic}}
+        issho={[instance: MasuDev.Issho, document: @doc]}
+        user={@user}
+        label_id="comments-label"
+        height="30rem"
+        locale={@locale}
+      >
+        <:col field={:id} type={:integer} width={80} label="ID" editable={false} />
+        <:col field={:name} width={190} />
+        <:col field={:city} />
+        <:col field={:plan} type={:enum} width={130} />
+        <:col field={:seats} type={:integer} />
+        <:col field={:revenue} type={:decimal} />
+      </.data_grid>
+      <.comments id="threads" room={@room}>
+        <:place :let={%{place: place, default: default}}>
+          {Masu.Issho.label(place, grid: @doc, columns: @labels, row: &name_of(@rows, &1)) || default}
+        </:place>
+      </.comments>
+    </div>
+    """
+  end
+
+  defp name_of(rows, id), do: Enum.find_value(rows, &(&1.id == id && &1.name))
 end
 
 defmodule MasuDev.TasksLive do
@@ -1888,6 +1982,7 @@ defmodule MasuDev.Router do
     live("/small", MasuDev.SmallLive)
     live("/live", MasuDev.QuotesLive)
     live("/together", MasuDev.TogetherLive)
+    live("/comments", MasuDev.CommentsLive)
     live("/views", MasuDev.ViewsLive)
     live("/tree", MasuDev.TreeLive)
     live("/details", MasuDev.DetailsLive)
@@ -1929,6 +2024,7 @@ defmodule MasuDev.Endpoint do
   plug(Plug.Static, at: "/assets", from: Path.expand("priv/static", __DIR__))
   plug(Plug.Static, at: "/vendor/phoenix", from: {:phoenix, "priv/static"})
   plug(Plug.Static, at: "/vendor/phoenix_live_view", from: {:phoenix_live_view, "priv/static"})
+  plug(Plug.Static, at: "/vendor/issho", from: {:issho, "priv/static"})
 
   plug(Plug.Parsers, parsers: [:urlencoded, :json], pass: ["*/*"], json_decoder: JSON)
   plug(Plug.Session, @session)
