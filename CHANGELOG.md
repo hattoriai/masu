@@ -5,6 +5,24 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The Sumi theme follows Sumi's seven themes and their accents: a refused
+  cell and a failed read are rose where the accent is red's hue or near
+  it (Ink, Paper, Lacquer), and rust in Silk, so that a refused cell does
+  not look like the active one. `mix dev` shows each page in each
+  (`?sumi=smoke`). See the Theming guide.
+
+### Fixed
+
+- The Sumi theme gave Sumi's dark themes other than Ink the light palette,
+  and Sumi's light themes other than Paper the dark one on a system in
+  dark mode. A failed read's line was blade's orange in Ink, Paper and
+  Lacquer; a button that deletes was below AA in Smoke and on Stone's
+  surfaces.
+
 ## [0.7.0] - 2026-10-24
 
 ### Added

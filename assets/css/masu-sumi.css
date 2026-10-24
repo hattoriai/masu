@@ -16,7 +16,7 @@
  *
  * Dark and light: on a page with the Sumi themes, the grids follow them.
  * Without them, the built-in palette follows the data-theme attribute
- * ("dark" or "light") first, then prefers-color-scheme.
+ * (one of Sumi's seven themes) first, then prefers-color-scheme.
  */
 
 /* The Sumi palette, light. */
@@ -29,9 +29,12 @@
   --masu-sumi-muted: oklch(15% 0.003 270 / 0.65);
 }
 
-/* The Sumi palette, dark: data-theme="dark", or a dark preference on a page
-   that does not ask for light. */
-[data-theme="dark"] {
+/* The Sumi palette, dark: Sumi's dark themes (Ink, Smoke, Stone, Lacquer),
+   or a dark preference on a page that does not ask for a light one. */
+[data-theme="dark"],
+[data-theme="smoke"],
+[data-theme="stone"],
+[data-theme="lacquer"] {
   --masu-sumi-base-100: oklch(12% 0.003 270);
   --masu-sumi-base-200: oklch(16% 0.004 270);
   --masu-sumi-base-300: oklch(20% 0.005 270);
@@ -40,7 +43,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="light"], [data-theme="snow"], [data-theme="silk"]) {
     --masu-sumi-base-100: oklch(12% 0.003 270);
     --masu-sumi-base-200: oklch(16% 0.004 270);
     --masu-sumi-base-300: oklch(20% 0.005 270);
@@ -79,4 +82,28 @@
   /* Shape and space */
   --masu-radius: var(--radius-box, var(--sumi-radius, 0.25rem));
   --masu-space: 0.5rem;
+}
+
+/* A refused cell and a failed read are red, and the active cell is the
+   theme's accent. Where the accent is red's hue or near it (blade in Ink
+   and Paper, and on a page with no theme; vermilion in Lacquer), they are
+   rose instead, and in Silk, whose lotus is a red pink, rust: so that a
+   refused cell does not look like the active one. */
+:root:where(:not([data-theme])),
+[data-theme="dark"],
+[data-theme="light"],
+[data-theme="lacquer"] {
+  --masu-invalid: color-mix(in oklab, oklch(57% 0.2 350) 85%, var(--masu-text));
+  --masu-error: oklch(57% 0.2 350);
+}
+
+/* Smoke's and Stone's pages are lighter than Ink's: a lighter red, for AA. */
+[data-theme="smoke"],
+[data-theme="stone"] {
+  --masu-invalid: color-mix(in oklab, oklch(68% 0.19 25) 85%, var(--masu-text));
+}
+
+[data-theme="silk"] {
+  --masu-invalid: color-mix(in oklab, oklch(55% 0.16 45) 85%, var(--masu-text));
+  --masu-error: oklch(55% 0.16 45);
 }
