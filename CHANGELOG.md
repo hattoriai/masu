@@ -31,6 +31,13 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   value in their weights, on a tint of `--masu-accent`, and a × drawn as
   an icon. Their text (what a screen reader says) is the same.
 
+- The grid's browser code is a core (`grid.ts`) and a class for each of
+  its features (`features/`), as AG Grid's services are, with the pure
+  parts in modules of their own; see CONTRIBUTING. Nothing changes in
+  what the grid does, and it draws and scrolls its rows in the same time;
+  the bundle is 1.4 KB larger, gzipped (43.1 KB): the features' calls to
+  the core keep their names, which a minifier does not shorten.
+
 ### Fixed
 
 - The label of a header that aligns to the end (a number's) went to its

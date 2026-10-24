@@ -6,14 +6,14 @@ defmodule Masu.MessagesTest do
 
   @endpoint MasuTest.Endpoint
 
-  # The browser's words (DEFAULT_MESSAGES in grid.ts), as Masu.Messages
+  # The browser's words (DEFAULT_MESSAGES in messages.ts), as Masu.Messages
   # lists them: an app that translates every key of defaults/0 leaves
   # no word in English.
   test "defaults/0 has every word of the browser, the same" do
-    source = File.read!(Path.expand("../../assets/src/grid.ts", __DIR__))
+    source = File.read!(Path.expand("../../assets/src/messages.ts", __DIR__))
 
     [table] =
-      Regex.run(~r/const DEFAULT_MESSAGES: Record<string, string> = \{(.*?)\n\};/s, source,
+      Regex.run(~r/export const DEFAULT_MESSAGES: Record<string, string> = \{(.*?)\n\};/s, source,
         capture: :all_but_first
       )
 
