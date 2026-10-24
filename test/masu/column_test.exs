@@ -30,6 +30,26 @@ defmodule Masu.ColumnTest do
     end
   end
 
+  test "a column is at least its min_width wide" do
+    assert Column.new(field: :title, min_width: 280).width == 280
+    assert Column.new(field: :title, width: 100, min_width: 120).width == 120
+    assert Column.new(field: :title, width: 300, min_width: 120).width == 300
+  end
+
+  test "grow is its share of the room the columns leave: true is 1" do
+    assert Column.new(field: :title).grow == 0
+    assert Column.new(field: :title, grow: false).grow == 0
+    assert Column.new(field: :title, grow: true).grow == 1
+    assert Column.new(field: :title, grow: 2).grow == 2
+    assert Column.new(field: :title, type: :auto, grow: true).grow == 1
+
+    for grow <- [-1, 1.5, "1"] do
+      assert_raise ArgumentError, ~r/grow is true, or a positive integer/, fn ->
+        Column.new(field: :title, grow: grow)
+      end
+    end
+  end
+
   test "get/2 reads a map, a struct or a function" do
     assert Column.get(Column.new(field: :name), %{name: "Ada"}) == "Ada"
     assert Column.get(Column.new(field: "name"), %{"name" => "Ada"}) == "Ada"

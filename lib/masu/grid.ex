@@ -2485,7 +2485,7 @@ defmodule Masu.Grid do
     assigns =
       assigns
       |> assign(:messages, Map.merge(@messages, stringify(assigns.messages)))
-      |> assign(:cols, Enum.map_join(assigns.columns, " ", &"#{&1.width}px"))
+      |> assign(:cols, Enum.map_join(assigns.columns, " ", &col_width/1))
 
     ~H"""
     <div
@@ -2773,6 +2773,13 @@ defmodule Masu.Grid do
   defp body_rows(%{paging: :pages} = assigns), do: length(assigns.initial || [])
   defp body_rows(assigns), do: assigns.total
 
+  # A column's track before the browser takes over: one that grows takes
+  # its share of the room the others leave.
+  defp col_width(%Column{grow: grow, width: width}) when grow > 0,
+    do: "minmax(#{width}px, #{grow}fr)"
+
+  defp col_width(%Column{width: width}), do: "#{width}px"
+
   defp aria_sort(%Query{sorts: [%{key: key, direction: direction} | _]}, %Column{key: key}),
     do: if(direction == :asc, do: "ascending", else: "descending")
 
@@ -2849,6 +2856,7 @@ defmodule Masu.Grid do
       "type" => Atom.to_string(column.type),
       "width" => column.width,
       "minWidth" => column.min_width,
+      "grow" => column.grow,
       "align" => Atom.to_string(column.align),
       "sortable" => column.sortable,
       "filterable" => column.filterable,

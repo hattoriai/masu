@@ -33,7 +33,9 @@ column hidden. Both are where the grid starts; the person changes them.
 A person moves a column by dragging its header (a click still sorts),
 or with **Alt+Shift+←** and **Alt+Shift+→** on a header; a column moves
 among the columns of its pin. They resize it by dragging the edge of its
-header (a double click fits it to its content).
+header (a double click fits it to its content); a column that grows
+(`grow`, see [Columns](columns.md#a-column-that-takes-the-room)) is then
+the width they gave it.
 
 `columns_menu` adds a **Columns** button to the toolbar: a menu of every
 column, to show and hide it, pin it to the start or the end, and move it

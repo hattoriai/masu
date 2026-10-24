@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { moveKey, pins, scrollFor, visualLeft } from "../src/layout";
+import { fill, moveKey, pins, scrollFor, visualLeft } from "../src/layout";
 
 const widths = [80, 200, 100, 100, 120];
 const layout = pins(["start", null, null, null, "end"], widths);
@@ -36,4 +36,21 @@ test("moving a key puts it before another, or last", () => {
   assert.deepEqual(moveKey(["a", "b", "c", "d"], "d", "b"), ["a", "d", "b", "c"]);
   assert.deepEqual(moveKey(["a", "b", "c", "d"], "a", null), ["b", "c", "d", "a"]);
   assert.deepEqual(moveKey(["a", "b", "c"], "b", "b"), ["a", "b", "c"]);
+});
+
+test("the columns that grow share the room the others leave, in whole pixels", () => {
+  assert.deepEqual(fill([100, 200, 100], [0, 1, 0], 600), [100, 400, 100]);
+  // Shares: 1 and 2 of 300.
+  assert.deepEqual(fill([100, 100, 100], [1, 0, 2], 600), [200, 100, 300]);
+  // 101 in three: the last takes what the rounding leaves.
+  assert.deepEqual(fill([100, 100, 100], [1, 1, 1], 401), [133, 133, 135]);
+  // A fraction of a pixel of room is not drawn.
+  assert.deepEqual(fill([100, 100], [1, 0], 300.6), [200, 100]);
+});
+
+test("a box no wider than the columns, or no column that grows, leaves them as they are", () => {
+  assert.deepEqual(fill([100, 200], [1, 0], 300), [100, 200]);
+  assert.deepEqual(fill([100, 200], [1, 0], 250), [100, 200]);
+  assert.deepEqual(fill([100, 200], [0, 0], 600), [100, 200]);
+  assert.deepEqual(fill([], [], 600), []);
 });

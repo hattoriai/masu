@@ -182,6 +182,9 @@
   min-width: 100%;
   background: var(--masu-header-background, var(--masu-surface));
   box-shadow: var(--masu-header-shadow);
+  /* The edge of the last column, past the end of the columns: no room to
+     scroll to, in a grid whose columns fill it (a column that grows). */
+  overflow-x: clip;
 }
 
 .masu-header {

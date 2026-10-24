@@ -192,6 +192,7 @@ defmodule MasuDev.Layouts do
           {"Header", "/header"},
           {"Menus", "/menus"},
           {"Actions", "/actions"},
+          {"Grow", "/grow"},
           {"Editors", "/editors"},
           {"History", "/history"},
           {"Some filters", "/limited"},
@@ -1718,6 +1719,36 @@ defmodule MasuDev.ActionsLive do
   end
 end
 
+defmodule MasuDev.GrowLive do
+  @moduledoc """
+  A column that grows (`grow`): the name takes the room the other columns
+  leave, as wide as the page is; in a narrow window the grid scrolls
+  sideways. Active is pinned to the end.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, rows: Enum.take(MasuDev.Customers.all(), 200))}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="grow-label">A column that grows</h1>
+    <.data_grid id="grow" rows={@rows} label_id="grow-label" height="24rem">
+      <:col field={:name} width={200} grow />
+      <:col field={:city} width={130} />
+      <:col field={:plan} type={:enum} width={120} />
+      <:col field={:seats} type={:integer} width={100} />
+      <:col field={:active} type={:boolean} width={90} pinned={:end} />
+    </.data_grid>
+    """
+  end
+end
+
 defmodule MasuDev.EditorsLive do
   @moduledoc """
   Editors of the app's own: forms of HEEx that the server renders in a
@@ -2095,6 +2126,7 @@ defmodule MasuDev.Router do
     live("/controlled", MasuDev.ControlledLive)
     live("/related", MasuDev.RelatedLive)
     live("/actions", MasuDev.ActionsLive)
+    live("/grow", MasuDev.GrowLive)
     live("/editors", MasuDev.EditorsLive)
     live("/history", MasuDev.HistoryLive)
     live("/bench", MasuDev.BenchLive)

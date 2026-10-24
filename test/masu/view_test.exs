@@ -60,6 +60,17 @@ defmodule Masu.ViewTest do
       assert layout.widths["name"] == 48
     end
 
+    test "a column the person gave a width grows no more" do
+      columns = [Column.new(field: :title, grow: true), Column.new(field: :city)]
+      layout = Layout.new(columns)
+
+      assert [%{grow: 1}, %{grow: 0}] = Layout.columns(layout, columns)
+
+      resized = Layout.change(layout, %{"widths" => %{"title" => 240}}, columns)
+      assert [%{grow: 0, width: 240}, %{grow: 0}] = Layout.columns(resized, columns)
+      assert [%{grow: 0, width: 240}, %{grow: 0}] = Layout.all(resized, columns)
+    end
+
     test "a layout fits columns that changed: removed keys go, new columns take their declared place" do
       old = %Layout{
         order: ~w(city gone name id),
