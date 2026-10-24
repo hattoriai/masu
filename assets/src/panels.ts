@@ -336,3 +336,76 @@ export class ExportPanel extends Panel {
     this.el.querySelector<HTMLElement>("button")?.focus();
   }
 }
+
+export interface FiltersHost {
+  root: HTMLElement;
+  messages: Record<string, string>;
+  /** The columns that filter, in the grid's order, and whether each has a filter already. */
+  columns: { col: number; label: string; filtered: boolean }[];
+  pick(col: number): void;
+  close(): void;
+}
+
+/** The filter bar's Add filter: a menu of the columns that filter; one picked opens its menu. */
+export class FiltersPanel extends Panel {
+  private host: FiltersHost;
+  private list: HTMLElement;
+  private search: HTMLInputElement | null = null;
+
+  constructor(host: FiltersHost, anchor: HTMLElement) {
+    super(host.root, anchor, host.messages.add_filter ?? "Add filter", host.messages, () => host.close());
+    this.host = host;
+    this.el.classList.add("masu-filters-panel");
+
+    if (host.columns.length >= COLUMN_SEARCH_FROM) {
+      this.search = document.createElement("input");
+      this.search.type = "search";
+      this.search.className = "masu-menu-input masu-panel-search";
+      this.search.placeholder = this.message("columns_search");
+      this.search.setAttribute("aria-label", this.search.placeholder);
+      this.search.addEventListener("input", () => this.refresh());
+      this.search.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        this.list.querySelector<HTMLButtonElement>("button")?.click();
+      });
+      this.el.appendChild(this.search);
+    }
+
+    this.list = document.createElement("div");
+    this.list.className = "masu-menu-items masu-filters-list";
+    this.list.setAttribute("role", "group");
+    this.el.appendChild(this.list);
+
+    this.refresh();
+    this.place(host.root);
+    (this.search ?? this.list.querySelector<HTMLElement>("button"))?.focus();
+  }
+
+  private refresh(): void {
+    const find = this.search?.value.trim().toLowerCase() ?? "";
+    const items = this.host.columns.flatMap(({ col, label, filtered }) => {
+      if (find && !label.toLowerCase().includes(find)) return [];
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "masu-menu-button masu-menu-item";
+      item.textContent = label;
+      if (filtered) item.dataset.filtered = "true";
+      item.addEventListener("click", () => this.host.pick(col));
+      return [item];
+    });
+    this.list.replaceChildren(...items);
+    if (items.length === 0) this.list.textContent = this.message("no_columns");
+  }
+
+  /** Under its button, its start at the button's: the button is at the start of the bar. */
+  protected override place(root: HTMLElement): void {
+    const button = this.anchor.getBoundingClientRect();
+    if (floats(this.el)) return placeAt(this.el, { left: button.left, below: button.bottom + 4, above: button.top - 4 });
+    const box = root.getBoundingClientRect();
+    const width = this.el.offsetWidth;
+    const left = Math.max(0, Math.min(button.left - box.left, box.width - width));
+    this.el.style.top = `${button.bottom - box.top + 4}px`;
+    this.el.style.insetInlineStart = `${left}px`;
+  }
+}

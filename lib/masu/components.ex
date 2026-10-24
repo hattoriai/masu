@@ -305,6 +305,16 @@ defmodule Masu.Components do
     default: true,
     doc: "`false` sorts by one column at a time: Shift adds none"
 
+  attr :filter_bar, :boolean,
+    default: true,
+    doc:
+      "the filter bar: the chips of the filters and Add filter above the grid, and on each header a menu of its sorts and filter; `false` for the leaner header, a funnel on each header that filters; see the Filters guide"
+
+  attr :header_filters, :boolean,
+    default: true,
+    doc:
+      "whether a header's menu has its column's filter; `false` with the filter bar: the filters are the bar's alone, and a header's menu has its sorts; see the Filters guide"
+
   attr :row_id, :any,
     default: nil,
     doc:
@@ -495,6 +505,8 @@ defmodule Masu.Components do
       given_total={@total}
       given_loading={@loading}
       multi_sort={@multi_sort}
+      filter_bar={@filter_bar}
+      header_filters={@header_filters}
       cell_menu={cell_menu!(@id, @cell_menu)}
       header_action={@header_action}
       cell_action={@cell_action}

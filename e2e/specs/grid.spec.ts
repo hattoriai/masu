@@ -163,7 +163,6 @@ test.describe("the filter menu", () => {
     await expect(menu).toHaveCount(0);
     await expect(grid(page, "customers")).toHaveAttribute("aria-rowcount", "40001");
     await expect(page.locator("#customers .masu-chip-text")).toHaveText(["Plan is one of team, free"]);
-    await expect(header(page, "customers", "plan").locator(".masu-filter-button")).toHaveAttribute("data-active", "true");
   });
 
   test("a number takes a range, and the chips take the filters away", async ({ page }) => {
@@ -830,13 +829,13 @@ test.describe("groups", () => {
 
   test("the header menu groups by a column, a chip stops it, and a total sorts the groups", async ({ page }) => {
     await openPage(page, "/groups");
-    await expect(page.locator("#groups .masu-chip-group")).toHaveText(["Grouped by Plan×", "Grouped by City×"]);
+    await expect(page.locator("#groups .masu-chip-group")).toHaveText(["Grouped by Plan", "Grouped by City"]);
     await page.getByRole("button", { name: "Stop grouping by Plan" }).click();
     await expect(page.locator("#groups-r0-c0 .masu-group-label")).toHaveText(/^City: /);
 
     await header(page, "groups", "active").locator(".masu-filter-button").click();
     await page.getByRole("button", { name: "Group by Active" }).click();
-    await expect(page.locator("#groups .masu-chip-group")).toHaveText(["Grouped by City×", "Grouped by Active×"]);
+    await expect(page.locator("#groups .masu-chip-group")).toHaveText(["Grouped by City", "Grouped by Active"]);
 
     await page.getByRole("button", { name: "Stop grouping by City" }).click();
     await expect(page.locator("#groups-r0-c0 .masu-group-label")).toHaveText(/^Active: /);

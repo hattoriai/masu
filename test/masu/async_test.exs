@@ -178,6 +178,12 @@ defmodule Masu.AsyncTest do
       assert config(view)["multiSort"] == false
     end
 
+    test "the leaner header, without the filter bar (filter_bar={false})" do
+      {:ok, view, _html} = live(build_conn(), "/controlled")
+      render_async(view)
+      assert config(view)["filterBar"] == false
+    end
+
     test "says it runs while the LiveView's query runs (loading)" do
       {:ok, view, _html} = live(build_conn(), "/controlled?delay=200")
       render_async(view, 2000)

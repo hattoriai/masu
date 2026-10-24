@@ -23,9 +23,10 @@ app:
   who have the grid open, their cells in their colors, a cell someone
   types in locked for the others, and their saves flashing in their
   color;
-* sorting by several columns, a search box, and a filter menu on each
-  column, with the values of an enum and their counts, and the filters
-  as chips above the grid;
+* sorting by several columns, a search box, and filters in a bar above
+  the grid: chips that say each filter and open it, Add filter, and a menu
+  on each header with its sorts and filter, the values of an enum and
+  their counts; or the leaner header, a funnel on each;
 * columns that resize, and fit their content on a double click;
 * menus of your own: items in each column's header menu, and a menu on
   each cell (a right click, or Shift+F10) with copy, filter by the
@@ -60,7 +61,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Columns | a field or a function of the row, a type, a width, an alignment; cells of your own HEEx, rendered on the server; columns not known in advance, as a query tool's results: rows as lists, `columns` with no `:col` slots, types learned from the values (`type={:auto}`) |
 | Types | text, enums, integers, numbers, decimals (sent as text, so no digit is lost), dates, datetimes, times, booleans |
 | Sorting | a click on a header; with Shift, by several columns, numbered in the headers; text without case, empty values last |
-| Filters | a menu on each header with the filters of its type: contains, starts and ends with, greater and less than, after and before, between, empty; an enum's values ticked from a list with their counts (one `GROUP BY` in the database); the filters as chips; checked against each column's type on the server |
+| Filters | the filter bar: the filters as chips above the grid, Add filter, and a menu on each header with its sorts and the filters of its type (or the filters in the bar alone, or a funnel on each header); contains, starts and ends with, greater and less than, after and before, between, empty; an enum's values ticked from a list with their counts (one `GROUP BY` in the database); checked against each column's type on the server |
 | Search | a search box over the text columns, in the list or in the database |
 | Keyboard | the arrows, Ctrl with them, Home, End, Page Up and Down, the header row, Enter on a header to sort, Shift to select, ⌘A, Escape |
 | Copy | ⌘C copies the range as tab-separated values, the values themselves (numbers and dates as a spreadsheet reads them), and asks the server for rows the browser lacks |

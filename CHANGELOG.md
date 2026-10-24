@@ -5,6 +5,39 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The filter bar, the default: the filters as chips above the grid, each
+  saying its column, its operator and its value apart and opening its
+  filter on a click, and **Add filter**, a menu of the columns that filter
+  that opens the filter of the one picked, under it. A header's menu, its
+  **⋯**, has its sorts (ascending, descending, Clear sort) above its
+  items, Group by and filter, for every column that sorts. See the Filters
+  guide.
+- `header_filters={false}`: the filters in the bar alone; a header's menu
+  has its sorts, items and Group by.
+- `filter_bar={false}`: the leaner header of before, a funnel on each
+  header that filters, and the chips only while there are filters.
+- The messages `add_filter`, `no_columns` and `sort_clear`.
+- The development app's `/header` page: the three headers.
+
+### Changed
+
+- A grid has the filter bar unless `filter_bar={false}`: a line above the
+  grid, and **⋯** in place of the funnel on its headers.
+- The chips are drawn anew: the column's label, the operator and the
+  value in their weights, on a tint of `--masu-accent`, and a × drawn as
+  an icon. Their text (what a screen reader says) is the same.
+
+### Fixed
+
+- The label of a header that aligns to the end (a number's) went to its
+  start, under its funnel: its row was reversed, and laid out from its
+  end, which a reversed row has at the start. It is at the header's end,
+  over its column's values, and the button keeps clear of it.
+
 ## [0.5.2] - 2026-10-23
 
 ### Fixed

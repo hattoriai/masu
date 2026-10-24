@@ -209,8 +209,27 @@
   background-color: var(--masu-header-hover);
 }
 
+/* A header of the end lays out in reverse, from the end: its label at the
+   end, its arrow on the label's inner side. */
 .masu-hcell.masu-align-end {
   flex-direction: row-reverse;
+  justify-content: flex-start;
+}
+
+/* A header with a menu keeps room for its button, so that the button
+   covers no label: at its end; at its start in a header of the end, whose
+   label stays over its column's values, the side that is free. There, a
+   spacer before the label (after the box that selects every row, which
+   stays at the start) keeps the room. */
+.masu .masu-hcell.masu-has-menu:not(.masu-align-end) {
+  padding-inline-end: 2rem;
+}
+
+.masu .masu-hcell.masu-has-menu.masu-align-end::before {
+  content: "";
+  flex: none;
+  order: 98;
+  width: 1.625rem;
 }
 
 .masu-hcell.masu-align-center {
@@ -458,8 +477,9 @@
   }
 }
 
-/* The filter button of a header: on hover and on focus, and always when
-   its column is filtered. */
+/* The menu button of a header, at its end: on hover and on focus, and
+   always when its column is filtered (without the filter bar, whose chips
+   say so). */
 .masu .masu-filter-button {
   position: absolute;
   top: 50%;
@@ -480,10 +500,14 @@
   transition: opacity var(--masu-transition), background var(--masu-transition);
 }
 
-/* A header that aligns to the end has its funnel at the start. */
+/* A header that aligns to the end has its button at the start. */
 .masu .masu-hcell.masu-align-end .masu-filter-button {
   inset-inline-start: 0.375rem;
   inset-inline-end: auto;
+}
+
+.masu .masu-hcell.masu-align-end:has(> .masu-select-all) .masu-filter-button {
+  inset-inline-start: 2rem;
 }
 
 .masu .masu-hcell:hover .masu-filter-button,
@@ -639,7 +663,9 @@
   color: var(--masu-accent-text);
 }
 
-/* The chips of the filters, above the grid. */
+/* The chips of the filters, above the grid: each says its column, its
+   operator and its value, opens the column's menu, and has a button that
+   takes it away. With the filter bar, Add filter follows them. */
 .masu-chips {
   display: flex;
   flex-wrap: wrap;
@@ -656,9 +682,17 @@
   display: inline-flex;
   align-items: center;
   max-width: 100%;
-  border: 1px solid var(--masu-border);
-  border-radius: 999px;
-  background: var(--masu-surface);
+  height: var(--masu-chip-height, 1.75rem);
+  border: 1px solid color-mix(in oklab, var(--masu-accent) 24%, var(--masu-border));
+  border-radius: var(--masu-radius);
+  background: color-mix(in oklab, var(--masu-accent) 7%, var(--masu-background));
+  color: var(--masu-text);
+  font-size: 0.8125rem;
+  transition: border-color var(--masu-transition), background var(--masu-transition);
+}
+
+.masu-chip:hover {
+  border-color: color-mix(in oklab, var(--masu-accent) 40%, var(--masu-border));
 }
 
 .masu .masu-chip button {
@@ -670,38 +704,96 @@
 }
 
 .masu .masu-chip-text {
-  overflow: hidden;
-  max-width: 24rem;
-  padding: 0.125rem 0.25rem 0.125rem 0.75rem;
-  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  min-width: 0;
+  height: 100%;
+  padding: 0 0.25rem 0 0.625rem;
+  border-radius: var(--masu-radius) 0 0 var(--masu-radius);
   white-space: nowrap;
-  border-radius: 999px;
+}
+
+.masu-chip-label {
+  flex: none;
+  font-weight: 600;
+}
+
+.masu-chip-op {
+  flex: none;
+  color: var(--masu-muted);
+}
+
+.masu-chip-value {
+  overflow: hidden;
+  max-width: 18rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
 }
 
 .masu .masu-chip-remove {
-  width: 1.5rem;
-  height: 1.5rem;
-  margin-inline-end: 0.125rem;
-  border-radius: 999px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-inline: 0.125rem 0.25rem;
+  padding: 0;
+  border-radius: calc(var(--masu-radius) - 2px);
   color: var(--masu-muted) !important;
-  font-size: 1rem !important;
-  line-height: 1;
 }
 
 .masu .masu-chip-remove:hover {
-  background: color-mix(in oklab, var(--masu-text) 8%, transparent) !important;
+  background: color-mix(in oklab, var(--masu-accent) 16%, transparent) !important;
   color: var(--masu-text) !important;
 }
 
-.masu .masu-chips-clear {
-  padding: 0.125rem 0.5rem;
-  border: 0;
+/* The filter bar's Add filter: quiet until it is wanted. */
+.masu .masu-add-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  height: var(--masu-chip-height, 1.75rem);
+  padding: 0 0.625rem 0 0.5rem;
+  border: 1px dashed var(--masu-border);
+  border-radius: var(--masu-radius);
   background: transparent;
   color: var(--masu-muted);
   font: inherit;
+  font-size: 0.8125rem;
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  transition: border-color var(--masu-transition), color var(--masu-transition), background var(--masu-transition);
+}
+
+.masu .masu-add-filter:hover,
+.masu .masu-add-filter[aria-expanded="true"] {
+  border-color: color-mix(in oklab, var(--masu-accent) 45%, var(--masu-border));
+  border-style: solid;
+  background: color-mix(in oklab, var(--masu-accent) 5%, transparent);
+  color: var(--masu-text);
+}
+
+.masu .masu-add-filter:focus-visible {
+  outline: none;
+  box-shadow: var(--masu-focus-ring, 0 0 0 2px var(--masu-background), 0 0 0 4px var(--masu-accent));
+}
+
+.masu .masu-chips-clear {
+  height: var(--masu-chip-height, 1.75rem);
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--masu-radius);
+  background: transparent;
+  color: var(--masu-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.masu .masu-chips-clear:hover {
+  background: color-mix(in oklab, var(--masu-text) 6%, transparent);
+  color: var(--masu-text);
 }
 
 /* Editing. An editable cell shows a text cursor; its editor sits on it. */
@@ -1377,12 +1469,26 @@
   text-align: start;
 }
 
-.masu-chip-group {
-  border-style: dashed;
+/* Group by, as the menu's other items, with the filter under a rule. */
+.masu .masu-menu-group {
+  padding-bottom: 0.5rem;
+  border-color: transparent;
+  border-bottom-color: var(--masu-rule, var(--masu-border));
+  border-radius: 0;
 }
 
-.masu .masu-chip-group .masu-chip-text {
-  padding: 0 0.25rem 0 0.625rem;
+.masu .masu-menu-group:hover {
+  background: var(--masu-surface);
+}
+
+.masu-chip-group {
+  border-style: dashed;
+  border-color: var(--masu-border);
+  background: var(--masu-surface);
+}
+
+.masu-chip-group .masu-chip-label {
+  font-weight: 500;
 }
 
 .masu .masu-chip-text:disabled {
@@ -1414,13 +1520,9 @@
 }
 
 /* A header of the end lays out in reverse: its box goes last, which is
-   first; its funnel, at its start, goes after the box. */
+   first. */
 .masu .masu-hcell.masu-align-end > .masu-select-all {
   order: 99;
-}
-
-.masu .masu-hcell.masu-align-end:has(> .masu-select-all) .masu-filter-button {
-  inset-inline-start: 2rem;
 }
 
 .masu-body > .masu-row.masu-row-chosen {
@@ -1833,6 +1935,41 @@
 
 .masu .masu-menu-item:hover {
   background: var(--masu-surface);
+}
+
+/* The sorts of a header's menu: the column's own, marked; a rule under them. */
+.masu-menu-sorts {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--masu-rule, var(--masu-border));
+}
+
+.masu .masu-menu-sort[aria-pressed="true"] {
+  color: var(--masu-accent);
+  font-weight: 600;
+}
+
+/* Add filter's menu: the columns that filter. */
+.masu .masu-filters-panel {
+  width: 14rem;
+  padding: 0.375rem;
+}
+
+.masu .masu-filters-list {
+  margin-bottom: 0;
+}
+
+.masu .masu-filters-list .masu-menu-item[data-filtered]::after {
+  content: "";
+  width: 0.375rem;
+  height: 0.375rem;
+  margin-inline-start: auto;
+  border-radius: 50%;
+  background: var(--masu-accent);
+}
+
+.masu .masu-filters-list .masu-menu-item {
+  display: flex;
+  align-items: center;
 }
 
 .masu-action-menu {

@@ -189,6 +189,7 @@ defmodule MasuDev.Layouts do
           {"Tasks", "/tasks"},
           {"Pages", "/pages"},
           {"Look", "/look"},
+          {"Header", "/header"},
           {"Menus", "/menus"},
           {"Actions", "/actions"},
           {"Editors", "/editors"},
@@ -1163,13 +1164,101 @@ defmodule MasuDev.LookLive do
     </style>
     <h1 id="look-label">Lotus Web's table, in Masu</h1>
     <div style="width: 660px">
-      <.data_grid id="look" rows={@rows} class="lotus-look" row_height={52} height="360px" label_id="look-label">
+      <.data_grid id="look" rows={@rows} class="lotus-look" row_height={52} height="360px" label_id="look-label" filter_bar={false}>
         <:col field={:id} label="id" width={100} />
         <:col field={:name} label="name" width={240} />
         <:col field={:plan} label="plan" width={160} />
         <:col field={:revenue} label="revenue" width={160} />
       </.data_grid>
     </div>
+    """
+  end
+end
+
+defmodule MasuDev.HeaderLive do
+  @moduledoc """
+  The headers: the filter bar (the default), with Add filter above the
+  grid and a menu of sorts and filter on each header; the filters in the
+  bar alone (`header_filters={false}`); and the leaner header of
+  `filter_bar={false}`, a funnel on each header that filters.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @rows [
+    %{
+      handle: "rodloboz",
+      title: "Viking Cinderella",
+      slug: "viking-cinderella",
+      views: 105,
+      visitors: 93
+    },
+    %{
+      handle: "rodloboz",
+      title: "The Long Way Through",
+      slug: "the-long-way-through",
+      views: 51,
+      visitors: 38
+    },
+    %{
+      handle: "ana",
+      title: "Salt and Silver",
+      slug: "salt-and-silver",
+      views: 212,
+      visitors: 170
+    },
+    %{handle: "ana", title: "Night Ferry", slug: "night-ferry", views: 18, visitors: 15},
+    %{
+      handle: "miguel",
+      title: "Rooftops at Dawn",
+      slug: "rooftops-at-dawn",
+      views: 340,
+      visitors: 288
+    },
+    %{
+      handle: "miguel",
+      title: "A Quiet Harbour",
+      slug: "a-quiet-harbour",
+      views: 77,
+      visitors: 64
+    },
+    %{handle: "ines", title: "Glass Market", slug: "glass-market", views: 9, visitors: 9},
+    %{handle: "ines", title: "Low Tide", slug: "low-tide", views: 146, visitors: 121}
+  ]
+
+  @impl true
+  def mount(_params, _session, socket), do: {:ok, assign(socket, rows: @rows)}
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1>The filter bar</h1>
+    <.data_grid id="bar" rows={@rows} height="380px" filters={[{:views, :gte, 50}]} sort={[{:views, :desc}]}>
+      <:col field={:handle} type={:enum} />
+      <:col field={:title} />
+      <:col field={:slug} />
+      <:col field={:views} type={:integer} />
+      <:col field={:visitors} type={:integer} />
+    </.data_grid>
+
+    <h1>Filters in the bar alone (header_filters={"{false}"})</h1>
+    <.data_grid id="bar-only" rows={@rows} height="380px" header_filters={false} filters={[{:views, :gte, 50}]}>
+      <:col field={:handle} type={:enum} />
+      <:col field={:title} />
+      <:col field={:slug} />
+      <:col field={:views} type={:integer} />
+      <:col field={:visitors} type={:integer} />
+    </.data_grid>
+
+    <h1>The leaner header (filter_bar={"{false}"})</h1>
+    <.data_grid id="lean" rows={@rows} height="380px" filter_bar={false} filters={[{:views, :gte, 50}]} sort={[{:views, :desc}]}>
+      <:col field={:handle} type={:enum} />
+      <:col field={:title} />
+      <:col field={:slug} />
+      <:col field={:views} type={:integer} />
+      <:col field={:visitors} type={:integer} />
+    </.data_grid>
     """
   end
 end
@@ -1998,6 +2087,7 @@ defmodule MasuDev.Router do
     live("/tasks", MasuDev.TasksLive)
     live("/pages", MasuDev.PagesLive)
     live("/look", MasuDev.LookLive)
+    live("/header", MasuDev.HeaderLive)
     live("/menus", MasuDev.MenusLive)
     live("/limited", MasuDev.LimitedLive)
     live("/results", MasuDev.ResultsLive)

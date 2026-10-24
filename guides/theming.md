@@ -187,9 +187,10 @@ the active cell a line of it.
 | `.masu-active`, `.masu-selected`, `.masu-col-selected` | the active cell, a selected cell, a header of a selected column |
 | `.masu-loading`, `.masu-null`, `.masu-empty` | a row that is coming, an empty value, the grid with no rows |
 | `.masu-busy`, `.masu-resizing` | a query being applied, a column being resized |
-| `.masu-filter-button` | the funnel of a header; `[data-active]` when its column is filtered |
-| `.masu-menu`, `.masu-menu-op`, `.masu-menu-input`, `.masu-menu-value`, `.masu-menu-count`, `.masu-menu-apply` | the filter menu |
-| `.masu-chips`, `.masu-chip`, `.masu-chip-text`, `.masu-chip-remove`, `.masu-chips-clear` | the filters above the grid |
+| `.masu-has-menu`, `.masu-filter-button` | a header with a menu, and its button (**⋯**, or the funnel with `filter_bar={false}`; `[data-active]` then when its column is filtered) |
+| `.masu-menu`, `.masu-menu-sorts`, `.masu-menu-sort`, `.masu-menu-op`, `.masu-menu-input`, `.masu-menu-value`, `.masu-menu-count`, `.masu-menu-apply` | a header's menu: its sorts (`aria-pressed` on the grid's), and the filter |
+| `.masu-chips`, `.masu-filter-bar`, `.masu-chip`, `.masu-chip-text`, `.masu-chip-label`, `.masu-chip-op`, `.masu-chip-value`, `.masu-chip-remove`, `.masu-chips-clear` | the filters above the grid (`.masu-filter-bar` with the filter bar), each chip's column, operator and value; `--masu-chip-height` (1.75rem) |
+| `.masu-add-filter`, `.masu-filters-panel` | the filter bar's Add filter, and its menu of columns (`data-filtered` on a column with a filter) |
 | `.masu-editable`, `.masu-editor`, `.masu-saving`, `.masu-invalid` | a cell that edits, its editor, a cell being saved, a cell refused |
 | `.masu-choices`, `.masu-choice` | an enum's editor: the list of its values, and each |
 | `.masu-pager`, `.masu-pager-range`, `.masu-pager-previous`, `.masu-pager-next`, `.masu-pager-form` | the pager of a grid of pages |

@@ -176,22 +176,33 @@ export function describe(
   format: (value: unknown) => string,
   messages: Record<string, string>,
 ): string {
+  const { label, op, value } = describeParts(filter, column, format, messages);
+  return value === null ? `${label} ${op}` : `${label} ${op} ${value}`;
+}
+
+/** A filter in words, in its three parts: the column's label, the operator, and the value (null when the operator takes none). */
+export function describeParts(
+  filter: FilterSpec,
+  column: ColumnConfig,
+  format: (value: unknown) => string,
+  messages: Record<string, string>,
+): { label: string; op: string; value: string | null } {
   const op = filter.op as Op;
-  const words = `${column.label} ${opLabel(op, column.type, messages, column.many)}`;
+  const parts = { label: column.label, op: opLabel(op, column.type, messages, column.many) };
   const show = (value: unknown) =>
     value === null ? (messages.empty_value ?? "(empty)") : column.type === "boolean" ? boolText(value, messages) : format(value);
 
   switch (arity(op)) {
     case 0:
-      return words;
+      return { ...parts, value: null };
     case 2: {
       const [from, to] = filter.value as unknown[];
-      return `${words} ${show(from)} ${messages.and ?? "and"} ${show(to)}`;
+      return { ...parts, value: `${show(from)} ${messages.and ?? "and"} ${show(to)}` };
     }
     case "list":
-      return `${words} ${(filter.value as unknown[]).map(show).join(", ")}`;
+      return { ...parts, value: (filter.value as unknown[]).map(show).join(", ") };
     default:
-      return `${words} ${show(filter.value)}`;
+      return { ...parts, value: show(filter.value) };
   }
 }
 
