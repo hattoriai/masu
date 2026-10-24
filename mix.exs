@@ -1,7 +1,7 @@
 defmodule Masu.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "0.7.0"
   @source_url "https://github.com/hattoriai/masu"
 
   # MASU_OLDEST=1 resolves the oldest Phoenix and LiveView that Masu
