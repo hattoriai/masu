@@ -164,6 +164,10 @@ sees the grid's `"masu:reply"`.
   or `{:patch, path}`, or `{:error, :refused}` when the server refuses
   it (not offered, hidden or disabled for the row, no row selected). See
   [Actions](actions.md).
+* `activate_row(view, id, row_id)`: opens a row as a click on it or
+  Enter does (`on_row_activate`); `:ok`, the `{:patch, path}` or
+  `{:navigate, path}` the grid follows, or `{:error, :refused}` (no
+  `on_row_activate`, no such row).
 
 ## Menus of your own
 

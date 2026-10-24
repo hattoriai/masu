@@ -85,9 +85,9 @@ The grid's TypeScript is in `assets/src`, bundled into one file by esbuild
 - `features/` has a class for each of the grid's features, with its own
   state: editing, new rows, deleting, the menus and actions, history,
   filters, the toolbar, selection, details, the columns' layout, copy,
-  the people of a room (`peers`), the keyboard and the pointer. The grid
-  makes each (`this.editing`); a feature reaches the core through
-  `this.grid`. A new feature is a class there, not more of `grid.ts`.
+  the people of a room (`peers`), the keyboard, the pointer and opening
+  a row (`activation`). The grid makes each (`this.editing`); a feature
+  reaches the core through `this.grid`. A new feature is a class there, not more of `grid.ts`.
 - The other modules are the parts without a grid: pure functions
   (`geometry`, `offsets`, `scroll`, `layout`, `sorting`, `filters`,
   `format`, `parse`, `tsv`), what draws an element (`header`, `toolbar`,
