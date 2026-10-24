@@ -1,5 +1,5 @@
-// A column's header menu: a small dialog under its header, with the
-// app's items for the column (Masu.Action), Group by, and the filter:
+// A column's header menu: a small dialog under its header, with its
+// sorts, the app's items for the column (Masu.Action), Group by, and the filter:
 // the operators of the column's type and the input they need. An enum
 // lists its values with how many rows have each, asked of the server,
 // with a search box when there are many.
@@ -28,6 +28,10 @@ export interface MenuHost {
   grouped?: boolean;
   /** The app's items for the column (`:header_action`). */
   actions?: { label: string; run(): void }[];
+  /** Sorts by the column, or stops (null); absent when the column does not sort. */
+  sort?: { dir: "asc" | "desc" | null; set(dir: "asc" | "desc" | null): void };
+  /** Whether the menu has the column's filter (false: a header's menu without it, `header_filters={false}`). */
+  filters?: boolean;
 }
 
 let menus = 0;
@@ -42,9 +46,12 @@ export class FilterMenu {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanups: (() => void)[] = [];
 
-  constructor(host: MenuHost, anchor: HTMLElement) {
+  /** Under `anchor`: an element, or a function that finds it again (a chip, drawn again as the rows change). */
+  constructor(host: MenuHost, anchor: HTMLElement | (() => HTMLElement)) {
     this.host = host;
+    const at = typeof anchor === "function" ? anchor : () => anchor;
     const { column, current, messages } = host;
+    const filters = column.filterable && host.filters !== false;
     const ops = opsFor(column.type, column.filters, column.many);
     this.op = current && ops.includes(current.op as Op) ? (current.op as Op) : ops[0];
     if (current && arity(current.op as Op) === "list" && Array.isArray(current.value)) {
@@ -57,9 +64,34 @@ export class FilterMenu {
     this.el.setAttribute("role", "dialog");
     this.el.setAttribute(
       "aria-label",
-      (column.filterable ? (messages.filter ?? "Filter {label}") : (messages.column_menu ?? "{label} menu")).replace("{label}", column.label),
+      (filters ? (messages.filter ?? "Filter {label}") : (messages.column_menu ?? "{label} menu")).replace("{label}", column.label),
     );
     this.el.id = id;
+
+    if (host.sort) {
+      const { dir, set } = host.sort;
+      const sorts = document.createElement("div");
+      sorts.className = "masu-menu-items masu-menu-sorts";
+      sorts.setAttribute("role", "group");
+      const items: ["asc" | "desc" | null, string][] = [
+        ["asc", messages.sort_asc ?? "Sort ascending"],
+        ["desc", messages.sort_desc ?? "Sort descending"],
+      ];
+      if (dir) items.push([null, messages.sort_clear ?? "Clear sort"]);
+      for (const [to, label] of items) {
+        const item = button(label, "button", "masu-menu-item masu-menu-sort");
+        if (to) {
+          item.dataset.dir = to;
+          item.setAttribute("aria-pressed", String(dir === to));
+        }
+        item.addEventListener("click", () => {
+          host.close();
+          set(to);
+        });
+        sorts.appendChild(item);
+      }
+      this.el.appendChild(sorts);
+    }
 
     if (host.actions?.length) {
       const actions = document.createElement("div");
@@ -89,7 +121,7 @@ export class FilterMenu {
     this.form = document.createElement("form");
     this.form.className = "masu-menu-form";
     // A column that does not filter: its items and Group by only.
-    if (column.filterable) this.el.appendChild(this.form);
+    if (filters) this.el.appendChild(this.form);
 
     if (ops.length > 1) {
       const select = document.createElement("select");
@@ -132,14 +164,14 @@ export class FilterMenu {
     });
     this.listen(document, "mousedown", (event) => {
       const target = event.target as Node;
-      if (!this.el.contains(target) && !anchor.contains(target)) host.close();
+      if (!this.el.contains(target) && !at().contains(target)) host.close();
     });
 
-    if (column.filterable) this.renderFields();
+    if (filters) this.renderFields();
     host.root.appendChild(this.el);
     lift(this.el);
-    this.place(anchor);
-    this.cleanups.push(follow(() => this.place(anchor)));
+    this.place(at());
+    this.cleanups.push(follow(() => this.place(at())));
     this.focusFirst();
   }
 

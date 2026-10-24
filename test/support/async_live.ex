@@ -141,6 +141,7 @@ defmodule MasuTest.ControlledLive do
       paging={:pages}
       page_size={2}
       multi_sort={false}
+      filter_bar={false}
     >
       <:col field={:name} />
       <:col field={:age} type={:integer} />

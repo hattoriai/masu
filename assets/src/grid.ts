@@ -10,16 +10,17 @@
 
 import { ActionMenu, type MenuItem } from "./actions";
 import { BlockCache } from "./blocks";
-import { allows, describe, replaceFilter, zoned } from "./filters";
+import { allows, describe, describeParts, replaceFilter, zoned } from "./filters";
 import { fromTSV, inputText, invalid, matching, placePaste, sendValue, shownValue } from "./parse";
 import { FilterMenu } from "./menu";
+import { addFilterButton, clearAllButton, filterChip, groupChip, headerCell, MORE_ICON } from "./header";
 import { drop, floats, follow, lift, place as placeAt } from "./float";
 import { copyText, formatter, manyFormatter, type Formatter } from "./format";
 import { contains, move, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { moveKey, pins, scrollFor, visualLeft, type Pins } from "./layout";
 import { indexAt, rowTop, totalHeight, type Gap } from "./offsets";
 import { boxHeight, clamp, toContent, toScroll, wheelPixels } from "./scroll";
-import { ColumnsPanel, ExportPanel, ViewsPanel } from "./panels";
+import { ColumnsPanel, ExportPanel, FiltersPanel, ViewsPanel } from "./panels";
 import { nextSorts } from "./sorting";
 import { toTSV } from "./tsv";
 import { sameView } from "./view";
@@ -125,7 +126,8 @@ export class Grid {
   private statusEl: HTMLElement | null;
   private searchEl: HTMLInputElement | null;
   private chipsEl: HTMLElement;
-  private menu: { col: number; menu: FilterMenu } | null = null;
+  /** The menu open: of a header, or the filter of a column opened from the filter bar (`from`: its Add filter, or the key of its chip). */
+  private menu: { col: number; menu: FilterMenu; from: MenuFrom } | null = null;
   /** The menu of a cell: the grid's items and the app's (Masu.Action). */
   private cellMenu: ActionMenu | null = null;
   /** Where the panel of an item (Masu.Action), which the server renders, goes: a header (row -1) or a cell. */
@@ -145,7 +147,10 @@ export class Grid {
     | { kind: "columns"; panel: ColumnsPanel }
     | { kind: "views"; panel: ViewsPanel }
     | { kind: "export"; panel: ExportPanel }
+    | { kind: "filters"; panel: FiltersPanel }
     | null = null;
+  /** The filter bar's Add filter (`filter_bar`). */
+  private addFilter: HTMLButtonElement | null = null;
   /** A block of a revision the grid does not have yet (a layout's answer). */
   private pendingBlock: BlockReply | null = null;
   private lastNotice = 0;
@@ -323,6 +328,9 @@ export class Grid {
       (config.rowActions?.length ?? 0) > 0 !== (previous.rowActions?.length ?? 0) > 0;
     const widthsChanged = JSON.stringify(config.columns.map((c) => [c.key, c.width])) !== JSON.stringify(previous.columns.map((c) => [c.key, c.width]));
     this.config = config;
+    if ((config.filterBar !== false) !== (previous.filterBar !== false) || (config.headerFilters !== false) !== (previous.headerFilters !== false)) {
+      this.renderHeader();
+    }
 
     if (columnsChanged || (widthsChanged && !this.resizing)) {
       // Widths the server sends (a view applied) win; else the person's stay.
@@ -1162,9 +1170,11 @@ export class Grid {
   private focusDetail(index: number): boolean {
     const gap = this.gaps.find((g) => g.index === index);
     if (!gap) return false;
+    // Not the chips of a grid in it (its Add filter): the grid, as before the filter bar.
     const target =
-      gap.el.querySelector<HTMLElement>('.masu-grid, a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])') ??
-      gap.el;
+      [...gap.el.querySelectorAll<HTMLElement>('.masu-grid, a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].find(
+        (el) => !el.closest(".masu-chips"),
+      ) ?? gap.el;
     if (target === gap.el) gap.el.tabIndex = -1;
     target.focus();
     return true;
@@ -1209,65 +1219,39 @@ export class Grid {
   }
 
   private renderHeader(): void {
+    const bar = this.filterBar();
+    const several = this.query.sorts.length > 1;
     const cells = this.columns.map((column, col) => {
-      const cell = document.createElement("div");
-      cell.id = `${this.id}-h${col}`;
-      cell.className = `masu-hcell masu-align-${column.align}${column.sortable ? " masu-sortable" : ""}`;
-      cell.setAttribute("role", "columnheader");
-      cell.setAttribute("aria-colindex", String(col + 1));
-      cell.dataset.key = column.key;
-      cell.dataset.col = String(col);
-      this.pin(cell, col);
-
-      if (col === 0 && this.config.selection) {
-        const box = document.createElement("input");
-        box.type = "checkbox";
-        box.className = "masu-select-all";
-        box.tabIndex = -1;
-        box.checked = this.chosen.all && this.chosen.except.size === 0;
-        box.indeterminate = !box.checked && (this.chosen.all || this.chosen.ids.size > 0);
-        box.setAttribute("aria-label", this.message("select_all", {}));
-        cell.appendChild(box);
-      }
-
-      const label = document.createElement("span");
-      label.className = "masu-label";
-      label.textContent = column.label;
-      cell.appendChild(label);
-
       const position = this.query.sorts.findIndex((sort) => sort.key === column.key);
-      if (column.sortable) {
-        const sort = this.query.sorts[position];
-        const icon = document.createElement("span");
-        icon.className = "masu-sort";
-        icon.setAttribute("aria-hidden", "true");
-        if (sort) {
-          icon.dataset.dir = sort.dir;
-          if (this.query.sorts.length > 1) icon.textContent = String(position + 1);
-        }
-        cell.appendChild(icon);
-        cell.setAttribute("aria-sort", position === 0 ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
-      }
-
-      if (this.hasHeaderMenu(col)) {
-        const filtered = this.query.filters.some((filter) => filter.key === column.key);
-        const filter = document.createElement("button");
-        filter.type = "button";
-        filter.tabIndex = -1;
-        filter.className = "masu-filter-button";
-        filter.dataset.col = String(col);
-        filter.setAttribute("aria-label", this.message(column.filterable ? "filter" : "column_menu", { label: column.label }));
-        filter.setAttribute("aria-haspopup", "dialog");
-        filter.setAttribute("aria-expanded", this.menu?.col === col ? "true" : "false");
-        if (filtered) filter.dataset.active = "true";
-        filter.innerHTML = column.filterable ? FILTER_ICON : MORE_ICON;
-        cell.appendChild(filter);
-      }
-
-      const resizer = document.createElement("span");
-      resizer.className = "masu-resizer";
-      resizer.setAttribute("aria-hidden", "true");
-      cell.appendChild(resizer);
+      const filtered = this.query.filters.some((filter) => filter.key === column.key);
+      const menu = this.hasHeaderMenu(col);
+      const cell = headerCell({
+        id: `${this.id}-h${col}`,
+        col,
+        column,
+        sort: column.sortable && position >= 0 ? { dir: this.query.sorts[position].dir, rank: several ? position + 1 : null } : null,
+        selectAll:
+          col === 0 && this.config.selection
+            ? {
+                checked: this.chosen.all && this.chosen.except.size === 0,
+                indeterminate: !(this.chosen.all && this.chosen.except.size === 0) && (this.chosen.all || this.chosen.ids.size > 0),
+                label: this.message("select_all", {}),
+              }
+            : null,
+        // With the filter bar, the menu of every column is three dots (its
+        // chip says it is filtered); without it, the funnel.
+        menu: menu
+          ? {
+              label: this.message(column.filterable && !bar && this.config.headerFilters !== false ? "filter" : "column_menu", {
+                label: column.label,
+              }),
+              expanded: this.menu?.col === col && !this.menu.from,
+              icon: column.filterable && !bar && this.config.headerFilters !== false ? "filter" : "more",
+              active: filtered && !bar,
+            }
+          : null,
+      });
+      this.pin(cell, col);
       return cell;
     });
     if (this.hasRowActions()) {
@@ -1282,59 +1266,48 @@ export class Grid {
     this.renderChips();
   }
 
+  /** Whether the grid has the filter bar (`filter_bar`, the default): Add filter above it, and a menu of sorts and filter on each header. */
+  private filterBar(): boolean {
+    return this.config.filterBar !== false;
+  }
+
   private renderChips(): void {
     const messages = this.messages();
     const groups = (this.query.groups ?? []).flatMap((key) => {
       const column = this.catalogColumn(key);
       if (!column) return [];
-      const chip = document.createElement("span");
-      chip.className = "masu-chip masu-chip-group";
-      const text = document.createElement("span");
-      text.className = "masu-chip-text";
-      text.textContent = this.message("grouped_by", { label: column.label });
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "masu-chip-remove";
-      remove.dataset.group = key;
-      remove.setAttribute("aria-label", this.message("ungroup_by", { label: column.label }));
-      remove.textContent = "×";
-      chip.append(text, remove);
-      return [chip];
+      return [groupChip(key, this.message("grouped_by", { label: column.label }), this.message("ungroup_by", { label: column.label }))];
     });
 
     const chips = this.query.filters.flatMap((filter) => {
-      // A filter on a hidden column keeps its chip, which opens no menu.
       const col = this.columns.findIndex((column) => column.key === filter.key);
       const column = col >= 0 ? this.columns[col] : this.catalogColumn(filter.key);
       if (!column) return [];
       const format = col >= 0 ? this.formatters[col] : formatter(column.type, this.config.locale ?? undefined, null, column.raw);
-      const chip = document.createElement("span");
-      chip.className = "masu-chip";
-      const text = document.createElement("button");
-      text.type = "button";
-      text.className = "masu-chip-text";
-      if (col >= 0) text.dataset.col = String(col);
-      else text.disabled = true;
-      text.textContent = describe(filter, column, (value) => format(value as CellValue), messages);
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "masu-chip-remove";
-      remove.dataset.key = filter.key;
-      remove.setAttribute("aria-label", `${messages.remove_filter}: ${text.textContent}`);
-      remove.textContent = "×";
-      chip.append(text, remove);
-      return [chip];
+      const parts = describeParts(filter, column, (value) => format(value as CellValue), messages);
+      return [filterChip(filter.key, col >= 0 ? col : null, parts, messages.remove_filter)];
     });
 
-    if (chips.length > 1) {
-      const clear = document.createElement("button");
-      clear.type = "button";
-      clear.className = "masu-chips-clear";
-      clear.textContent = messages.clear_all;
-      chips.push(clear);
+    // The bar shows while a column filters, so that a filter can be added.
+    const bar = this.filterBar() && this.columns.some((column) => column.filterable);
+    if (bar) {
+      this.addFilter ??= addFilterButton(messages.add_filter);
+      this.addFilter.querySelector("span")!.textContent = messages.add_filter;
+    } else if (this.addFilter) {
+      if (this.panel?.kind === "filters") this.closePanel(false);
+      this.addFilter = null;
     }
-    this.chipsEl.replaceChildren(...groups, ...chips);
-    this.chipsEl.hidden = groups.length + chips.length === 0;
+    const clear = chips.length > 1 ? [clearAllButton(messages.clear_all)] : [];
+    // The focus stays on Add filter, or on the chip of the same filter, as they are drawn again.
+    const active = document.activeElement as HTMLElement | null;
+    const focused = active === this.addFilter ? this.addFilter : active?.matches(".masu-chip-text") ? (active.dataset.key ?? null) : null;
+    this.chipsEl.replaceChildren(...groups, ...chips, ...(this.addFilter ? [this.addFilter] : []), ...clear);
+    this.chipsEl.classList.toggle("masu-filter-bar", bar);
+    this.chipsEl.hidden = !bar && groups.length + chips.length === 0;
+    if (focused === null) return;
+    const again =
+      typeof focused === "string" ? [...this.chipsEl.querySelectorAll<HTMLElement>(".masu-chip-text")].find((el) => el.dataset.key === focused) : focused;
+    again?.focus({ preventScroll: true });
   }
 
   /** A column of the grid, shown or hidden, as a column's config (for its label and type). */
@@ -1366,6 +1339,10 @@ export class Grid {
 
   private onChipClick(event: MouseEvent): void {
     const target = event.target as HTMLElement;
+    if (this.addFilter && this.addFilter.contains(target)) {
+      this.togglePanel("filters");
+      return;
+    }
     const remove = target.closest<HTMLElement>(".masu-chip-remove");
     if (remove?.dataset.group) {
       this.groupBy(remove.dataset.group, false);
@@ -1380,23 +1357,36 @@ export class Grid {
       return;
     }
     const text = target.closest<HTMLElement>(".masu-chip-text");
-    if (text) this.openMenu(Number(text.dataset.col));
+    if (text?.dataset.col) this.openMenu(Number(text.dataset.col), { chip: text.dataset.key ?? null });
   }
 
-  /** Whether a column has a header menu: it filters, or has the app's items. */
+  /**
+   * Whether a column has a header menu: it filters there (`header_filters`),
+   * or has the app's items; with the filter bar, or it sorts.
+   */
   private hasHeaderMenu(col: number): boolean {
     const column = this.columns[col];
-    return column !== undefined && (column.filterable || (column.headerActions?.length ?? 0) > 0);
+    if (column === undefined) return false;
+    return (
+      (column.filterable && this.config.headerFilters !== false) ||
+      (column.headerActions?.length ?? 0) > 0 ||
+      (this.filterBar() && column.sortable)
+    );
   }
 
-  /** Opens the header menu of a column (its filter, and the app's items), under its header. */
-  openMenu(col: number): void {
+  /**
+   * Opens the header menu of a column (its sorts, its filter, and the app's
+   * items), under its header; or, from the filter bar, the column's filter
+   * alone, under Add filter or its chip.
+   */
+  openMenu(col: number, from: MenuFrom = null): void {
     const column = this.columns[col];
-    if (!column || !this.hasHeaderMenu(col)) return;
+    if (!column || !(from ? column.filterable : this.hasHeaderMenu(col))) return;
     this.closeMenu(false);
     this.closeCellMenu(false);
-    const anchor = this.headerRow.children[col] as HTMLElement;
-    this.ensureVisible({ row: this.active.row, col });
+    const header = this.headerRow.children[col] as HTMLElement;
+    const anchor = from ? () => this.barAnchor(from) : header;
+    if (!from) this.ensureVisible({ row: this.active.row, col });
     const menu = new FilterMenu(
       {
         root: this.uiEl,
@@ -1415,23 +1405,40 @@ export class Grid {
           this.setQuery({ ...this.query, filters: replaceFilter(this.query.filters, column.key, filter) });
         },
         close: () => this.closeMenu(true),
+        filters: from !== null || this.config.headerFilters !== false,
         group:
-          this.config.groupable && column.sortable
+          !from && this.config.groupable && column.sortable
             ? (on) => {
                 this.closeMenu(true);
                 this.groupBy(column.key, on);
               }
             : undefined,
         grouped: (this.query.groups ?? []).includes(column.key),
-        actions: (column.headerActions ?? []).map((action) => ({
-          label: action.label,
-          run: () => this.runAction("header", action, col, -1, null),
-        })),
+        actions: from
+          ? []
+          : (column.headerActions ?? []).map((action) => ({
+              label: action.label,
+              run: () => this.runAction("header", action, col, -1, null),
+            })),
+        sort:
+          !from && column.sortable
+            ? {
+                dir: this.query.sorts.find((sort) => sort.key === column.key)?.dir ?? null,
+                set: (dir) => this.setSort(col, dir),
+              }
+            : undefined,
       },
       anchor,
     );
-    this.menu = { col, menu };
-    anchor.querySelector(".masu-filter-button")?.setAttribute("aria-expanded", "true");
+    this.menu = { col, menu, from };
+    if (!from) header.querySelector(".masu-filter-button")?.setAttribute("aria-expanded", "true");
+  }
+
+  /** Where a menu opened from the filter bar goes: under its chip, else under Add filter. */
+  private barAnchor(from: { chip: string | null }): HTMLElement {
+    const chip =
+      from.chip === null ? null : [...this.chipsEl.querySelectorAll<HTMLElement>(".masu-chip-text")].find((el) => el.dataset.key === from.chip);
+    return chip ?? this.addFilter ?? this.chipsEl;
   }
 
   /**
@@ -1450,10 +1457,16 @@ export class Grid {
 
   private closeMenu(focus: boolean): void {
     if (!this.menu) return;
-    const { col, menu } = this.menu;
+    const { col, menu, from } = this.menu;
     this.menu = null;
     menu.destroy();
     this.headerRow.children[col]?.querySelector(".masu-filter-button")?.setAttribute("aria-expanded", "false");
+    // Opened from the filter bar: the focus goes back to it.
+    if (focus && from) {
+      const anchor = this.barAnchor(from);
+      if (anchor !== this.chipsEl) anchor.focus({ preventScroll: true });
+      return;
+    }
     if (focus) {
       this.active = { row: -1, col };
       this.gridEl.focus({ preventScroll: true });
@@ -2279,7 +2292,7 @@ export class Grid {
       const button = target.closest<HTMLElement>(".masu-filter-button");
       if (!button) return;
       const col = Number(button.dataset.col);
-      if (this.menu?.col === col) this.closeMenu(true);
+      if (this.menu?.col === col && !this.menu.from) this.closeMenu(true);
       else this.openMenu(col);
     });
     this.on(this.gridEl, "contextmenu", (event) => this.onContextMenu(event));
@@ -2383,6 +2396,13 @@ export class Grid {
     const search = text.trim() === "" ? null : text.trim();
     if (search === this.query.search) return;
     this.setQuery({ ...this.query, search });
+  }
+
+  /** Sorts by one column, in one direction, or by none (null). */
+  private setSort(col: number, dir: "asc" | "desc" | null): void {
+    const column = this.columns[col];
+    if (!column?.sortable) return;
+    this.setQuery({ ...this.query, sorts: dir ? [{ key: column.key, dir }] : this.query.sorts.filter((sort) => sort.key !== column.key) });
   }
 
   private sortBy(col: number, additive: boolean): void {
@@ -2889,14 +2909,34 @@ export class Grid {
     if (this.panel?.kind === "views") this.panel.panel.refresh();
   }
 
-  private togglePanel(kind: "columns" | "views" | "export"): void {
+  private togglePanel(kind: "columns" | "views" | "export" | "filters"): void {
     const open = this.panel?.kind;
     this.closePanel(false);
     if (open === kind) return;
     this.closeMenu(false);
     const messages = this.messages();
 
-    if (kind === "export") {
+    if (kind === "filters") {
+      if (!this.addFilter) return;
+      const panel = new FiltersPanel(
+        {
+          root: this.uiEl,
+          messages,
+          columns: this.columns.flatMap((column, col) =>
+            column.filterable
+              ? [{ col, label: column.label, filtered: this.query.filters.some((filter) => filter.key === column.key) }]
+              : [],
+          ),
+          pick: (col) => {
+            this.closePanel(false);
+            this.openMenu(col, { chip: null });
+          },
+          close: () => this.closePanel(true),
+        },
+        this.addFilter,
+      );
+      this.panel = { kind, panel };
+    } else if (kind === "export") {
       if (this.exportButton?.dataset.busy) return;
       const panel = new ExportPanel(
         {
@@ -2969,7 +3009,7 @@ export class Grid {
     const { kind, panel } = this.panel;
     this.panel = null;
     panel.destroy();
-    if (focus) ({ columns: this.columnsButton, views: this.viewsButton, export: this.exportButton })[kind]?.focus();
+    if (focus) ({ columns: this.columnsButton, views: this.viewsButton, export: this.exportButton, filters: this.addFilter })[kind]?.focus();
   }
 
   // Export (Masu.Export): the server answers with a link, good once, to
@@ -4949,6 +4989,9 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   clear: "Clear",
   clear_all: "Clear all",
   remove_filter: "Remove the filter",
+  add_filter: "Add filter",
+  no_columns: "No columns",
+  sort_clear: "Clear sort",
   search_values: "Search values",
   no_values: "No values",
   empty_value: "(empty)",
@@ -5108,13 +5151,8 @@ const VIEWS_ICON =
 const EXPORT_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M8 2.5v7M5 6.5l3 3 3-3M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-// Three dots, drawn for Masu: a header's menu without a filter.
-const MORE_ICON =
-  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></svg>';
-
-// A funnel, drawn for Masu.
-const FILTER_ICON =
-  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.5 3h11l-4.25 5v4.25l-2.5 1.25V8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+/** Where a column's menu was opened: its header (null), or the filter bar: its chip (the filter's key), or Add filter (null). */
+type MenuFrom = null | { chip: string | null };
 
 interface Editor {
   input: HTMLInputElement;

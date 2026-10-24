@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allows, arity, describe, filterValue, inputType, inputValue, makeFilter, opsFor, replaceFilter, zoned } from "../src/filters";
+import { allows, arity, describe, describeParts, filterValue, inputType, inputValue, makeFilter, opsFor, replaceFilter, zoned } from "../src/filters";
 import type { ColumnConfig } from "../src/types";
 
 const column = (key: string, type: ColumnConfig["type"], label = key): ColumnConfig => ({
@@ -81,6 +81,25 @@ test("describe() says a filter in words, with the column's format", () => {
   assert.equal(describe({ key: "city", op: "is_nil" }, column("city", "text", "City"), String, messages), "City is empty");
   assert.equal(describe({ key: "on", op: "gt", value: "2026-01-01" }, column("on", "date", "Day"), String, messages), "Day after 2026-01-01");
   assert.equal(describe({ key: "ok", op: "eq", value: false }, column("ok", "boolean", "Active"), String, messages), "Active is No");
+});
+
+test("describeParts() splits a filter's words into its label, operator and value", () => {
+  const upper = (value: unknown) => String(value).toUpperCase();
+  assert.deepEqual(describeParts({ key: "city", op: "contains", value: "lon" }, column("city", "text", "City"), upper, messages), {
+    label: "City",
+    op: "contains",
+    value: "LON",
+  });
+  assert.deepEqual(describeParts({ key: "age", op: "between", value: ["20", "36"] }, column("age", "integer", "Age"), String, messages), {
+    label: "Age",
+    op: "between",
+    value: "20 and 36",
+  });
+  assert.deepEqual(describeParts({ key: "city", op: "is_nil" }, column("city", "text", "City"), String, messages), {
+    label: "City",
+    op: "is empty",
+    value: null,
+  });
 });
 
 test("replaceFilter() keeps one filter a column", () => {

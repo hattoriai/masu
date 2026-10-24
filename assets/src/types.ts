@@ -196,6 +196,10 @@ export interface Config {
   running?: boolean;
   /** `false`: one sort at a time (`multi_sort={false}`). */
   multiSort?: boolean;
+  /** The filter bar (`filter_bar`): Add filter above the grid, and a menu of sorts and filter on each header; false: the funnel on each header. */
+  filterBar?: boolean;
+  /** Whether a header's menu has the column's filter (`header_filters`); false: the filters are the filter bar's alone. */
+  headerFilters?: boolean;
 }
 
 export interface BlockReply {

@@ -37,14 +37,18 @@ cell as the arrows move it, while the rows come and go. See
 
 ## The filter menu
 
-The funnel of a header is a button named "Filter" and the column's label,
-with `aria-haspopup="dialog"` and `aria-expanded`. The menu is a dialog
-with the same name; the focus goes to its first field, and comes back to
-the header when it closes. An enum's values are a group of checkboxes.
-Each chip has a button that takes its filter away, named for it.
+A header's **⋯** is a button named for the column's menu ("Plan menu"),
+with `aria-haspopup="dialog"` and `aria-expanded`; with `filter_bar={false}`,
+the funnel of a column that filters is named "Filter" and the column's
+label instead. The menu is a dialog with the same name; its sorts are
+buttons with `aria-pressed` on the order the grid has; the focus goes to
+the filter's first field (else to its first button), and comes back to the
+header when it closes. An enum's values are a group of checkboxes.
 
-A column with items of the app's own and no filter has a button named
-for the column's menu instead, with three dots.
+Each chip is a button that opens its filter, named by its words ("Plan is
+one of team, free"), and has a button that takes the filter away, named
+for it. Add filter has `aria-haspopup="dialog"`; its menu of columns, and
+the filter it opens, give the focus back to it when they close.
 
 ## The menu of a cell
 

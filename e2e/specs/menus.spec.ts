@@ -117,14 +117,14 @@ test("a header menu has the app's items for the column, and a panel goes under i
   await header(page, "menus", "name").hover();
   await header(page, "menus", "name").locator(".masu-filter-button").click();
   const dialog = page.locator('#menus .masu-menu[role="dialog"]');
-  await expect(dialog.locator(".masu-menu-item")).toHaveText(["Explain"]);
+  await expect(dialog.locator(".masu-menu-item")).toHaveText(["Sort ascending", "Sort descending", "Explain"]);
   await dialog.locator(".masu-menu-item", { hasText: "Explain" }).click();
   await expect(page.locator("#said")).toHaveText("About name");
   await expect(dialog).toHaveCount(0);
 
   // A right click on a header opens its menu too.
   await header(page, "menus", "revenue").click({ button: "right" });
-  await expect(dialog.locator(".masu-menu-item")).toHaveText(["Explain", "Column stats"]);
+  await expect(dialog.locator(".masu-menu-item")).toHaveText(["Sort ascending", "Sort descending", "Explain", "Column stats"]);
   await dialog.locator(".masu-menu-item", { hasText: "Column stats" }).click();
   const panel = page.locator("#menus-action-panel");
   await expect(panel.locator("#stats dt")).toHaveText(["Lowest", "Highest", "Average"]);

@@ -112,7 +112,9 @@ defmodule Masu.Grid do
        given_total: nil,
        given_loading: false,
        awaiting: false,
-       multi_sort: true
+       multi_sort: true,
+       filter_bar: true,
+       header_filters: true
      )}
   end
 
@@ -2816,6 +2818,8 @@ defmodule Masu.Grid do
       "rowActions" => Action.to_wire(assigns.row_actions),
       "running" => running?(assigns),
       "multiSort" => assigns.multi_sort,
+      "filterBar" => assigns.filter_bar,
+      "headerFilters" => assigns.header_filters,
       "selection" => selection_config(assigns),
       "creates" => creates?(assigns),
       "deletes" => Masu.Edit.deletes?(assigns),

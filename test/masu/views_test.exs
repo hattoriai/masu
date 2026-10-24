@@ -62,6 +62,8 @@ defmodule Masu.ViewsTest do
       assert Enum.map(config["catalog"], & &1["key"]) == ~w(name city id admin age)
       assert Enum.find(config["catalog"], &(&1["key"] == "city"))["hidden"]
       assert config["columnsMenu"]
+      # The filter bar, unless the grid says otherwise.
+      assert config["filterBar"]
     end
   end
 
