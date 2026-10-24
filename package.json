@@ -1,6 +1,6 @@
 {
   "name": "masu",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "license": "MIT",
   "module": "./priv/static/masu.esm.js",
   "main": "./priv/static/masu.cjs.js",
