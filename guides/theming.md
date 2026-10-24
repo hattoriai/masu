@@ -35,7 +35,8 @@ defaults, so that a page with all three looks like one thing.
 | `--masu-selection`, `--masu-active` | a selected range, and the line of the active cell (`--masu-accent` unless set) |
 | `--masu-accent`, `--masu-accent-text`, `--masu-focus-ring` | the focus (a ring of `--masu-accent` unless set) |
 | `--masu-loading` | the bars of a row that is coming |
-| `--masu-invalid` | the line of a cell the server refused |
+| `--masu-invalid` | the line of a cell the server refused, and the text of a button that deletes |
+| `--masu-error` | the line around a read that failed (`#c2410c` unless set) |
 | `--masu-avatar-size` | the avatars of the others (Collaboration) |
 | `--masu-radius`, `--masu-cell-padding`, `--masu-space`, `--masu-field-height` | shape and space |
 | `--masu-transition` | the speed of the small transitions |
@@ -162,9 +163,22 @@ the dev server's `/look`).
 ```
 
 On a page with the Sumi themes, the grids follow them. Without them, the
-built-in Sumi palette follows `data-theme` (`"dark"` or `"light"`), then
-`prefers-color-scheme`. The selection is a faint wash of the blade, and
-the active cell a line of it.
+built-in Sumi palette follows `data-theme` (one of Sumi's seven themes),
+then `prefers-color-scheme`. The selection is a faint wash of the theme's
+accent, and the active cell a line of it.
+
+Each of Sumi's seven themes (Ink, Smoke, Stone and Lacquer; Paper, Snow
+and Silk) has its own accent, and the grids follow it:
+
+* the selection, the active cell, the focus and the chips are the accent;
+* a refused cell and a failed read are red, but rose where the accent is
+  red's hue or near it (blade in Ink and Paper, vermilion in Lacquer), and
+  rust in Silk, whose lotus is a red pink, so that a refused cell does not
+  look like the active one; Smoke's and Stone's red is lighter, for AA;
+* the dark themes have the dark palette.
+
+The development app (`mix dev`) shows each page in each: `?sumi=smoke`,
+or the links under its menu.
 
 ## Classes
 

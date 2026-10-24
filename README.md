@@ -261,7 +261,8 @@ thousand made-up customers (`/`), the smallest grid (`/small`), two
 thousand quotes whose prices change live (`/live`), twenty customers
 that every browser shares, to edit together (`/together`), and to
 comment on (`/comments`), and the
-Sumi theme at `/?theme=sumi` (and `&dark=1`). Every page takes a
+Sumi theme at `/?theme=sumi` (and `&dark=1`), or in one of Sumi's seven
+themes at `?sumi=smoke` (the links under the menu). Every page takes a
 `locale` query param. Set `PORT` for another port. An esbuild watcher
 rebuilds the bundle, and the page reloads.
 

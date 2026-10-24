@@ -7,7 +7,7 @@
 # The bundle rebuilds and the page reloads on a change.
 #
 # Query params of every page: `locale` (a BCP 47 locale), `theme=sumi`,
-# `dark=1`.
+# `dark=1`, `sumi=smoke` (any of Sumi's seven themes).
 #
 # Environment:
 #
@@ -158,12 +158,51 @@ end
 defmodule MasuDev.Layouts do
   @moduledoc """
   The root layout: the style sheets, the import map and the LiveSocket.
-  `?theme=sumi` also loads masu-sumi.css.
+  `?theme=sumi` also loads masu-sumi.css; `?sumi=smoke` (any of Sumi's seven
+  themes) loads it on that theme of Sumi, to see every grid in each.
   """
   use Phoenix.Component
 
+  # Sumi's themes, as the grids read them: the page, the surface, the line,
+  # the text, the muted text, the accent and the text on it (Sumi's own CSS
+  # needs Tailwind, which this app has not; these are its values).
+  @sumi_themes [
+    {"dark", "Ink", "oklch(12% 0.003 270)", "oklch(16% 0.004 270)", "oklch(20% 0.005 270)",
+     "oklch(95% 0.012 85)", 0.5, "#e84a1c", "oklch(12% 0.003 270)"},
+    {"smoke", "Smoke", "oklch(27% 0.005 270)", "oklch(30.5% 0.006 270)", "oklch(34% 0.007 270)",
+     "oklch(92% 0.01 85)", 0.62, "oklch(72% 0.13 168)", "oklch(27% 0.005 270)"},
+    {"stone", "Stone", "oklch(20% 0.006 70)", "oklch(23.5% 0.007 70)", "oklch(27% 0.008 70)",
+     "oklch(95% 0.01 85)", 0.52, "oklch(78% 0.13 82)", "oklch(20% 0.006 70)"},
+    {"lacquer", "Lacquer", "oklch(14% 0.022 25)", "oklch(18% 0.026 25)", "oklch(22% 0.03 25)",
+     "oklch(93% 0.016 75)", 0.53, "oklch(63% 0.21 24)", "oklch(14% 0.022 25)"},
+    {"light", "Paper", "oklch(96% 0.01 85)", "oklch(93% 0.012 85)", "oklch(89% 0.014 80)",
+     "oklch(15% 0.003 270)", 0.65, "#e84a1c", "oklch(12% 0.003 270)"},
+    {"snow", "Snow", "oklch(99.5% 0.001 270)", "oklch(97% 0.003 270)", "oklch(92.5% 0.005 270)",
+     "oklch(20% 0.006 270)", 0.65, "oklch(50% 0.17 262)", "oklch(100% 0 0)"},
+    {"silk", "Silk", "oklch(97.5% 0.012 350)", "oklch(95% 0.016 350)", "oklch(91.5% 0.02 350)",
+     "oklch(22% 0.012 350)", 0.65, "oklch(56% 0.21 358)", "oklch(100% 0 0)"}
+  ]
+
+  defp sumi_style(id) do
+    case List.keyfind(@sumi_themes, id, 0) do
+      {_, _, page, surface, line, text, muted, accent, on_accent} ->
+        """
+        :root {
+          --color-base-100: #{page}; --color-base-200: #{surface}; --color-base-300: #{line};
+          --color-base-content: #{text}; --sumi-text-muted: oklch(from #{text} l c h / #{muted});
+          --color-sumi-blade: #{accent}; --color-primary-content: #{on_accent};
+        }
+        """
+
+      nil ->
+        ""
+    end
+  end
+
   def root(assigns) do
     conn = assigns.conn
+    look = conn.params["sumi"]
+    look = if List.keymember?(@sumi_themes, look, 0), do: look
 
     current =
       if conn.query_string == "",
@@ -172,7 +211,9 @@ defmodule MasuDev.Layouts do
 
     assigns =
       assign(assigns,
-        sumi: conn.params["theme"] == "sumi",
+        sumi: conn.params["theme"] == "sumi" or look != nil,
+        look: look,
+        themes: @sumi_themes,
         # Issho's script and style sheet, for the page of its comments.
         issho: conn.request_path == "/comments",
         current: current,
@@ -208,7 +249,7 @@ defmodule MasuDev.Layouts do
 
     ~H"""
     <!DOCTYPE html>
-    <html lang="en" data-theme={@conn.params["dark"] && "dark"} data-dev-issho={@issho && "true"}>
+    <html lang="en" data-theme={@look || (@conn.params["dark"] && "dark")} data-dev-issho={@issho && "true"}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -218,6 +259,7 @@ defmodule MasuDev.Layouts do
         <link :if={@sumi} rel="stylesheet" href="/assets/masu-sumi.css" />
         <link :if={@issho} rel="stylesheet" href="/vendor/issho/issho.css" />
         <link :if={@issho and @sumi} rel="stylesheet" href="/vendor/issho/issho-sumi.css" />
+        {@look && Phoenix.HTML.raw("<style>" <> sumi_style(@look) <> "</style>")}
         <style>
           body { font-family: system-ui, sans-serif; margin: 0; background: #fafaf9; color: #1c1917; }
           body.sumi { background: var(--masu-background); color: var(--masu-text); font-family: var(--masu-font); }
@@ -228,6 +270,7 @@ defmodule MasuDev.Layouts do
           nav a { color: var(--masu-muted); text-decoration: none; padding: 0.25rem 0; border-bottom: 2px solid transparent; }
           nav a:hover { color: var(--masu-text); }
           nav a[aria-current="page"] { color: var(--masu-text); border-bottom-color: var(--masu-accent); }
+          nav + nav { margin-top: 0.5rem; gap: 1rem; color: var(--masu-muted); }
           nav a:focus-visible { outline: none; box-shadow: var(--masu-focus-ring); border-radius: 2px; }
           .badge { display: inline-block; padding: 0 0.5rem; border-radius: 999px; font-size: 0.75rem; line-height: 1.5rem; background: color-mix(in oklab, var(--masu-text) 8%, transparent); color: var(--masu-text); }
           .badge.enterprise { background: color-mix(in oklab, var(--masu-accent) 16%, transparent); color: color-mix(in oklab, var(--masu-accent) 75%, var(--masu-text)); }
@@ -297,6 +340,13 @@ defmodule MasuDev.Layouts do
             >
               {label}
             </a>
+          </nav>
+          <nav aria-label="Sumi's themes">
+            Sumi: <a
+              :for={{id, name, _, _, _, _, _, _, _} <- @themes}
+              href={"?sumi=#{id}"}
+              aria-current={@look == id && "page"}
+            >{name}</a>
           </nav>
           {@inner_content}
         </main>
