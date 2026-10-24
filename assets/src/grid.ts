@@ -19,6 +19,7 @@ import { BlockCache } from "./blocks";
 import { cacheFor, keysOf, readConfig, withoutWidths } from "./config";
 import { scrollParent, setAttribute, setStyle } from "./dom";
 import { Actions } from "./features/actions";
+import { RowActivation } from "./features/activation";
 import { Clipboard } from "./features/clipboard";
 import { Deleting } from "./features/deleting";
 import { Details } from "./features/details";
@@ -138,6 +139,7 @@ export class Grid {
   readonly filters = new Filters(this);
   readonly toolbar = new Toolbar(this);
   readonly details = new Details(this);
+  readonly activation = new RowActivation(this);
   readonly clipboard = new Clipboard(this);
   readonly peers = new Peers(this);
   readonly rowSelection = new RowSelection(this);
@@ -1123,7 +1125,9 @@ export class Grid {
       else this.keyboard.onKeyDown(event);
     });
     this.on(this.gridEl, "mousedown", (event) => {
-      if (!this.details.inDetail(event.target)) this.pointer.onMouseDown(event);
+      if (this.details.inDetail(event.target)) return;
+      this.activation.onMouseDown(event);
+      this.pointer.onMouseDown(event);
     });
     this.on(this.gridEl, "dblclick", (event) => {
       if (!this.details.inDetail(event.target)) this.pointer.onDoubleClick(event);
@@ -1157,7 +1161,10 @@ export class Grid {
         return;
       }
       const button = target.closest<HTMLElement>(".masu-filter-button");
-      if (!button) return;
+      if (!button) {
+        this.activation.onClick(event);
+        return;
+      }
       const col = Number(button.dataset.col);
       if (this.filters.menu?.col === col && !this.filters.menu.from) this.filters.closeMenu(true);
       else this.filters.openMenu(col);

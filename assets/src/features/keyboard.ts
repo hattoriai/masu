@@ -1,5 +1,6 @@
 // The keyboard: the arrows and their moves, the header row, Enter to sort,
-// the menus' keys, a row's keys (its detail, a tree's node), and selecting.
+// the menus' keys, a row's keys (its detail, a tree's node, opening it), and
+// selecting.
 
 import { move } from "../geometry";
 import { isDraft, isGroup } from "../rows";
@@ -38,6 +39,7 @@ export class Keyboard {
     }
     if (this.onRowKey(event, mod)) return;
     if (this.grid.editing.onEditKey(event, mod)) return;
+    if (this.grid.activation.onKey(event)) return;
 
     if (mod && event.key.toLowerCase() === "a") {
       event.preventDefault();

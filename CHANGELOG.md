@@ -5,6 +5,21 @@ All notable changes to Masu are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `on_row_activate`: a row opens on a click on it, or Enter on its
+  active cell, where the cell does not edit: the function gets the row
+  (`id`, `row`, `grid`, `scope`), and gives `{:patch, path}` or
+  `{:navigate, path}` for the grid to follow. A list whose rows open in
+  a panel beside the grid needs no link in a cell for it. A click on a
+  link, a button or an input in a cell, a drag, and the click that ends
+  an editor do not open the row; the cells that open it show a pointer.
+  See the Actions guide.
+- `Masu.Test.activate_row/3`.
+- The development app's `/open` page: rows that open in a panel.
+
 ## [0.6.0] - 2026-10-24
 
 ### Added

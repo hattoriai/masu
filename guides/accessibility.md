@@ -33,7 +33,9 @@ the focus.
 The grid is one stop of the Tab key. The focus stays on the grid, and the
 active cell is its `aria-activedescendant`: a screen reader follows the
 cell as the arrows move it, while the rows come and go. See
-[Keyboard and copy](keyboard.md) for the keys.
+[Keyboard and copy](keyboard.md) for the keys. In a grid whose rows open (`on_row_activate`), Enter
+opens the row of the active cell, as a click on it does; see
+[Actions](actions.md#opening-a-row-on_row_activate).
 
 ## The filter menu
 

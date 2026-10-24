@@ -192,6 +192,8 @@ export interface Config {
   actions?: RowsAction[];
   /** The app's actions on a row (`:row_action`); each row carries its own state of them, after its read-only cells. */
   rowActions?: RowsAction[];
+  /** A click on a row, or Enter on it, opens it (`on_row_activate`). */
+  activates?: boolean;
   /** Rows to come: a read in a task (`load={:async}`), or the LiveView's own query (`on_query`). */
   running?: boolean;
   /** `false`: one sort at a time (`multi_sort={false}`). */
