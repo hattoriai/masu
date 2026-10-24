@@ -799,6 +799,12 @@
   color: var(--masu-text);
 }
 
+/* A row that opens (`on_row_activate`): its cells that do not edit show a
+   pointer. */
+.masu-activates > .masu-grid .masu-body > .masu-row:not(.masu-group-row, .masu-draft, .masu-loading) > .masu-cell:not(.masu-editable) {
+  cursor: pointer;
+}
+
 /* Editing. An editable cell shows a text cursor; its editor sits on it. */
 .masu-cell.masu-editable {
   cursor: text;

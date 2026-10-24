@@ -100,6 +100,40 @@ An action that changes rows of a grid with `live` broadcasts them, as
 any change of your app does (`Masu.Live.broadcast_upsert/3`): the others
 see them, with a flash.
 
+## Opening a row: `on_row_activate`
+
+A list whose rows open (a panel beside the grid, the row's own page)
+opens a row on a click on it, or Enter, rather than on a link in one of
+its cells:
+
+```heex
+<.data_grid id="inbox" rows={@items} on_row_activate={&{:patch, ~p"/inbox?item=#{&1.id}"}}>
+  <:col field={:title} />
+  <:col field={:author} />
+</.data_grid>
+```
+
+The function gets `id` and `row`, the row as the source reads it now,
+with `grid` and `scope`, in the LiveView's process. What it gives:
+
+| | |
+| --- | --- |
+| `{:patch, path}` | the grid patches the LiveView's URL (`push_patch`): `handle_params/3` opens the row |
+| `{:navigate, path}` | the grid goes to another LiveView (`push_navigate`) |
+| anything else | nothing more: a function that tells the LiveView, `&send(self(), {:open, &1.id})`, opens it in `handle_info/2` |
+
+A row opens on:
+
+* a click on one of its cells, with no key held: not on a link, a button
+  or an input in the cell, nor on a box, the arrow of a tree's row or of
+  a detail; not the click that ends an editor, nor the second of a
+  double click; not a drag, which selects a range;
+* Enter on its active cell, the keyboard's way to the same row.
+
+A cell that edits is the editor's: a click there makes it active, and
+Enter edits it, as in any grid that edits. The cells that open their row
+show a pointer. A group's row, and a new row not saved yet, do not open.
+
 ## What an action does
 
 | Attribute | |
@@ -193,8 +227,11 @@ assert action(view, "orders", "Archive") == {:ok, "2 orders archived"}
 assert actions(view, "orders", :row, 1) == ["Open", "Send again"]
 assert row_action(view, "orders", "Open", 1) == {:navigate, "/orders/1"}
 assert row_action(view, "orders", "Send again", 3) == {:error, :refused}
+
+assert activate_row(view, "inbox", 7) == {:patch, "/inbox?item=7"}
 ```
 
-`action/3` and `row_action/4` send what the browser sends, and the
-server checks it as it does for a person: an action the grid does not
-offer, or that is disabled for the row, is `{:error, :refused}`.
+`action/3`, `row_action/4` and `activate_row/3` send what the browser
+sends, and the server checks it as it does for a person: an action the
+grid does not offer, or that is disabled for the row, is `{:error,
+:refused}`.

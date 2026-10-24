@@ -25,6 +25,7 @@ cell, as in a spreadsheet.
 | Escape | drops the selection |
 | Ctrl+C | copies the selection, or the active cell |
 | A key typed, Enter, F2 | edits the active cell, in a grid that edits (see [Editing](editing.md)) |
+| Enter on a cell that does not edit | opens its row, in a grid with `on_row_activate` (see [Actions](actions.md#opening-a-row-on_row_activate)) |
 | Ctrl+V | pastes tab-separated text from the active cell |
 | Ctrl+D | fills the selection down with its first row |
 | Delete, Backspace | empties the editable cells of the selection |
@@ -37,7 +38,8 @@ In a grid that reads right to left, ← and → swap.
 
 The mouse does the same: a click makes a cell active, a drag or a click
 with Shift selects a range, and a click on a header sorts (with Shift,
-by that column too).
+by that column too). In a grid with `on_row_activate`, a click on a cell
+that does not edit opens its row too.
 
 ↓ in the search box goes to the grid.
 

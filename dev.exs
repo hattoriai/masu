@@ -192,6 +192,7 @@ defmodule MasuDev.Layouts do
           {"Header", "/header"},
           {"Menus", "/menus"},
           {"Actions", "/actions"},
+          {"Open a row", "/open"},
           {"Grow", "/grow"},
           {"Editors", "/editors"},
           {"History", "/history"},
@@ -1719,6 +1720,59 @@ defmodule MasuDev.ActionsLive do
   end
 end
 
+defmodule MasuDev.OpenLive do
+  @moduledoc """
+  Rows that open (`on_row_activate`): a click on a row, or Enter on it,
+  shows the customer in a panel beside the grid, with the row's id in the
+  URL. The seats edit: a click and Enter there are the editor's. The
+  link of a cell is a link.
+  """
+  use Phoenix.LiveView
+
+  import Masu.Components
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, rows: Enum.take(MasuDev.Customers.all(), 200), open: nil, site: nil)}
+  end
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    open = params["open"] && Enum.find(socket.assigns.rows, &(to_string(&1.id) == params["open"]))
+    {:noreply, assign(socket, open: open, site: params["site"])}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1 id="open-label">Open a row</h1>
+    <p id="site" role="status">{@site && "Site of #{@site}"}</p>
+    <div style="display: flex; gap: 1rem; align-items: start">
+      <div style="flex: 1; min-width: 0">
+        <.data_grid
+          id="open"
+          rows={@rows}
+          changeset={&MasuDev.Customers.changeset/2}
+          label_id="open-label"
+          height="24rem"
+          on_row_activate={&{:patch, "/open?open=#{&1.id}"}}
+        >
+          <:col field={:name} editable={false} />
+          <:col field={:city} editable={false} />
+          <:col field={:seats} type={:integer} />
+          <:col :let={customer} field={:email} label="Site" editable={false}>
+            <.link patch={"/open?site=#{customer.id}"}>{customer.email}</.link>
+          </:col>
+        </.data_grid>
+      </div>
+      <aside id="panel" style="width: 14rem">
+        <p :if={@open} id="opened">Opened {@open.name}</p>
+      </aside>
+    </div>
+    """
+  end
+end
+
 defmodule MasuDev.GrowLive do
   @moduledoc """
   A column that grows (`grow`): the name takes the room the other columns
@@ -2126,6 +2180,7 @@ defmodule MasuDev.Router do
     live("/controlled", MasuDev.ControlledLive)
     live("/related", MasuDev.RelatedLive)
     live("/actions", MasuDev.ActionsLive)
+    live("/open", MasuDev.OpenLive)
     live("/grow", MasuDev.GrowLive)
     live("/editors", MasuDev.EditorsLive)
     live("/history", MasuDev.HistoryLive)

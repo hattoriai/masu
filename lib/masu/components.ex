@@ -75,8 +75,9 @@ defmodule Masu.Components do
   `history` keeps who changed each cell, when, and from what, and brings
   a value back; see `Masu.History` and the [History](history.md) guide.
   `:action` acts on the rows selected, and `:row_action` on a row; see
-  `Masu.Action` and the [Actions](actions.md) guide. `scope` is in every
-  write and every action.
+  `Masu.Action` and the [Actions](actions.md) guide. `on_row_activate`
+  opens a row (a panel beside the grid, its page) on a click on it or
+  Enter. `scope` is in every write and every action.
 
   ## Menus
 
@@ -221,6 +222,11 @@ defmodule Masu.Components do
   attr :on_select, :any,
     default: nil,
     doc: "a function called with `%{count: n, all: boolean}` when the selection changes"
+
+  attr :on_row_activate, :any,
+    default: nil,
+    doc:
+      "a function called with `%{id: id, row: row, grid: id, scope: scope}` when the person opens a row: a click on it, or Enter on its active cell, where the cell does not edit. It gives `{:patch, path}` or `{:navigate, path}` for the grid to follow, or anything else; see the Actions guide"
 
   attr :export, :any,
     default: false,
@@ -518,6 +524,7 @@ defmodule Masu.Components do
       row_action={@row_action}
       selectable={@selectable}
       on_select={@on_select}
+      on_row_activate={@on_row_activate}
       expanded={expanded!(@id, @tree, @expanded)}
       detail={@detail}
       url={@url}
@@ -667,6 +674,11 @@ defmodule Masu.Components do
     if assigns.action != [] and not assigns.selectable do
       raise ArgumentError,
             "<.data_grid id=#{inspect(assigns.id)}> has :action, which acts on the rows selected: it needs selectable"
+    end
+
+    unless is_nil(assigns.on_row_activate) or is_function(assigns.on_row_activate, 1) do
+      raise ArgumentError,
+            "<.data_grid id=#{inspect(assigns.id)}> on_row_activate is a function of one argument"
     end
 
     for {old, new} <- @renamed, Map.has_key?(assigns, old) do

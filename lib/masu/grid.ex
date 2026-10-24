@@ -109,6 +109,7 @@ defmodule Masu.Grid do
        read: nil,
        error: nil,
        on_query: nil,
+       on_row_activate: nil,
        given_total: nil,
        given_loading: false,
        awaiting: false,
@@ -1448,6 +1449,38 @@ defmodule Masu.Grid do
     end
   end
 
+  # A row opened (`on_row_activate`): a click on it, or Enter. The row is
+  # read again from the source, as a row action's is, so only a row of
+  # the grid opens; the function's `{:patch, path}` or `{:navigate,
+  # path}` is followed.
+  def handle_event("masu:activate", %{"id" => id}, %{assigns: %{on_row_activate: fun}} = socket)
+      when is_function(fun, 1) do
+    assigns = socket.assigns
+    row_id = row_id(assigns)
+
+    case fetch_row(assigns, id, row_id) do
+      [row | _] ->
+        context = %{grid: assigns.id, scope: assigns.scope, id: row_id.(row), row: row}
+
+        case fun.(context) do
+          {:patch, path} ->
+            {:reply, %{"patch" => to_string(path)}, push_patch(socket, to: to_string(path))}
+
+          {:navigate, path} ->
+            {:reply, %{"navigate" => to_string(path)}, push_navigate(socket, to: to_string(path))}
+
+          _other ->
+            {:reply, %{"ok" => true}, socket}
+        end
+
+      [] ->
+        {:reply, %{"error" => "row"}, socket}
+    end
+  end
+
+  def handle_event("masu:activate", _params, socket),
+    do: {:reply, %{"error" => "activate"}, socket}
+
   # The history of a cell (`key`), or of a row, from the grid's
   # `history` (Masu.History), newest first; each entry with the size of
   # its batch, for a restore of all of it.
@@ -2425,6 +2458,7 @@ defmodule Masu.Grid do
       create: assigns[:on_create] != nil or assigns[:struct] != nil,
       delete: assigns[:on_delete] != nil or assigns[:deletable] not in [nil, false],
       row_action: assigns[:row_action] not in [nil, []],
+      on_row_activate: assigns[:on_row_activate] != nil,
       selectable: assigns[:selectable] == true,
       live: assigns[:live] != nil,
       presence: assigns[:issho] != nil,
@@ -2490,7 +2524,12 @@ defmodule Masu.Grid do
     ~H"""
     <div
       id={@id}
-      class={["masu", @density != :normal && "masu-density-#{@density}", @class]}
+      class={[
+        "masu",
+        @density != :normal && "masu-density-#{@density}",
+        @on_row_activate && "masu-activates",
+        @class
+      ]}
       phx-hook="Masu"
       phx-target={@myself}
       data-issho-doc={@issho && Masu.Issho.Live.doc(@issho, @id)}
@@ -2823,6 +2862,7 @@ defmodule Masu.Grid do
       "history" => assigns.history != nil,
       "actions" => Action.to_wire(assigns.actions),
       "rowActions" => Action.to_wire(assigns.row_actions),
+      "activates" => assigns.on_row_activate != nil,
       "running" => running?(assigns),
       "multiSort" => assigns.multi_sort,
       "filterBar" => assigns.filter_bar,

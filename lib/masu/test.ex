@@ -519,6 +519,25 @@ defmodule Masu.Test do
     end
   end
 
+  @doc """
+  Opens the row `row_id` of the grid `id` (`on_row_activate`), as a click
+  on it or Enter does. The grid reads the row from its source.
+
+  Returns what the grid does: `{:patch, path}` or `{:navigate, path}`
+  when the function gives one, else `:ok`; `{:error, :refused}` when the
+  grid has no `on_row_activate` or no row `row_id` in its query.
+  """
+  @spec activate_row(struct(), String.t(), term()) ::
+          :ok | {:navigate | :patch, String.t()} | {:error, :refused}
+  def activate_row(view, id, row_id) do
+    case event(view, id, "masu:activate", %{"id" => row_id}) do
+      %{"patch" => path} -> {:patch, path}
+      %{"navigate" => path} -> {:navigate, path}
+      %{"error" => _refused} -> {:error, :refused}
+      %{"ok" => true} -> :ok
+    end
+  end
+
   defp action_result(%{"error" => _refused}), do: {:error, :refused}
   defp action_result(%{"failed" => message}), do: {:error, message}
   defp action_result(%{"async" => _token}), do: :async
