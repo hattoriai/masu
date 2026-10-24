@@ -38,7 +38,7 @@ export const Masu = {
     };
     hook.grid = new Grid(hook.el, transport);
     hook.handleEvent("masu:people", (payload) => {
-      if (payload.id === hook.el.id) hook.grid?.setPeople(payload.people as Person[]);
+      if (payload.id === hook.el.id) hook.grid?.peers.setPeople(payload.people as Person[]);
     });
     // A block of rows read in a task (`load={:async}`).
     hook.handleEvent("masu:block", (payload) => {
@@ -46,10 +46,10 @@ export const Masu = {
     });
     // A write or an action that went on later (Masu.reply/2, Masu.progress/3).
     hook.handleEvent("masu:reply", (payload) => {
-      if (payload.id === hook.el.id) hook.grid?.receiveReply(payload as unknown as Reply);
+      if (payload.id === hook.el.id) hook.grid?.actions.receiveReply(payload as unknown as Reply);
     });
     hook.handleEvent("masu:progress", (payload) => {
-      if (payload.id === hook.el.id) hook.grid?.receiveProgress(payload as unknown as Progress);
+      if (payload.id === hook.el.id) hook.grid?.actions.receiveProgress(payload as unknown as Progress);
     });
   },
 

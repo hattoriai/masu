@@ -75,6 +75,29 @@ The pull request template has these as a checklist.
 - **Releases.** The version in `mix.exs`, the release headings of the
   changelog and the tags are changed by the maintainers, at a release.
 
+## The browser's code
+
+The grid's TypeScript is in `assets/src`, bundled into one file by esbuild
+(`mix assets.build`):
+
+- `grid.ts` is the grid's core: its rows, their drawing and scrolling, the
+  query and the events. `hook.ts` is the LiveView hook that makes it.
+- `features/` has a class for each of the grid's features, with its own
+  state: editing, new rows, deleting, the menus and actions, history,
+  filters, the toolbar, selection, details, the columns' layout, copy,
+  the people of a room (`peers`), the keyboard and the pointer. The grid
+  makes each (`this.editing`); a feature reaches the core through
+  `this.grid`. A new feature is a class there, not more of `grid.ts`.
+- The other modules are the parts without a grid: pure functions
+  (`geometry`, `offsets`, `scroll`, `layout`, `sorting`, `filters`,
+  `format`, `parse`, `tsv`), what draws an element (`header`, `toolbar`,
+  `menu`, `panels`, `actions`), and the grid's records and words
+  (`records`, `messages`, `config`). Their tests are in `assets/test`.
+
+A part that runs for each row or each frame (drawing a row, scrolling)
+stays in the core; a call to a feature costs a property more, which is
+nothing for a key or a click, but adds up in a frame.
+
 ## Style
 
 Match the code around your change: its naming, its comments and the way
