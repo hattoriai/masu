@@ -42,6 +42,9 @@ defmodule Masu.Components do
     * `type` - `:text` (the default), `:enum`, `:integer`, `:number`,
       `:decimal`, `:date`, `:datetime`, `:time` or `:boolean`;
     * `width` and `min_width` - in pixels;
+    * `grow` - `true` takes the room the columns leave in a wider grid, from
+      its width up (a title, a description); a number is its share of it,
+      `grow={2}` twice that of `grow`;
     * `align` - `:start`, `:center` or `:end` (numbers are at the end);
     * `sortable`, `filterable` and `searchable` - `false` to turn off,
       `searchable` is on for text and enums;
@@ -388,6 +391,7 @@ defmodule Masu.Components do
     attr :type, :atom
     attr :width, :integer
     attr :min_width, :integer
+    attr :grow, :any
     attr :align, :atom
     attr :sortable, :boolean
     attr :filterable, :boolean

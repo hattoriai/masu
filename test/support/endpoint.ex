@@ -47,6 +47,7 @@ defmodule MasuTest.Router do
     live("/theme", MasuTest.ThemeLive)
     live("/actions", MasuTest.ActionsLive)
     live("/activate", MasuTest.ActivateLive)
+    live("/grow", MasuTest.GrowLive)
     live("/chores", MasuTest.ChoresLive)
     live("/writes", MasuTest.WritesLive)
     live("/editors", MasuTest.EditorsLive)

@@ -78,6 +78,18 @@ defmodule Masu.Column do
 
   ## Layout
 
+  `width` is the column's width in pixels, of its type unless given, and
+  at least `min_width` (48 unless given), the narrowest a person resizes
+  it to.
+
+  `grow` makes the column take the room the columns leave in a grid wider
+  than them, from its width up: a title or a description, rather than
+  empty room after the last column. `grow={2}` takes twice the share of a
+  `grow` column. A grid narrower than its columns scrolls sideways, and a
+  column that grows is its width there. A person who resizes the column
+  gives it their width, and it grows no more (in a view, too); see
+  `Masu.Layout`.
+
   `hidden` starts the column hidden (a person shows it from the columns
   menu), and `pinned={:start}` or `pinned={:end}` keeps it in view while
   the others scroll sideways. See `Masu.Layout`.
@@ -113,6 +125,7 @@ defmodule Masu.Column do
           type: type(),
           width: pos_integer(),
           min_width: pos_integer(),
+          grow: non_neg_integer(),
           align: :start | :center | :end,
           sortable: boolean(),
           filterable: boolean(),
@@ -166,6 +179,7 @@ defmodule Masu.Column do
     type: :text,
     width: 200,
     min_width: 48,
+    grow: 0,
     align: :start,
     sortable: true,
     filterable: true,
@@ -221,14 +235,17 @@ defmodule Masu.Column do
   end
 
   defp build(attrs, key, field, value, type) do
+    min_width = or_default(attrs, :min_width, 48)
+
     %__MODULE__{
       key: key,
       field: field,
       value: value,
       label: or_default(attrs, :label, humanize(label_key(attrs, key, field))),
       type: type,
-      width: or_default(attrs, :width, Map.fetch!(@widths, type)),
-      min_width: or_default(attrs, :min_width, 48),
+      width: max(or_default(attrs, :width, Map.fetch!(@widths, type)), min_width),
+      min_width: min_width,
+      grow: grow!(Map.get(attrs, :grow)),
       align: or_default(attrs, :align, default_align(type)),
       sortable: Map.get(attrs, :sortable, true) != false,
       filterable: Map.get(attrs, :filterable, true) != false,
@@ -248,6 +265,17 @@ defmodule Masu.Column do
       many: many!(Map.get(attrs, :many), field)
     }
   end
+
+  defp grow!(grow) when grow in [nil, false, 0], do: 0
+  defp grow!(true), do: 1
+  defp grow!(grow) when is_integer(grow) and grow > 0, do: grow
+
+  defp grow!(other),
+    do:
+      raise(
+        ArgumentError,
+        "a Masu column's grow is true, or a positive integer (its share of the room), got: #{inspect(other)}"
+      )
 
   defp many!(nil, _field), do: nil
   defp many!(many, field) when is_boolean(many) and is_list(field), do: many

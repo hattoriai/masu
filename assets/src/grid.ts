@@ -37,7 +37,7 @@ import { activeIn } from "./following";
 import { formatter, manyFormatter, type Formatter } from "./format";
 import { contains, rect, visibleRows, type Cell, type Rect } from "./geometry";
 import { headerCell, MORE_ICON } from "./header";
-import { pins, scrollFor, visualLeft, type Pins } from "./layout";
+import { fill, pins, scrollFor, visualLeft, type Pins } from "./layout";
 import { FLASH, OVERSCAN } from "./limits";
 import { DEFAULT_MESSAGES, type MessageValues } from "./messages";
 import { indexAt, rowTop, totalHeight, type Gap } from "./offsets";
@@ -61,7 +61,12 @@ export class Grid {
   transport: Transport;
   config: Config;
   columns: ColumnConfig[];
+  /** The widths the columns are given: the server's, or the person's. */
+  sizes: number[];
+  /** The widths the columns are drawn at: their sizes, and the room the columns leave to those that grow. */
   widths: number[];
+  /** The width of the box the columns were laid out in. */
+  private room = 0;
   formatters: Formatter[] = [];
   private aggregateFormatters: Formatter[] = [];
   /** The row of totals (Masu.Group). */
@@ -169,7 +174,8 @@ export class Grid {
     this.transport = transport;
     this.config = readConfig(el);
     this.columns = this.config.columns;
-    this.widths = this.columns.map((column) => column.width);
+    this.sizes = this.columns.map((column) => column.width);
+    this.widths = this.sizes.slice();
     this.total = this.config.total;
     this.exact = this.config.exact !== false;
     this.revision = this.config.revision;
@@ -224,11 +230,11 @@ export class Grid {
 
     if (columnsChanged || (widthsChanged && !this.layout.resizing)) {
       // Widths the server sends (a view applied) win; else the person's stay.
-      const widths = new Map(this.columns.map((column, i) => [column.key, this.widths[i]]));
+      const sizes = new Map(this.columns.map((column, i) => [column.key, this.sizes[i]]));
       const sent = new Map(previous.columns.map((column) => [column.key, column.width]));
       this.columns = config.columns;
-      this.widths = this.columns.map((column) =>
-        widthsChanged && sent.get(column.key) !== column.width ? column.width : (widths.get(column.key) ?? column.width),
+      this.sizes = this.columns.map((column) =>
+        widthsChanged && sent.get(column.key) !== column.width ? column.width : (sizes.get(column.key) ?? column.width),
       );
       this.makeFormatters();
       for (const draft of this.newRows.drafts) draft.row = this.newRows.draftRow(draft);
@@ -968,6 +974,12 @@ export class Grid {
   applyWidths(): void {
     // The row actions' cell is a column of its own, pinned to the end.
     const extra = this.hasRowActions() ? [ROW_ACTIONS_WIDTH] : [];
+    this.room = this.gridEl.clientWidth;
+    this.widths = fill(
+      this.sizes,
+      this.columns.map((column) => column.grow ?? 0),
+      this.room - extra.reduce((a, b) => a + b, 0),
+    );
     const widths = [...this.widths, ...extra];
     this.contentEl.style.setProperty("--masu-cols", widths.map((width) => `${width}px`).join(" "));
     this.contentEl.style.setProperty("--masu-width", `${widths.reduce((a, b) => a + b, 0)}px`);
@@ -1261,7 +1273,11 @@ export class Grid {
     }
 
     if (typeof ResizeObserver !== "undefined") {
-      this.observer = new ResizeObserver(() => this.schedule());
+      this.observer = new ResizeObserver(() => {
+        // A column that grows takes the room of the box as it is now.
+        if (this.gridEl.clientWidth !== this.room && this.columns.some((column) => (column.grow ?? 0) > 0)) this.applyWidths();
+        this.schedule();
+      });
       this.observer.observe(this.gridEl);
     }
   }

@@ -6,7 +6,9 @@ defmodule Masu.Layout do
   A grid starts with the layout of its `:col` slots (their order, and
   their `hidden`, `pinned` and `width` attributes), and changes it as the
   person moves, hides, pins and resizes columns. With the query
-  (`Masu.Query`), it is the person's view (`Masu.View`).
+  (`Masu.Query`), it is the person's view (`Masu.View`). A column that
+  grows (`grow`) and that the person resized is the width they gave it:
+  it grows no more.
 
   The columns a grid shows are `columns/2` of its layout: the pinned to
   the start first, then the others, then the pinned to the end, each in
@@ -97,13 +99,19 @@ defmodule Masu.Layout do
           column
           | pinned: layout.pinned[key],
             hidden: false,
-            width: Map.get(layout.widths, key, column.width)
+            width: Map.get(layout.widths, key, column.width),
+            grow: grow(layout, column)
         }
       end
 
     Enum.filter(shown, &(&1.pinned == :start)) ++
       Enum.filter(shown, &is_nil(&1.pinned)) ++ Enum.filter(shown, &(&1.pinned == :end))
   end
+
+  # A column the person gave a width (a resize, a view's) is that wide: it
+  # grows no more.
+  defp grow(layout, column),
+    do: if(Map.has_key?(layout.widths, column.key), do: 0, else: column.grow)
 
   @doc """
   Every column, with whether it is hidden and where it is pinned, in the
@@ -121,7 +129,8 @@ defmodule Masu.Layout do
           column
           | pinned: layout.pinned[key],
             hidden: MapSet.member?(hidden, key),
-            width: Map.get(layout.widths, key, column.width)
+            width: Map.get(layout.widths, key, column.width),
+            grow: grow(layout, column)
         }
       end
 

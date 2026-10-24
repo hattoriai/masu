@@ -97,7 +97,32 @@ as it is, as a SQL client does, wants it.
 `width` is the first width of the column, in pixels; the person may
 resize it, down to `min_width` (48 unless given). The default width
 follows the type: 200 for text, 120 for integers and numbers, 140 for
-decimals and dates.
+decimals and dates. A column is at least its `min_width` wide.
+
+### A column that takes the room
+
+A grid wider than its columns leaves room after the last of them, while
+a title or a description is cut short. `grow` gives that room to a
+column, from its width up:
+
+```heex
+<.data_grid id="inbox" rows={@items}>
+  <:col field={:title} min_width={280} grow />
+  <:col field={:author} width={120} />
+  <:col field={:updated} type={:datetime} width={170} />
+</.data_grid>
+```
+
+The title is as wide as the grid leaves it, and follows the grid's width
+as the window changes; in a grid narrower than the columns, it is its
+width, and the grid scrolls sideways. Several columns that grow share
+the room, each its share: `grow={2}` takes twice what `grow` takes. A
+column pinned to the end stays at the grid's end.
+
+A person who resizes a column that grows gives it their width: it is
+that wide, and grows no more, in their view too (see [Layout and
+views](views.md)). A column they resize beside it takes its room from
+the column that grows, and gives it back.
 
 `align` is `:start`, `:center` or `:end`. Numbers align to the end,
 booleans to the center, everything else to the start.

@@ -19,6 +19,21 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   See the Actions guide.
 - `Masu.Test.activate_row/3`.
 - The development app's `/open` page: rows that open in a panel.
+- `grow` on a column: it takes the room the columns leave in a grid wider
+  than them, from its width up, and follows the grid's width; a grid
+  narrower than its columns scrolls sideways as before. `grow={2}` takes
+  twice the share of `grow`. A person who resizes it gives it their
+  width, and it grows no more (in their view too). See the Columns guide.
+- The development app's `/grow` page: a column that grows.
+
+### Fixed
+
+- A column whose `min_width` was more than its width (`min_width={280}`
+  with the default 200 of text) was drawn at its width, narrower than a
+  person could resize it to. It is at least its `min_width` wide.
+- The edge of the last column's header, which a person drags to resize
+  it, went 4 pixels past the end of the columns: a grid whose columns
+  fill it, or wider, scrolled sideways 4 pixels more, over nothing.
 
 ## [0.6.0] - 2026-10-24
 

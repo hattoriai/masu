@@ -23,6 +23,8 @@ export interface ColumnConfig {
   type: ColumnType;
   width: number;
   minWidth: number;
+  /** Its share of the room the columns leave in a wider grid (`grow`); 0 or none: its width. */
+  grow?: number;
   align: "start" | "center" | "end";
   sortable: boolean;
   filterable: boolean;

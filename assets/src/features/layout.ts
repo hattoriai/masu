@@ -39,8 +39,11 @@ export class ColumnLayout {
     document.addEventListener("mouseup", onUp);
   }
 
+  /** Gives a column a width: the person's, so a column that grew is that wide, and grows no more. */
   private setWidth(col: number, width: number): void {
-    this.grid.widths[col] = Math.max(this.grid.columns[col].minWidth, Math.round(width));
+    const column = this.grid.columns[col];
+    this.grid.sizes[col] = Math.max(column.minWidth, Math.round(width));
+    column.grow = 0;
     this.grid.applyWidths();
   }
 
@@ -75,7 +78,7 @@ export class ColumnLayout {
 
   private reportWidth(col: number): void {
     const column = this.grid.columns[col];
-    if (column) this.sendLayout({ widths: { [column.key]: this.grid.widths[col] } });
+    if (column) this.sendLayout({ widths: { [column.key]: this.grid.sizes[col] } });
   }
 
   /** Moves a column one place, among the columns of its pin. */

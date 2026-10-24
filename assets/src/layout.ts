@@ -61,6 +61,29 @@ export function scrollFor(col: number, widths: number[], layout: Pins, scroll: n
   return null;
 }
 
+/**
+ * The widths the columns are drawn at in a box `room` wide: the room the
+ * columns leave goes to those that grow, each its share (`grow`), in
+ * whole pixels, the last taking what the rounding leaves. A box narrower
+ * than the columns leaves them as they are (it scrolls).
+ */
+export function fill(widths: number[], grow: number[], room: number): number[] {
+  const spare = Math.floor(room - widths.reduce((a, b) => a + b, 0));
+  const shares = grow.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+  if (spare <= 0 || shares === 0) return widths.slice();
+  let given = 0;
+  let last = -1;
+  const filled = widths.map((width, col) => {
+    if (!(grow[col] > 0)) return width;
+    const extra = Math.floor((spare * grow[col]) / shares);
+    given += extra;
+    last = col;
+    return width + extra;
+  });
+  filled[last] += spare - given;
+  return filled;
+}
+
 /** The keys with `key` moved before `before` (null: to the end). */
 export function moveKey(order: string[], key: string, before: string | null): string[] {
   const rest = order.filter((k) => k !== key);
