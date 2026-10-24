@@ -1,5 +1,34 @@
 # Upgrading
 
+## To Masu 0.6
+
+Masu 0.6 brings the filter bar: a grid's filters show above it as chips
+that open their filter, with **Add filter**, and each header has one menu,
+its **⋯**, with its sorts, the app's items, Group by and its filter. A
+grid has it unless it says otherwise, so every grid gets a line above it
+and **⋯** in place of the funnel on its headers. See
+[Filters](filters.md#three-headers).
+
+### Steps
+
+1. **Update** `{:masu, "~> 0.6"}`.
+2. **Choose each grid's header.** Nothing else changes, and a grid that
+   keeps the default needs nothing. For a grid in a small place, or to
+   keep the look of 0.5:
+
+   ```diff
+   -<.data_grid id="orders" source={Order} repo={Repo}>
+   +<.data_grid id="orders" source={Order} repo={Repo} filter_bar={false}>
+   ```
+
+   `header_filters={false}` keeps the filters in the bar alone.
+3. **Tests and styles that read the header.** A filtered column's funnel
+   (`.masu-filter-button[data-active]`) is the leaner header's only; with
+   the filter bar, its chip says it. A header menu's items begin with its
+   sorts. A group's chip ends with a × drawn as an icon, not the text "×".
+4. **Translations**: add `add_filter`, `no_columns` and `sort_clear` to a
+   grid's `messages` (`Masu.Messages.defaults/0` has every key).
+
 ## To Masu 0.5
 
 Masu 0.5 hands what is the room's to [Issho](https://hex.pm/packages/issho)
