@@ -50,4 +50,69 @@ defmodule Masu.Issho.LabelTest do
     assert Masu.Issho.label(%{"doc" => "a/b", "at" => %{"cell" => ["x1", "city"]}}) ==
              "city of row x1"
   end
+
+  describe "the words of the places the grid sets (Masu.Issho.Place.label/3)" do
+    alias Masu.Issho.Place
+
+    @columns [
+      Masu.Column.new(field: :title),
+      Masu.Column.new(field: :status, label: "Status"),
+      Masu.Column.new(field: :due)
+    ]
+
+    test "a cell, by its column's label and its row's name" do
+      assert Place.label(%{"cell" => [7, "status"]}, @columns, "Forge the blade") ==
+               "Status of “Forge the blade”"
+
+      assert Place.label(%{"cell" => [7, "status"]}, @columns, nil) == "Status"
+      assert Place.label(%{"cell" => [7, "notes"]}, @columns, nil) == "notes"
+
+      range = %{"rows" => [7], "keys" => ["status"]}
+
+      assert Place.label(%{"cell" => [7, "status"], "range" => range}, @columns, "A") ==
+               "Status of “A”"
+    end
+
+    test "a range, by its size" do
+      assert Place.label(
+               %{"range" => %{"rows" => [7, 8, 9], "keys" => ["status"]}},
+               @columns,
+               nil
+             ) ==
+               "Status, 3 rows"
+
+      assert Place.label(
+               %{"range" => %{"rows" => [7], "keys" => ["title", "status"]}},
+               @columns,
+               "A"
+             ) ==
+               "2 columns of “A”"
+
+      range = %{"rows" => [7, 8, 9], "keys" => ["title", "status"]}
+
+      assert Place.label(%{"cell" => [7, "title"], "range" => range}, @columns, nil) ==
+               "3 rows × 2 columns"
+    end
+
+    test "the row a label names, and its name: its first cell, short" do
+      assert Place.row(%{"cell" => [7, "status"]}) == 7
+      assert Place.row(%{"range" => %{"rows" => [7, 7], "keys" => ["a", "b"]}}) == 7
+      assert Place.row(%{"range" => %{"rows" => [7, 8], "keys" => ["a"]}}) == nil
+
+      assert Place.name(@columns, %{title: " Forge the blade "}) == "Forge the blade"
+      assert Place.name(@columns, %{title: 42}) == "42"
+      assert Place.name(@columns, %{title: nil}) == nil
+      assert Place.name(@columns, %{title: ""}) == nil
+
+      assert Place.name(@columns, %{title: String.duplicate("a", 40)}) ==
+               String.duplicate("a", 31) <> "…"
+    end
+
+    test "no words for a place of no cell" do
+      assert Place.label(%{"x" => 0.5}, @columns, nil) == nil
+      assert Place.label(%{"range" => %{"rows" => [], "keys" => []}}, @columns, nil) == nil
+      assert Place.label(%{"cell" => [7, 3]}, @columns, nil) == nil
+      assert Place.label(%{"range" => %{"rows" => [7], "keys" => [3]}}, @columns, nil) == nil
+    end
+  end
 end

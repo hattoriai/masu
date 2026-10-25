@@ -9,6 +9,14 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The places a grid sets in its Issho room, a person's and an agent's,
+  have a `"label"`, what is selected in a few words (Issho's
+  [#32](https://github.com/hattoriai/issho/issues/32)): a cell's column
+  and its row's first cell, `Status of “Forge the blade”`, or a range's
+  size, `Status, 3 rows` or `3 rows × 2 columns`. Issho shows it to
+  agents and in the comments panel; `"at"` stays the place. Issho
+  releases before labels ignore it. See the Collaboration guide.
+
 - The Sumi theme follows Sumi's seven themes and their accents: a refused
   cell and a failed read are rose where the accent is red's hue or near
   it (Ink, Paper, Lacquer), and rust in Silk, so that a refused cell does

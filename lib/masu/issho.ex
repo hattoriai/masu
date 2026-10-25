@@ -58,6 +58,7 @@ if Code.ensure_loaded?(Issho.Tool) do
 
     alias Issho.Participant
     alias Issho.Tool.Context
+    alias Masu.Issho.Place
     alias Masu.Sheet
 
     @doc "Masu's tools for agents."
@@ -244,17 +245,23 @@ if Code.ensure_loaded?(Issho.Tool) do
     # only for someone who sees the grid.
     @spec go(map(), {term(), String.t()} | {[term()], [String.t()]}) :: :ok
     def go(grid, {[first | _] = ids, [key | _] = keys}) do
+      name = row_name(grid, first)
+
       :ok =
         Issho.Motion.drag(
           grid.participant,
-          target(grid, {first, key}),
-          target(grid, {ids, keys}),
+          labeled(grid, {first, key}, name),
+          labeled(grid, {ids, keys}, name),
           travel: travel?()
         )
     end
 
-    def go(grid, place),
-      do: :ok = Issho.Motion.go(grid.participant, target(grid, place), travel: travel?())
+    def go(grid, {id, _key} = place),
+      do:
+        :ok =
+          Issho.Motion.go(grid.participant, labeled(grid, place, row_name(grid, id)),
+            travel: travel?()
+          )
 
     @doc false
     # A moment on a place, when someone sees it: typing in a cell, before
@@ -263,5 +270,30 @@ if Code.ensure_loaded?(Issho.Tool) do
     def pause(grid, place, ms), do: Issho.Motion.pause(grid.participant, target(grid, place), ms)
 
     defp target(grid, place), do: place(grid.grid, place)
+
+    @doc false
+    # The place of a cell or a range, with its words (`Masu.Issho.Place`):
+    # `name` is the name of the first row, which a range of one row is in.
+    @spec labeled(map(), {term(), String.t()} | {[term()], [String.t()]}, String.t() | nil) ::
+            map()
+    def labeled(grid, place, name) do
+      %{"at" => at} = place = target(grid, place)
+      name = if Place.row(at), do: name
+
+      case Place.label(at, Sheet.columns(grid.sheet), name) do
+        nil -> place
+        label -> Map.put(place, "label", label)
+      end
+    end
+
+    @doc false
+    # A row's name, its first cell, as the sheet reads it.
+    @spec row_name(map(), term()) :: String.t() | nil
+    def row_name(grid, id) do
+      case Sheet.fetch(grid.sheet, [id]) do
+        [row | _] -> Place.name(Sheet.columns(grid.sheet), row)
+        [] -> nil
+      end
+    end
   end
 end
