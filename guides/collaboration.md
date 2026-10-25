@@ -86,6 +86,12 @@ filters. Its format is part of Masu's API, and only grows
 %{"cell" => [row_id, key], "x" => 0.5, "y" => 0.5}   # a pointer in a cell
 ```
 
+The places the grid sets, a person's and an agent's, say what they are in
+a few words too, in their `"label"` beside `"at"`: a cell's column and
+its row's first cell (`Status of “Forge the blade”`), a range's size
+(`Status, 3 rows`, `3 rows × 2 columns`). Issho shows it to agents and
+in the comments panel; only `"at"` locates the place.
+
 ### Who wrote, and the room hears of it
 
 A write's `by` (`Masu.Write`) is who made it, an `Issho.Identity` on a

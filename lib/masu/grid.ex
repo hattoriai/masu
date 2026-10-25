@@ -35,10 +35,11 @@ defmodule Masu.Grid do
   use Phoenix.LiveComponent
 
   # Issho is optional: a grid with `issho` needs it.
-  @compile {:no_warn_undefined, [Masu.Issho.Live]}
+  @compile {:no_warn_undefined, [Masu.Issho.Live, Masu.Issho.Place]}
 
   alias Masu.{Action, Column, Filter, Group, Input, Layout, Query, Source, Tree, Value, View}
   alias Masu.Export.{Download, Ticket}
+  alias Masu.Issho.Place
   alias Masu.Source.Ecto, as: EctoSource
   alias Masu.Source.Given
   alias Masu.Source.List, as: ListSource
@@ -1273,10 +1274,20 @@ defmodule Masu.Grid do
       top: top(params["top"])
     }
 
-    if socket.assigns.issho,
-      do: _ = Masu.Issho.Live.put(socket.assigns.issho, socket.assigns.id, place)
+    if socket.assigns.issho do
+      {label, socket} = place_label(socket, place)
 
-    {:noreply, socket}
+      _ =
+        Masu.Issho.Live.put(
+          socket.assigns.issho,
+          socket.assigns.id,
+          Map.put(place, :label, label)
+        )
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   # This person's pointer over a cell, which the grid shares when no
@@ -2063,6 +2074,35 @@ defmodule Masu.Grid do
     do: %{"rows" => Enum.take(rows, 500), "keys" => Enum.filter(keys, &is_binary/1)}
 
   defp range(_other), do: nil
+
+  # The person's cell or range in words, for the others
+  # (Masu.Issho.Place): its row's name is read once for each row they go
+  # to, not at each cell of it.
+  defp place_label(socket, %{cell: cell, range: range}) do
+    at = Map.reject(%{"cell" => cell, "range" => range}, &is_nil(elem(&1, 1)))
+    columns = socket.assigns.columns
+
+    case Place.row(at) do
+      nil ->
+        {Place.label(at, columns, nil), socket}
+
+      id ->
+        name =
+          case socket.assigns[:issho_row] do
+            {^id, name} -> name
+            _other -> row_name(socket.assigns, id)
+          end
+
+        {Place.label(at, columns, name), assign(socket, :issho_row, {id, name})}
+    end
+  end
+
+  defp row_name(assigns, id) do
+    case fetch_row(assigns, id, row_id(assigns)) do
+      [row | _] -> Place.name(assigns.columns, row)
+      [] -> nil
+    end
+  end
 
   # The first row on the person's screen, by its id.
   defp top(id) when is_binary(id) or is_integer(id), do: id

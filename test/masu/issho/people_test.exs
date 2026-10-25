@@ -74,7 +74,12 @@ defmodule Masu.Issho.PeopleTest do
     # The frames come as the room's awareness sends them: Bob's join, then his cell.
     assert_aware(watcher, fn states ->
       Enum.any?(Map.values(states), fn %{"key" => key, "state" => state} ->
-        key == "bob" and state["place"] == %{"doc" => grid, "at" => %{"cell" => [1, "name"]}}
+        key == "bob" and
+          state["place"] == %{
+            "doc" => grid,
+            "at" => %{"cell" => [1, "name"]},
+            "label" => "Name of “Ada Lovelace”"
+          }
       end)
     end)
 
@@ -130,5 +135,49 @@ defmodule Masu.Issho.PeopleTest do
 
     assert {:ok, %{"saved" => 1}} =
              call("edit_cells", %{"grid" => grid, "of" => "Bob", "value" => 42}, ctx)
+  end
+
+  test "a person's place says what they selected, in words",
+       %{instance: instance, room: room, grid: grid, bob: bob} do
+    {:ok, watcher} = Issho.join_as(instance, %{id: "watcher", name: "Watcher"}, room)
+
+    render_hook(element(bob, "#people"), "masu:cursor", %{
+      "cell" => [1, "age"],
+      "editing" => false,
+      "range" => %{"rows" => [1, 2, 3], "keys" => ["age"]}
+    })
+
+    assert_aware(watcher, fn states ->
+      Enum.any?(Map.values(states), fn %{"key" => key, "state" => state} ->
+        key == "bob" and match?(%{"doc" => ^grid, "label" => "Age, 3 rows"}, state["place"])
+      end)
+    end)
+
+    render_hook(element(bob, "#people"), "masu:cursor", %{
+      "cell" => [2, "city"],
+      "editing" => true
+    })
+
+    assert_aware(watcher, fn states ->
+      Enum.any?(Map.values(states), fn %{"key" => key, "state" => state} ->
+        # The lock is the place alone, as the others compare it.
+        key == "bob" and match?(%{"label" => "City of “" <> _}, state["place"]) and
+          state["locks"] == [%{"doc" => grid, "at" => %{"cell" => [2, "city"]}}]
+      end)
+    end)
+  end
+
+  test "an agent's places say what it goes to, in words", %{grid: grid, ctx: ctx} do
+    {:ok, open} = Masu.Issho.open(ctx, grid)
+    name = Masu.Issho.row_name(open, 1)
+    assert name == "Ada Lovelace"
+
+    assert %{"doc" => ^grid, "at" => %{"cell" => [1, "age"]}, "label" => "Age of “Ada Lovelace”"} =
+             Masu.Issho.labeled(open, {1, "age"}, name)
+
+    assert %{"label" => "2 rows × 2 columns"} =
+             Masu.Issho.labeled(open, {[1, 2], ["name", "age"]}, name)
+
+    assert Masu.Issho.row_name(open, 404) == nil
   end
 end

@@ -10,7 +10,8 @@ if Code.ensure_loaded?(Issho.Live) do
     # LiveView share in a room:
     #
     #   * "place": `%{"doc" => "room/grid", "at" => %{"cell" => [id, key],
-    #     "range" => %{"rows" => ids, "keys" => keys}}}`, the person's cell;
+    #     "range" => %{"rows" => ids, "keys" => keys}}, "label" => words}`,
+    #     the person's cell, and what it is in words (Masu.Issho.Place);
     #   * "locks": the cell they are editing;
     #   * "blocks": `%{"room/grid" => %{"open" => true, "view" => query,
     #     "top" => id}}`, the grids they have open (Masu's own keys, under
@@ -82,7 +83,8 @@ if Code.ensure_loaded?(Issho.Live) do
 
     @doc false
     # Where the person is now: any of `cell`, `range`, `editing`, `top`
-    # and `view`, as the browser says them.
+    # and `view`, as the browser says them, and the `label` of the cell or
+    # range, as the grid says it.
     @spec put(map(), String.t(), map()) :: :ok | {:error, term()}
     def put(config, grid, changes) do
       doc = doc(config, grid)
@@ -153,10 +155,14 @@ if Code.ensure_loaded?(Issho.Live) do
       place =
         cond do
           cell != nil or range != nil ->
-            %{
-              "doc" => doc,
-              "at" => Map.reject(%{"cell" => cell, "range" => range}, &is_nil(elem(&1, 1)))
-            }
+            Map.reject(
+              %{
+                "doc" => doc,
+                "at" => Map.reject(%{"cell" => cell, "range" => range}, &is_nil(elem(&1, 1))),
+                "label" => changes[:label]
+              },
+              &is_nil(elem(&1, 1))
+            )
 
           here? ->
             nil
