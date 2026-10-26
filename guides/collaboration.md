@@ -3,7 +3,7 @@
 > #### Optional {: .info}
 >
 > Collaboration is an add-on, on [Issho](https://hex.pm/packages/issho).
-> Add `{:issho, "~> 0.4.2"}` to your dependencies for it. Without Issho,
+> Add `{:issho, "~> 0.5"}` to your dependencies for it. Without Issho,
 > Masu is unaffected: nothing of it is compiled, and the grid does all it
 > does in the other guides (live rows included, on your PubSub).
 
@@ -37,7 +37,7 @@ person, and agents that work across all three.
 
 ## Setting up
 
-1. Add Issho to your dependencies (`{:issho, "~> 0.4.2"}`) and start it in
+1. Add Issho to your dependencies (`{:issho, "~> 0.5"}`) and start it in
    your supervision tree, after the PubSub, with a policy that says who
    may be in which room (see Issho's README):
 

@@ -1,5 +1,13 @@
 # Upgrading
 
+## To Masu 0.8
+
+Update `{:masu, "~> 0.8"}`. A grid's code stays as it was. A shared grid
+runs on Issho 0.4.2 or 0.5 (`{:issho, "~> 0.5"}` for its labels, which
+Issho 0.4 ignores): the places it sets in its room say what is selected
+(a cell, a row, a range), in words agents and comments read. See
+[Collaboration](collaboration.md).
+
 ## To Masu 0.6
 
 Masu 0.6 brings the filter bar: a grid's filters show above it as chips
