@@ -147,7 +147,6 @@ defmodule Masu.MixProject do
           "guides/kotoba.md",
           "guides/koyomi.md",
           "guides/live.md",
-          "guides/collaboration.md",
           "guides/upgrading.md",
           "guides/history.md",
           "guides/views.md",
@@ -160,6 +159,9 @@ defmodule Masu.MixProject do
           "guides/keyboard.md",
           "guides/testing.md",
           "guides/theming.md"
+        ],
+        "Collaboration (optional, with Issho)": [
+          "guides/collaboration.md"
         ],
         Reference: [
           "guides/accessibility.md",
@@ -180,7 +182,7 @@ defmodule Masu.MixProject do
           Masu.Messages
         ],
         Writes: [Masu.Write, Masu.Write.Change, Masu.Wire, Masu.Sheet],
-        Collaboration: [Masu.Issho],
+        "Collaboration (optional, with Issho)": [Masu.Issho, Masu.Issho.Place],
         History: [Masu.History, Masu.History.Entry, Masu.History.Ecto, Masu.History.Memory],
         Queries: [Masu.Query, Masu.Sort, Masu.Filter],
         Views: [Masu.View, Masu.Layout, Masu.Views, Masu.Views.Ecto, Masu.Views.Memory],

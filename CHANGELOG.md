@@ -23,6 +23,13 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not look like the active one. `mix dev` shows each page in each
   (`?sumi=smoke`). See the Theming guide.
 
+### Changed
+
+- Docs: the README and the guides show the grid on its own first, and
+  collaboration as optional, with Issho (`{:issho, ...}`, of which
+  nothing is compiled unless you add it): its guide and `Masu.Issho`
+  modules in a group of their own, "Collaboration (optional, with Issho)".
+
 ### Fixed
 
 - The Sumi theme gave Sumi's dark themes other than Ink the light palette,

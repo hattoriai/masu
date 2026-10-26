@@ -1,5 +1,12 @@
 # Collaboration
 
+> #### Optional {: .info}
+>
+> Collaboration is an add-on, on [Issho](https://hex.pm/packages/issho).
+> Add `{:issho, "~> 0.4.2"}` to your dependencies for it. Without Issho,
+> Masu is unaffected: nothing of it is compiled, and the grid does all it
+> does in the other guides (live rows included, on your PubSub).
+
 A grid that several people have open shows each of them the others, as a
 shared spreadsheet does: who is here (their avatars above the grid),
 where each of them is (a line in their color on their cell, with their

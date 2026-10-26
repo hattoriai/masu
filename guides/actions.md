@@ -85,9 +85,9 @@ The grid reads `show`, `disabled` and the link of each row as it sends
 the row; the server reads them again, with the row from the source, when
 the person runs the action.
 
-### Other people on the row
+### Other people on the row, with Issho
 
-In an Issho room (`issho`), the context's `editors` are the people whose
+In an Issho room (`issho`, optional: see [Collaboration](collaboration.md)), the context's `editors` are the people whose
 editor is open on a cell of the row: an action may wait, or say so,
 rather than change the row under them.
 

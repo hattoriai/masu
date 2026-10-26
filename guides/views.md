@@ -133,9 +133,9 @@ column). The whole part goes, never a cut of it. The grid says so to the
 person ("Part of this view no longer applies: plan"); a link or a saved
 view never fails a grid.
 
-## Following someone
+## Following someone, with Issho
 
-When a person follows someone (see Collaboration), the grid shows that
+When a person follows someone (see [Collaboration](collaboration.md), optional), the grid shows that
 person's order, filters and search; the layout stays the follower's own.
 
 ## Testing
