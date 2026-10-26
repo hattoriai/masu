@@ -2,6 +2,18 @@
 
 ![Masu — Tables for Phoenix](https://raw.githubusercontent.com/hattoriai/masu/main/media/banner.png)
 
+<p>
+  <a href="https://hex.pm/packages/masu">
+    <img alt="Hex Version" src="https://img.shields.io/hexpm/v/masu.svg">
+  </a>
+  <a href="https://hexdocs.pm/masu">
+    <img src="https://img.shields.io/badge/docs-hexdocs-blue" alt="HexDocs">
+  </a>
+  <a href="https://github.com/hattoriai/masu/actions">
+    <img alt="CI Status" src="https://github.com/hattoriai/masu/actions/workflows/ci.yml/badge.svg">
+  </a>
+</p>
+
 Masu (枡, the squares of a grid) is tables for Phoenix. It gives your
 app:
 
