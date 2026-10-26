@@ -7,6 +7,11 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-26
+
+A shared grid's places say what is selected, and the Sumi theme follows
+Sumi's seven themes.
+
 ### Added
 
 - The places a grid sets in its Issho room, a person's and an agent's,
@@ -25,6 +30,7 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A shared grid runs on Issho 0.4.2 or 0.5 (`">= 0.4.2 and < 0.6.0"`).
 - Docs: the README and the guides show the grid on its own first, and
   collaboration as optional, with Issho (`{:issho, ...}`, of which
   nothing is compiled unless you add it): its guide and `Masu.Issho`
