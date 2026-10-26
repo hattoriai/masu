@@ -117,3 +117,9 @@ end
 ```
 
 See [Testing](testing.md).
+
+## Next: collaboration (optional)
+
+The grid above needs nothing else. For the others who have it open, their
+cells and their saves in their colors, add [Issho](https://hex.pm/packages/issho):
+see [Collaboration](collaboration.md).

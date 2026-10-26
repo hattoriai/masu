@@ -110,9 +110,9 @@ of how many more. A cell is its value as text; a cell of your own HEEx is
 its column's value. An HTML snapshot is a `table.masu-snapshot`, for a
 page or an email of the document.
 
-## Collaboration
+## Collaboration, with Issho
 
-A grid with `issho` is shared in its own room, whatever the document's:
+A grid with `issho` (optional, see [Collaboration](collaboration.md)) is shared in its own room, whatever the document's:
 its people are that room's, wherever they are. Give it its document, the
 same as on the grid's own page, so that the two are one grid, and a
 reader's `can`:

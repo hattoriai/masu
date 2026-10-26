@@ -19,10 +19,6 @@ app:
 * live rows: a grid that follows a PubSub topic shows the rows that
   change on it as they change, in the place of each person's order and
   filters, with a short highlight;
-* collaboration, as in a shared spreadsheet: the avatars of the others
-  who have the grid open, their cells in their colors, a cell someone
-  types in locked for the others, and their saves flashing in their
-  color;
 * sorting by several columns, a search box, and filters in a bar above
   the grid: chips that say each filter and open it, Add filter, and a menu
   on each header with its sorts and filter, the values of an enum and
@@ -38,6 +34,13 @@ app:
 * `Masu.Test`, to read, sort and filter a grid in
   `Phoenix.LiveViewTest` with no browser.
 
+And, optional, with [Issho](https://hex.pm/packages/issho): collaboration,
+as in a shared spreadsheet, the avatars of the others who have the grid
+open, their cells in their colors, a cell someone types in locked for
+the others, and their saves flashing in their color. Issho is an
+optional dependency: nothing of it is compiled unless you add it, and a
+grid without it does all of the above.
+
 The grid is a prebuilt JavaScript bundle in the Hex package. Your app
 does not run Node.js for it: you add the hook and one style sheet.
 
@@ -49,7 +52,7 @@ does not run Node.js for it: you add the hook and one style sheet.
 | Sources | `rows={@users}` for a list; `source={query} repo={Repo}` for Ecto, where a sort is an `ORDER BY`, a filter and the search a `WHERE`, and each block a `LIMIT`, read by key after the block before it; `Masu.Source` for your own; `load={:async}` reads a slow source in a task, with "Running…", Stop, a timeout and its errors; `on_query` for an app that runs its own queries, the grid a view of them |
 | Editing | `changeset={&Order.changeset/2}`: a cell edits on a key typed, Enter, F2 or a double click; the edits of a row saved together with `Repo.update`, the errors on their cells, the old values back; paste of tab-separated text, fill down, Delete, undo and redo; read-only rows and cells by their state (`row_editable`, `editable={&...}`), checked on the server; a cell changed by someone else meanwhile refused (a compare-and-swap of each cell, in a transaction that locks the row); every write a `Masu.Write` for your own functions (`on_update`, `on_create`, `on_delete`, `on_restore`): row by row, a whole batch in one transaction (`Ecto.Multi`), the grid's own way and more, or later in a job (`Masu.Write.async/1`, `Masu.reply/2`), with the person's `scope` and what they did (a paste, a fill, an undo); a row found again through the grid's own query; new rows (`struct` with the changeset, or `on_create`) as drafts until they save, and a paste past the last row; deleting rows (`deletable`, `on_delete`) after a question, with undo; an enum's list of values, `decimals`, and values checked in the browser |
 | Live rows | `live={{MyApp.PubSub, "orders"}}` and `Masu.Live.broadcast_upsert/3`: changes come into the person's query, a batch at a time, the scroll stays, the rows do not blink, the changed ones flash |
-| Collaboration | on [Issho](https://hex.pm/packages/issho), as Kotoba's and Hakushi's: `issho={[instance: MyApp.Issho, document: "orders"]} user={...}`: avatars (a `:person` slot of your own), each person's cell by row id and column key whatever the others' order and filters, "Ada is typing" and a lock on that cell, flashes in the saver's color; a click on an avatar follows that person in their view (`share_view={false}` keeps it), each person's selected range in their color, "Changed by Ada meanwhile."; agents among the people, with tools that read and write a grid the grid's way (`Masu.Issho`, `Masu.Sheet`), that stop when a person pauses or stops them; Issho's comments on cells and ranges, their marks on the cells, their places in words (`Masu.Issho.label/2`); `configure({peerLabel})` and CSS for the rest |
+| Collaboration (optional, with Issho) | `issho={[instance: MyApp.Issho, document: "orders"]} user={...}`: the others' avatars, cells, locks and saves in their colors, following, agents and comments, on [Issho](https://hex.pm/packages/issho); see [Collaboration](guides/collaboration.md) |
 | Layout and views | `pinned={:start}` and `hidden` columns; headers that move by dragging; a columns menu to show, hide, pin and move them; the person's view (order, filters, search, columns) in the URL (`url`) and kept per person, with named views to save and share (`views`, with an Ecto store and `mix masu.gen.views`) |
 | Trees and details | `tree={:parent_id}`: rows in a tree, opened with →, ← and `*`, virtualized as a list of the open rows (a list or an Ecto source, children read as they open), siblings sorted among themselves, filters that keep the ancestors of a match; a `:detail` slot that opens a row on any HEEx under it, another grid too |
 | Groups and totals | `group_by` and "Group by" in the header menu: groups with their counts and totals, opened as a tree, sorted by value or by a total; `aggregate={:sum}` and a row of totals at the bottom; counted and totalled by the database, a `GROUP BY` a level |
@@ -217,8 +220,8 @@ in the same order.
   and pickers of dates, times and ranges in cells, and a picker that
   filters the grid.
 * [Live rows](guides/live.md): a grid that follows a PubSub topic.
-* [Collaboration](guides/collaboration.md): who else has the grid open,
-  and where they are.
+* [Collaboration](guides/collaboration.md) (optional, with Issho): who
+  else has the grid open, and where they are.
 * [History](guides/history.md): who changed a cell, when, from what;
   restoring a value, or someone's paste; a store of any Ecto repo.
 * [Layout and views](guides/views.md): pinned, hidden and moved columns,
