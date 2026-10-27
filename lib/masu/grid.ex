@@ -115,6 +115,7 @@ defmodule Masu.Grid do
        given_loading: false,
        awaiting: false,
        multi_sort: true,
+       range_select: true,
        filter_bar: true,
        header_filters: true
      )}
@@ -2905,6 +2906,7 @@ defmodule Masu.Grid do
       "activates" => assigns.on_row_activate != nil,
       "running" => running?(assigns),
       "multiSort" => assigns.multi_sort,
+      "rangeSelect" => assigns.range_select,
       "filterBar" => assigns.filter_bar,
       "headerFilters" => assigns.header_filters,
       "selection" => selection_config(assigns),

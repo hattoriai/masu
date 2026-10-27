@@ -1775,15 +1775,22 @@ defmodule MasuDev.OpenLive do
   Rows that open (`on_row_activate`): a click on a row, or Enter on it,
   shows the customer in a panel beside the grid, with the row's id in the
   URL. The seats edit: a click and Enter there are the editor's. The
-  link of a cell is a link.
+  link of a cell is a link. `?range=off` selects no ranges
+  (`range_select={false}`).
   """
   use Phoenix.LiveView
 
   import Masu.Components
 
   @impl true
-  def mount(_params, _session, socket) do
-    {:ok, assign(socket, rows: Enum.take(MasuDev.Customers.all(), 200), open: nil, site: nil)}
+  def mount(params, _session, socket) do
+    {:ok,
+     assign(socket,
+       rows: Enum.take(MasuDev.Customers.all(), 200),
+       open: nil,
+       site: nil,
+       range_select: params["range"] != "off"
+     )}
   end
 
   @impl true
@@ -1806,6 +1813,7 @@ defmodule MasuDev.OpenLive do
           label_id="open-label"
           height="24rem"
           on_row_activate={&{:patch, "/open?open=#{&1.id}"}}
+          range_select={@range_select}
         >
           <:col field={:name} editable={false} />
           <:col field={:city} editable={false} />

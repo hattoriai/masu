@@ -94,4 +94,16 @@ defmodule Masu.ActivateTest do
       end
     end
   end
+
+  describe "ranges of cells" do
+    test "a grid selects them, unless range_select={false}" do
+      {:ok, view, _html} = live(build_conn(), "/activate")
+      assert config(grid(view, "people"))["rangeSelect"] == true
+
+      {:ok, view, _html} = live(build_conn(), "/activate?range=off")
+      assert config(grid(view, "people"))["rangeSelect"] == false
+    end
+  end
+
+  defp config(el), do: el |> LazyHTML.attribute("data-masu") |> hd() |> JSON.decode!()
 end

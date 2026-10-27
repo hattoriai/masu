@@ -1,4 +1,5 @@
-// The pointer: a press on a cell selects (a drag a range), on a header sorts
+// The pointer: a press on a cell selects (a drag a range, unless the grid
+// selects none), on a header sorts
 // or moves its column, on its edge resizes it; a double click edits or fits.
 
 import { contains } from "../geometry";
@@ -84,7 +85,8 @@ export class Pointer {
       this.grid.anchor = cell;
     }
     this.grid.active = cell;
-    this.grid.dragging = true;
+    // A drag selects a range; with no ranges, the cell pressed stays active.
+    this.grid.dragging = this.grid.config.rangeSelect !== false;
     this.grid.render();
   }
 

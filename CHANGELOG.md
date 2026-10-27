@@ -7,6 +7,13 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `range_select={false}` selects no ranges of cells: a drag, Shift with a
+  click or a move, and Ctrl+A (⌘A) select the one cell. For a grid whose
+  rows open (`on_row_activate`), where a range is no use. The default,
+  `true`, is as before.
+
 ## [0.8.0] - 2026-10-26
 
 A shared grid's places say what is selected, and the Sumi theme follows

@@ -2,7 +2,8 @@ defmodule MasuTest.ActivateLive do
   @moduledoc """
   Rows that open (`on_row_activate`): `?to=patch` patches the URL to the
   row, `?to=navigate` goes to another page, and with neither the function
-  tells the LiveView, which shows what it heard.
+  tells the LiveView, which shows what it heard. `?range=off` selects no
+  ranges of cells (`range_select={false}`).
   """
   use Phoenix.LiveView
 
@@ -16,7 +17,9 @@ defmodule MasuTest.ActivateLive do
 
   @impl true
   def mount(params, _session, socket),
-    do: {:ok, assign(socket, to: params["to"], heard: nil, open: nil)}
+    do:
+      {:ok,
+       assign(socket, to: params["to"], heard: nil, open: nil, range: params["range"] != "off")}
 
   @impl true
   def handle_params(params, _uri, socket), do: {:noreply, assign(socket, open: params["open"])}
@@ -43,7 +46,7 @@ defmodule MasuTest.ActivateLive do
     ~H"""
     <p :if={@heard} id="heard">{@heard}</p>
     <p :if={@open} id="open">{@open}</p>
-    <.data_grid id="people" rows={@rows} on_row_activate={@activate}>
+    <.data_grid id="people" rows={@rows} on_row_activate={@activate} range_select={@range}>
       <:col field={:name} />
       <:col field={:city} />
     </.data_grid>
