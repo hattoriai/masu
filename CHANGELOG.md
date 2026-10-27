@@ -7,6 +7,10 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-27
+
+A grid whose rows open may select no ranges of cells.
+
 ### Added
 
 - `range_select={false}` selects no ranges of cells: a drag, Shift with a

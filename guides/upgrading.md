@@ -1,5 +1,12 @@
 # Upgrading
 
+## To Masu 0.9
+
+Update `{:masu, "~> 0.9"}`. A grid's code stays as it was, and selects
+ranges as before. A grid whose rows open (`on_row_activate`) may add
+`range_select={false}`: a drag, Shift and Ctrl+A then select the one
+cell. See [Actions](actions.md).
+
 ## To Masu 0.8
 
 Update `{:masu, "~> 0.8"}`. A grid's code stays as it was. A shared grid
