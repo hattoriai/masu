@@ -69,3 +69,47 @@ test("selecting a range, by a drag or Shift and a click, opens no row", async ({
   await expect(page.locator("#opened")).toHaveCount(0);
   await expect(page).toHaveURL(/\/open$/);
 });
+
+// With no ranges (`range_select={false}`, `?range=off`), a cell is selected
+// alone: a drag, Shift and a click, Shift and a move, and Ctrl+A select no
+// range, and a click on a row still opens it.
+test.describe("with no ranges", () => {
+  test.beforeEach(async ({ page }) => {
+    await openPage(page, "/open?range=off");
+  });
+
+  test("a drag and Shift with a click select no range", async ({ page }) => {
+    await page.locator(cell(0, 0)).click({ modifiers: ["Shift"] });
+    await page.locator(cell(2, 1)).click({ modifiers: ["Shift"] });
+    await expect(page.locator("#open .masu-selected")).toHaveCount(0);
+
+    const from = await page.locator(cell(3, 0)).boundingBox();
+    const to = await page.locator(cell(5, 1)).boundingBox();
+    await page.mouse.move(from!.x + 10, from!.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(to!.x + 10, to!.y + 10, { steps: 5 });
+    await page.mouse.up();
+    await expect(page.locator("#open .masu-selected")).toHaveCount(0);
+    // The cell pressed stays the active one, and no row opens.
+    await expect(grid(page, "open")).toHaveAttribute("aria-activedescendant", "open-r3-c0");
+    await expect(page.locator("#opened")).toHaveCount(0);
+  });
+
+  test("Shift with a move, and Ctrl+A, select no range", async ({ page }) => {
+    await page.locator(cell(1, 0)).click({ modifiers: ["Alt"] });
+    await grid(page, "open").focus();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowRight");
+    await expect(page.locator("#open .masu-selected")).toHaveCount(0);
+    await expect(grid(page, "open")).toHaveAttribute("aria-activedescendant", "open-r2-c1");
+
+    await page.keyboard.press("ControlOrMeta+a");
+    await expect(page.locator("#open .masu-selected")).toHaveCount(0);
+  });
+
+  test("a click on a row still opens it", async ({ page }) => {
+    const [name] = await rowText(page, "open", 2);
+    await page.locator(cell(2, 1)).click();
+    await expect(page.locator("#opened")).toHaveText(`Opened ${name}`);
+  });
+});

@@ -130,6 +130,15 @@ A row opens on:
   double click; not a drag, which selects a range;
 * Enter on its active cell, the keyboard's way to the same row.
 
+A grid whose rows open often has no use for ranges of cells:
+`range_select={false}` makes a drag, Shift with a click or a move, and
+Ctrl+A select the one cell, so that a selection never shows across rows
+that a click opens.
+
+```heex
+<.data_grid id="inbox" rows={@rows} on_row_activate={&{:patch, ~p"/inbox?item=#{&1.id}"}} range_select={false}>
+```
+
 A cell that edits is the editor's: a click there makes it active, and
 Enter edits it, as in any grid that edits. The cells that open their row
 show a pointer. A group's row, and a new row not saved yet, do not open.

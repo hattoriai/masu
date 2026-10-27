@@ -106,7 +106,14 @@ export class Grid {
   rows = new Map<number, RowElement>();
   private pool: RowElement[] = [];
   active: Cell = { row: 0, col: 0 };
-  anchor: Cell | null = null;
+  private rangeAnchor: Cell | null = null;
+  /** Where the range selected starts; none while the grid selects no ranges (`range_select={false}`). */
+  get anchor(): Cell | null {
+    return this.config.rangeSelect === false ? null : this.rangeAnchor;
+  }
+  set anchor(cell: Cell | null) {
+    this.rangeAnchor = cell;
+  }
   dragging = false;
   private frame: number | null = null;
   /** The height of the rows, and the place of the screen's top in them (see scroll.ts). */

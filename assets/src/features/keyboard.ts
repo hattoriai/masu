@@ -43,7 +43,7 @@ export class Keyboard {
 
     if (mod && event.key.toLowerCase() === "a") {
       event.preventDefault();
-      if (this.grid.total === 0) return;
+      if (this.grid.total === 0 || this.grid.config.rangeSelect === false) return;
       this.grid.anchor = { row: 0, col: 0 };
       this.grid.active = { row: this.grid.total - 1, col: this.grid.columns.length - 1 };
       this.grid.render();

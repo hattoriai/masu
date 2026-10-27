@@ -39,7 +39,9 @@ In a grid that reads right to left, ← and → swap.
 The mouse does the same: a click makes a cell active, a drag or a click
 with Shift selects a range, and a click on a header sorts (with Shift,
 by that column too). In a grid with `on_row_activate`, a click on a cell
-that does not edit opens its row too.
+that does not edit opens its row too. With `range_select={false}`, a grid selects
+no ranges: Shift with a move, Ctrl+A, a drag and a click with Shift make
+or keep one cell active.
 
 ↓ in the search box goes to the grid.
 

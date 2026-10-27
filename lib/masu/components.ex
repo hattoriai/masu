@@ -314,6 +314,11 @@ defmodule Masu.Components do
     default: true,
     doc: "`false` sorts by one column at a time: Shift adds none"
 
+  attr :range_select, :boolean,
+    default: true,
+    doc:
+      "`false` selects no ranges of cells: a drag, Shift with a click or a move, and Ctrl+A (⌘A) select the one cell; for a grid whose rows open, where a range is no use"
+
   attr :filter_bar, :boolean,
     default: true,
     doc:
@@ -515,6 +520,7 @@ defmodule Masu.Components do
       given_total={@total}
       given_loading={@loading}
       multi_sort={@multi_sort}
+      range_select={@range_select}
       filter_bar={@filter_bar}
       header_filters={@header_filters}
       cell_menu={cell_menu!(@id, @cell_menu)}
