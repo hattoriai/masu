@@ -129,7 +129,7 @@ Add `masu` to the deps in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:masu, "~> 0.8"}
+    {:masu, "~> 0.9"}
   ]
 end
 ```
