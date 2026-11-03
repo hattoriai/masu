@@ -1,5 +1,10 @@
 # Upgrading
 
+## To Masu 0.9.1
+
+Nothing changes in a grid's code. A shared grid may now run on Issho 0.6
+(`{:issho, "~> 0.6"}`).
+
 ## To Masu 0.9
 
 Update `{:masu, "~> 0.9"}`. A grid's code stays as it was, and selects
