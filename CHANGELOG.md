@@ -7,6 +7,15 @@ and Masu follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-03
+
+A shared grid runs on Issho 0.6.
+
+### Changed
+
+- Masu accepts Issho 0.6 (`>= 0.4.2 and < 0.7.0`). Before, Masu held an
+  app with Issho at 0.5 or earlier. A grid's code does not change.
+
 ## [0.9.0] - 2026-10-27
 
 A grid whose rows open may select no ranges of cells.
