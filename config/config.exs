@@ -36,4 +36,17 @@ if config_env() == :test do
     pubsub_server: MasuTest.PubSub,
     render_errors: [formats: [html: MasuTest.ErrorHTML], layout: false],
     server: false
+
+  # The browser tests (test/e2e, `mix test.e2e`) run against the
+  # development server (dev.exs), which test_helper.exs starts on its own
+  # port (4098, or E2E_PORT).
+  config :playwright, :test,
+    base_url: "http://127.0.0.1:#{System.get_env("E2E_PORT", "4098")}",
+    # The grids format numbers and dates in the page's locale (en-GB on
+    # the dev pages), and datetimes in the browser's time zone.
+    locale: "en-GB",
+    timezone_id: "Europe/Lisbon",
+    # A failed test keeps its trace and a screenshot, in test-results/.
+    trace: :retain_on_failure,
+    screenshot: :only_on_failure
 end

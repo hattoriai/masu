@@ -40,7 +40,7 @@ defmodule Masu.MixProject do
   end
 
   def cli do
-    [preferred_envs: [precommit: :test]]
+    [preferred_envs: [precommit: :test, "test.e2e": :test]]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
@@ -48,7 +48,8 @@ defmodule Masu.MixProject do
 
   defp deps do
     [
-      {:bandit, "~> 1.5", only: :dev},
+      # The dev server (dev.exs), which the browser tests (test/e2e) start too.
+      {:bandit, "~> 1.5", only: [:dev, :test]},
       # The benchmarks in bench/: Benchee, and PostgreSQL for the Ecto source.
       {:benchee, "~> 1.3", only: :dev},
       {:ecto_sql, "~> 3.13", only: [:dev, :test]},
@@ -64,6 +65,8 @@ defmodule Masu.MixProject do
       {:issho, ">= 0.4.2 and < 0.7.0", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:lazy_html, "~> 0.1", only: :test},
+      # The browser tests in test/e2e: `mix test.e2e`.
+      {:playwright, "~> 1.65.0-rc.3", hex: :playwright_ex, only: [:dev, :test]},
       {:phoenix, if(@oldest, do: "~> 1.7.14", else: "~> 1.7.14 or ~> 1.8")},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
@@ -193,7 +196,7 @@ defmodule Masu.MixProject do
     ]
   end
 
-  # The browser tests need their npm packages; `npm ci` runs once.
+  # The browser benchmarks need their npm packages; `npm ci` runs once.
   defp e2e_deps(_args) do
     unless File.dir?("e2e/node_modules") do
       Mix.Task.run("cmd", ~w(--cd e2e npm ci))
@@ -204,7 +207,7 @@ defmodule Masu.MixProject do
     [
       "assets.build": ["masu.build"],
       dev: "run --no-halt dev.exs",
-      "test.e2e": [&e2e_deps/1, "cmd --cd e2e npm test"],
+      "test.e2e": "test --only e2e",
       "test.js": ["cmd --cd assets npm test"],
       # The benchmarks (bench/README.md): the server's, the browser's, and
       # the report of both in bench/RESULTS.md.

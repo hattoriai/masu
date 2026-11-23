@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["specs", "bench", "playwright.config.ts", "playwright.bench.config.ts"]
+  "include": ["bench", "playwright.bench.config.ts"]
 }

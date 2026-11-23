@@ -149,7 +149,7 @@ In Lotus Web itself, the values would be its own variables
 (`rgb(var(--lotus-gray-50))`), so that its themes apply. Masu's e2e
 suite renders Lotus Web's table, with Lotus Web's own CSS, next to a
 grid with these tokens, and compares them pixel for pixel, light and
-dark, at rest and with a cell under the pointer (`e2e/specs/look.spec.ts`;
+dark, at rest and with a cell under the pointer (`test/e2e/look_test.exs`;
 the dev server's `/look`).
 
 ## The Sumi theme

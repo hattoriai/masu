@@ -313,18 +313,20 @@ tests of the pure modules in `assets/test/` (the block cache, the
 geometry of the rows and the keys, the sort, the copied text and the
 formats) with Node's test runner.
 
-The browser tests in `e2e/` use Playwright, in Chromium, Firefox and
-WebKit (the engine of Safari). Install the browsers once:
+The browser tests in `test/e2e/` use Playwright from ExUnit (with
+[playwright_ex](https://hex.pm/packages/playwright_ex)), in Chromium,
+Firefox and WebKit (the engine of Safari). Install the browsers once:
 
 ```sh
-cd e2e && npm ci && npx playwright install chromium firefox webkit
+mix playwright.install chromium firefox webkit
 ```
 
-`mix test.e2e` runs every spec in the three browsers, and `E2E_BROWSERS`
-picks some of them. It runs `npm ci` in `e2e/` when `e2e/node_modules`
-is missing, builds the bundle, and starts its own development server,
-without watchers, on port 4098 (set `E2E_PORT` for another port). A
-`mix dev` on port 4099 can keep running.
+`mix test.e2e` (`mix test --only e2e`) runs every test in the three
+browsers, and `E2E_BROWSERS` picks some of them. It builds the bundle,
+and starts its own development server, without watchers, on port 4098
+(set `E2E_PORT` for another port). A `mix dev` on port 4099 can keep
+running. A failed test keeps its trace and a screenshot in
+`test-results/`.
 
 ### Release
 

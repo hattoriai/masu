@@ -9,6 +9,8 @@ e2e/node_modules
 /tmp
 e2e/test-results
 e2e/playwright-report
+# The browser tests of test/e2e (playwright_ex).
+/test-results
 erl_crash.dump
 masu-*.tar
 *.ez
